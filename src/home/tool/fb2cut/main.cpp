@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <ranges>
+#include <set>
 
 #include <QBuffer>
 #include <QCommandLineParser>
@@ -21,11 +22,9 @@
 #include "fnd/IsOneOf.h"
 #include "fnd/NonCopyMovable.h"
 #include "fnd/ScopedCall.h"
-
-#include "icu/icu.h"
-//#include "inpx/types.h"
 #include "fnd/algorithm.h"
 
+#include "icu/icu.h"
 #include "jxl/jxl.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
@@ -33,7 +32,6 @@
 #include "util/ImageUtil.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/files.h"
-#include "util/localization.h"
 #include "util/xml/Initializer.h"
 #include "util/xml/Validator.h"
 #include "util/xml/XmlWriter.h"

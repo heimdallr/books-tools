@@ -202,7 +202,7 @@ private:
 
 	QByteArray Recode(const QByteArray& src) const
 	{
-		auto image = Flibrary::Decode(src).toImage();
+		auto image = Util::Decode(src).toImage();
 		if (image.isNull())
 			return {};
 

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <set>
 
 #include <QBuffer>
 #include <QCommandLineParser>
@@ -23,16 +24,13 @@
 #include "database/interface/IQuery.h"
 #include "database/interface/ITransaction.h"
 
-//#include "interface/constants/ProductConstant.h"
-
 #include "database/factory/Factory.h"
-//#include "inpx/constant.h"
-//#include "inpx/inpx.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/Fb2InpxParser.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/executor/ThreadPool.h"
+#include "util/language.h"
 #include "util/xml/Initializer.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
@@ -189,7 +187,7 @@ struct Book
 			.deleted   = l[8] == "1",
 			.ext       = std::move(l[9]),
 			.date      = std::move(l[10]),
-			.lang      = QString::fromStdWString(Inpx::Parser::GetLang(l[11].toLower().toStdWString())),
+			.lang      = QString::fromStdWString(GetLanguage(l[11].toLower().toStdWString())),
 			.rate      = l[12].toDouble(),
 			.rateCount = 1,
 			.keywords  = std::move(l[13]),
@@ -621,7 +619,7 @@ left join libfilename f on f.BookId=b.BookID
 							 .deleted   = deleted && *deleted != '0',
 							 .ext       = std::move(type),
 							 .date      = QString::fromUtf8(query->Get<const char*>(10), 10),
-							 .lang      = QString::fromStdWString(Inpx::Parser::GetLang(QString(query->Get<const char*>(11)).toLower().toStdWString())),
+							 .lang      = QString::fromStdWString(GetLanguage(QString(query->Get<const char*>(11)).toLower().toStdWString())),
 							 .rate      = query->Get<double>(12),
 							 .rateCount = query->Get<int>(13),
 							 .keywords  = query->Get<const char*>(14),
@@ -872,10 +870,10 @@ void CreateInpx(Settings& settings, InpData& inpData, FileToFolder& fileToFolder
 		return {};
 	}();
 
-	zipFileController->AddFile(STRUCTURE_INFO, "AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG;LIBRATE;KEYWORDS;YEAR;", QDateTime::currentDateTime());
-	zipFileController->AddFile(QString::fromStdWString(VERSION_INFO), maxTime.toString("yyyyMMdd").toUtf8(), QDateTime::currentDateTime());
+	zipFileController->AddFile(Inpx::STRUCTURE_INFO, "AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG;LIBRATE;KEYWORDS;YEAR;", QDateTime::currentDateTime());
+	zipFileController->AddFile(QString::fromStdWString(Inpx::VERSION_INFO), maxTime.toString("yyyyMMdd").toUtf8(), QDateTime::currentDateTime());
 	if (!collectionInfo.isEmpty())
-		zipFileController->AddFile(QString::fromStdWString(COLLECTION_INFO), collectionInfo.toUtf8(), QDateTime::currentDateTime());
+		zipFileController->AddFile(QString::fromStdWString(Inpx::COLLECTION_INFO), collectionInfo.toUtf8(), QDateTime::currentDateTime());
 
 	{
 		Zip inpx(QString::fromStdWString(inpxFileName), ZipDetails::Format::Zip);
@@ -908,7 +906,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 {
 	auto threadPool = std::make_unique<Util::ThreadPool>();
 
-	const auto                  reviewsFolder = settings.outputFolder / REVIEWS_FOLDER;
+	const auto                  reviewsFolder = settings.outputFolder / Inpx::REVIEWS_FOLDER;
 	[[maybe_unused]] const auto ok            = create_directory(reviewsFolder);
 	int                         currentMonth { -1 };
 
@@ -918,7 +916,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 	std::vector<std::tuple<QString, QByteArray>> archives;
 
 	threadPool->enqueue([&]() {
-		auto             archiveName = QString::fromStdWString(reviewsFolder / REVIEWS_ADDITIONAL_ARCHIVE_NAME);
+		auto             archiveName = QString::fromStdWString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 		const ScopedCall logGuard(
 			[&] {
 				PLOGI << archiveName << " started";
@@ -945,7 +943,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 			);
 			Zip  zip(buffer, Zip::Format::Zip);
 			auto zipFiles = Zip::CreateZipFileController();
-			zipFiles->AddFile(REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, std::move(additional));
+			zipFiles->AddFile(Inpx::REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, std::move(additional));
 			zip.Write(std::move(zipFiles));
 		}
 
@@ -984,9 +982,9 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 					text.prepend(' ');
 					text.append(' ');
 					array.append(QJsonObject {
-						{ Flibrary::Constant::NAME,              name.simplified() },
-						{ Flibrary::Constant::TIME,                           time },
-						{ Flibrary::Constant::TEXT, ReplaceTags(text).simplified() },
+						{ Inpx::NAME,              name.simplified() },
+						{ Inpx::TIME,                           time },
+						{ Inpx::TEXT, ReplaceTags(text).simplified() },
 					});
 				}
 				zipFiles->AddFile(value.first, QJsonDocument(array).toJson());
@@ -1185,11 +1183,11 @@ void ProcessCompilations(Settings& settings, const FileToFolder& fileToFolder)
 	}
 
 	PLOGI << "archive compilation info";
-	const auto contentsFile = settings.outputFolder / COMPILATIONS;
+	const auto contentsFile = settings.outputFolder / Inpx::COMPILATIONS;
 	remove(contentsFile);
 
 	auto zipFiles = Zip::CreateZipFileController();
-	zipFiles->AddFile(COMPILATIONS_JSON, QJsonDocument(compilations).toJson());
+	zipFiles->AddFile(Inpx::COMPILATIONS_JSON, QJsonDocument(compilations).toJson());
 
 	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
 	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
@@ -1355,7 +1353,7 @@ void CreateAuthorAnnotations(const Settings& settings, DB::IDatabase& db)
 {
 	PLOGI << "write author annotations";
 
-	const auto authorsFolder = settings.outputFolder / AUTHORS_FOLDER;
+	const auto authorsFolder = settings.outputFolder / Inpx::AUTHORS_FOLDER;
 	create_directory(authorsFolder);
 
 	const auto authorImagesFolder = authorsFolder / Global::PICTURES;
@@ -1411,14 +1409,16 @@ void ReadHash(Settings& settings, InpData& inpData)
 								 return !is_directory(item) && item.extension() == ".xml";
 							 }))
 	{
-		QFile stream(QString::fromStdWString(entry.path()));
+		const auto entryPath = QString::fromStdWString(entry.path());
+
+		QFile stream(entryPath);
 		if (!stream.open(QIODevice::ReadOnly))
 		{
-			PLOGW << "cannot read from " << entry.path();
+			PLOGW << "cannot read from " << entryPath;
 			continue;
 		}
 
-		PLOGI << "reading " << entry.path();
+		PLOGI << "reading " << entryPath;
 
 		HashParser parser(stream, [&](QString file, QString duplicate, QString id, Section::Ptr section) {
 			sections.try_emplace(file, std::make_pair(std::move(id), std::move(section)));

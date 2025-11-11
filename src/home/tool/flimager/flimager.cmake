@@ -9,7 +9,6 @@ AddTarget(flimager	app_console
 	LINK_TARGETS
 		fljxl
 		logging
-		logic
 		util
 		zip
 )
