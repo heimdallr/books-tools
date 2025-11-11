@@ -5,7 +5,6 @@
 #include <QString>
 
 #include "Constant.h"
-
 #include "zip.h"
 
 namespace HomeCompa::fb2cut
