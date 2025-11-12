@@ -235,11 +235,6 @@ int main(int argc, char* argv[])
 
 	DST_PATH = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
 
-	Log::LoggingInitializer                          logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << APP_ID << " started";
-
 	QCommandLineParser parser;
 	parser.setApplicationDescription(QString("%1 downloads files from Flibusta").arg(APP_ID));
 	parser.addHelpOption();
@@ -250,16 +245,27 @@ int main(int argc, char* argv[])
 	});
 	parser.addPositionalArgument("sql", "Download dump files");
 	parser.addPositionalArgument("zip", "Download book archives");
+
+	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
+	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
+
+	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
+
+	if (parser.positionalArguments().empty())
+		parser.showHelp(1);
 
 	if (parser.isSet(OUTPUT_FOLDER))
 		DST_PATH = parser.value(OUTPUT_FOLDER);
-	if (const QDir dir(DST_PATH); !dir.exists())
-		if (!dir.mkpath("."))
-		{
-			PLOGE << "Cannot create " << DST_PATH;
-			return 1;
-		}
+
+	if (const QDir dir(DST_PATH); !dir.exists() && !dir.mkpath("."))
+	{
+		PLOGE << "Cannot create " << DST_PATH;
+		parser.showHelp(1);
+	}
 
 	auto configFileName = QFileInfo(QString(argv[0])).dir().filePath("config.json");
 	if (parser.isSet(CONFIG))

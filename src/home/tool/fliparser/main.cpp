@@ -1494,9 +1494,6 @@ int main(int argc, char* argv[])
 {
 	const QCoreApplication app(argc, argv);
 
-	Log::LoggingInitializer                          logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	Util::XMLPlatformInitializer                     xmlPlatformInitializer;
 
 	Settings settings {};
@@ -1512,7 +1509,14 @@ int main(int argc, char* argv[])
 		{ { "i", COLLECTION_INFO_TEMPLATE },             "Collection info template",   PATH },
 		{							  HASH,						  "Hash folder", FOLDER },
 	});
+	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
+	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
+
+	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
 
 	settings.sqlFolder                  = parser.value(SQL).toStdWString();
 	settings.archivesFolder             = parser.value(ARCHIVES).toStdWString();

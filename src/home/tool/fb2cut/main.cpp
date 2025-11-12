@@ -1688,6 +1688,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.setApplicationDescription(QString("%1 extracts images from *.fb2").arg(APP_ID));
 	parser.addHelpOption();
 	parser.addVersionOption();
+	parser.addPositionalArgument("wildcard [wildcard [...]]", "Input archive files (required)");
 	parser.addOptions({
 		{ { "o", FOLDER }, "Output folder (required)", FOLDER },
 		{ { QString(QUALITY[0]), QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
@@ -1717,9 +1718,17 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 		{ NO_IMAGES_OPTION_NAME, "Don't save image" },
 		{ COVERS_ONLY_OPTION_NAME, "Save covers only" },
 	});
+
+	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
+	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	if (QCoreApplication::arguments().size() < 2)
+	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
+
+	if (parser.positionalArguments().isEmpty())
 		parser.showHelp(0);
 
 	settings.dstDir = parser.value(FOLDER);
@@ -1804,11 +1813,6 @@ bool run(int argc, char* argv[])
 
 int main(const int argc, char* argv[])
 {
-	Log::LoggingInitializer                          logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << QString("%1 started").arg(APP_ID);
-
 	try
 	{
 		if (run(argc, argv))
