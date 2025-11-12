@@ -19,7 +19,7 @@ mkdir %~dp0build\installer
 
 set /p SEVEN_ZIP_PATH=<%BUILD_DIR%\path\7z
 
-%SEVEN_ZIP_PATH%7z a %~dp0build\installer\tools_%PRODUCT_VERSION%.7z %~dp0build\%BUILD_TYPE%\bin\*
+%SEVEN_ZIP_PATH%7z a %~dp0build\installer\flitools_%PRODUCT_VERSION%.7z %~dp0build\%BUILD_TYPE%\bin\*
 
 goto End
 
