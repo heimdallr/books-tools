@@ -684,6 +684,22 @@ std::unique_ptr<DB::IDatabase> CreateDatabase(const Settings& settings)
 	return db;
 }
 
+void Write(const QString& fileName, const QByteArray& data)
+{
+	QFile output(fileName);
+	if (!output.open(QIODevice::WriteOnly))
+	{
+		PLOGE << "Cannot write to " << fileName;
+		return;
+	}
+
+	const auto written = output.write(data);
+	if (written == data.size())
+		PLOGV << QFileInfo(fileName).fileName() << ": " << written << " bytes written";
+	else
+		PLOGE << QFileInfo(fileName).fileName() << ": " << written << " bytes written of a " << data.size();
+}
+
 struct FileInfo
 {
 	QByteArray hash;
@@ -965,12 +981,13 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 		data          = {};
 
 		threadPool->enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(dataCopy)]() mutable {
+			size_t           counter = 0;
 			const ScopedCall logGuard(
 				[&] {
-					PLOGI << archiveName << " started";
+					PLOGI << archiveName << " started, books: " << data.size();
 				},
-				[=] {
-					PLOGI << archiveName << " finished";
+				[archiveName, &counter] {
+					PLOGI << archiveName << " finished, records: " << counter;
 				}
 			);
 
@@ -986,6 +1003,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(DB::IDatabase& db,
 						{ Inpx::TIME,                           time },
 						{ Inpx::TEXT, ReplaceTags(text).simplified() },
 					});
+					++counter;
 				}
 				zipFiles->AddFile(value.first, QJsonDocument(array).toJson());
 			});
@@ -1115,6 +1133,12 @@ void ProcessCompilations(Settings& settings, const FileToFolder& fileToFolder)
 		}
 	);
 
+	if (sectionToBook.empty())
+	{
+		PLOGI << "compilations not found";
+		return;
+	}
+
 	const auto enumerate =
 		[&](const QString& folder, const QString& file, const Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
 		for (const auto& [id, child] : parent.children)
@@ -1199,12 +1223,7 @@ void CreateReview(const Settings& settings, DB::IDatabase& db, const FileToFolde
 	PLOGI << "write reviews";
 
 	for (const auto& [fileName, data] : CreateReviewData(db, settings, fileToFolder))
-	{
-		if (QFile output(fileName); output.open(QIODevice::WriteOnly))
-			output.write(data);
-		else
-			PLOGE << "Cannot write to " << fileName;
-	}
+		Write(fileName, data);
 }
 
 std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData(DB::IDatabase& db, const std::filesystem::path& sqlPath)
@@ -1240,12 +1259,14 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 		data          = {};
 
 		threadPool->enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)]() mutable {
+			size_t pictureCount = 0;
+
 			const ScopedCall logGuard(
-				[=] {
-					PLOGI << "Authors pack " << currentId << " started";
+				[currentId, authorsCount = data.size()] {
+					PLOGI << "Authors pack " << currentId << " started, authors: " << authorsCount;
 				},
-				[=] {
-					PLOGI << "Authors pack " << currentId << " finished";
+				[currentId, &pictureCount] {
+					PLOGI << "Authors pack " << currentId << " finished, pictures: " << pictureCount;
 				}
 			);
 
@@ -1303,6 +1324,8 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 					}
 				}
 
+				pictureCount = zipFiles->GetCount();
+
 				QBuffer          buffer(&pictures);
 				const ScopedCall bufferGuard(
 					[&] {
@@ -1359,30 +1382,21 @@ void CreateAuthorAnnotations(const Settings& settings, DB::IDatabase& db)
 	const auto authorImagesFolder = authorsFolder / Global::PICTURES;
 	create_directory(authorImagesFolder);
 
+	const auto write = [](const std::filesystem::path& path, const int id, const QString& ext, const QByteArray& data) {
+		if (data.isEmpty())
+			return;
+
+		const auto archiveName = QString::fromStdWString(path / std::to_string(id)) + ext;
+		if (const auto archivePath = std::filesystem::path(archiveName.toStdWString()); exists(archivePath))
+			remove(archivePath);
+
+		Write(archiveName, data);
+	};
+
 	for (const auto& [id, annotation, images] : CreateAuthorAnnotationsData(db, settings.sqlFolder))
 	{
-		if (!annotation.isEmpty())
-		{
-			const auto archiveName = QString::fromStdWString(authorsFolder / std::to_string(id)) + ".7z";
-			if (const auto archivePath = std::filesystem::path(archiveName.toStdWString()); exists(archivePath))
-				remove(archivePath);
-
-			if (QFile output(archiveName); output.open(QIODevice::WriteOnly))
-				output.write(annotation);
-			else
-				PLOGE << "Cannot write to " << archiveName;
-		}
-		if (!images.isEmpty())
-		{
-			const auto archiveName = QString::fromStdWString(authorImagesFolder / std::to_string(id)) + ".zip";
-			if (const auto archivePath = std::filesystem::path(archiveName.toStdWString()); exists(archivePath))
-				remove(archivePath);
-
-			if (QFile output(archiveName); output.open(QIODevice::WriteOnly))
-				output.write(images);
-			else
-				PLOGE << "Cannot write to " << archiveName;
-		}
+		write(authorsFolder, id, ".7z", annotation);
+		write(authorImagesFolder, id, ".zip", images);
 	}
 }
 
@@ -1494,7 +1508,7 @@ int main(int argc, char* argv[])
 {
 	const QCoreApplication app(argc, argv);
 
-	Util::XMLPlatformInitializer                     xmlPlatformInitializer;
+	Util::XMLPlatformInitializer xmlPlatformInitializer;
 
 	Settings settings {};
 
