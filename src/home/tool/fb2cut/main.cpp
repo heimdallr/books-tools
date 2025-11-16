@@ -488,6 +488,9 @@ public:
 			}
 		}
 
+		if (!m_dup.empty() && !duplicates.exists())
+			duplicates.mkpath(".");
+
 		std::ranges::for_each(m_dup, [&](Dup& dup) {
 			[[maybe_unused]] const auto ok = QFile::rename(srcDir.filePath(dup.file.file), duplicates.filePath(dup.file.file));
 			assert(ok);
@@ -1723,10 +1726,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << QString("%1 started").arg(APP_ID);
+	settings.logFileName = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
 
 	if (parser.positionalArguments().isEmpty())
 		parser.showHelp(0);
@@ -1787,6 +1787,10 @@ bool run(int argc, char* argv[])
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
 
 	auto settings = ProcessCommandLine(app);
+	Log::LoggingInitializer                          logging(settings.logFileName.toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
 
 	{
 		std::ostringstream stream;

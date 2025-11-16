@@ -57,6 +57,7 @@ struct Settings
 	QString       archiverOptions;
 	int           totalFileCount { 0 };
 	Zip::Format   format { Zip::Format::SevenZip };
+	QString       logFileName;
 };
 
 } // namespace HomeCompa::fb2cut
