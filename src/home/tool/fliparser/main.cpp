@@ -1109,7 +1109,7 @@ void CreateBookList(const Settings& settings, const FileToFolder& fileToFolder)
 	});
 
 	PLOGI << "archive contents";
-	const auto contentsFile = settings.outputFolder / "contents.7z";
+	const auto contentsFile = settings.outputFolder / Inpx::CONTENTS;
 	remove(contentsFile);
 
 	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
