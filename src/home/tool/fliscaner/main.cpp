@@ -121,10 +121,13 @@ struct Task
 				KillMe(this_);
 			},
 			[this, file, pct = int64_t { 0 }](const int64_t bytesReceived, const int64_t bytesTotal, bool& /*stopped*/) mutable {
-				if (const auto currentPct = 100LL * bytesReceived / bytesTotal; currentPct != pct)
+				if (bytesTotal > 0)
 				{
-					pct = currentPct;
-					PLOGI << file << " " << bytesReceived << " (" << bytesTotal << ") " << pct << "%";
+					if (const auto currentPct = 100LL * bytesReceived / bytesTotal; currentPct != pct)
+					{
+						pct = currentPct;
+						PLOGI << file << " " << bytesReceived << " (" << bytesTotal << ") " << pct << "%";
+					}
 				}
 			}
 		);
