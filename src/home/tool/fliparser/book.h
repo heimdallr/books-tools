@@ -1,10 +1,11 @@
 ﻿#pragma once
 
+#include <QHash>
+
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
-#include <QHash>
 #include <QString>
 
 namespace HomeCompa::FliParser
@@ -15,7 +16,7 @@ struct Series
 	QString title;
 	QString serNo;
 	int     type { 0 };
-	int     level { 0 };
+	double  level { 0 };
 };
 
 struct Section

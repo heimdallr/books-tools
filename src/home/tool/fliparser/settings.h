@@ -1,15 +1,17 @@
 ﻿#pragma once
 
+#include <QHash>
+
 #include <filesystem>
 #include <unordered_map>
 
-#include <QHash>
 #include <QString>
 
 namespace HomeCompa::FliParser
 {
 
 struct Book;
+using FileToFolder = std::unordered_map<QString, QStringList>;
 
 struct Settings
 {
@@ -19,9 +21,13 @@ struct Settings
 	std::filesystem::path collectionInfoTemplateFile;
 	std::filesystem::path hashFolder;
 
+	QString library;
+
 	std::unordered_map<QString, Book*>   hashToBook;
 	std::unordered_map<QString, QString> fileToHash;
 	std::unordered_map<QString, QString> libIdToHash;
+
+	FileToFolder fileToFolder;
 
 	[[nodiscard]] Book* FromFile(const QString& file) const;
 	[[nodiscard]] Book* FromLibId(const QString& libId) const;
