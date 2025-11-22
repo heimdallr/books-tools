@@ -36,11 +36,14 @@
 #include "util/xml/XmlAttributes.h"
 
 #include "Constant.h"
+#include "book.h"
 #include "log.h"
+#include "settings.h"
 #include "zip.h"
 
 #include "config/version.h"
 
+using namespace HomeCompa::FliParser;
 using namespace HomeCompa;
 
 namespace
@@ -53,14 +56,6 @@ constexpr auto OUTPUT                   = "output";
 constexpr auto FOLDER                   = "folder";
 constexpr auto PATH                     = "path";
 constexpr auto HASH                     = "hash";
-
-struct Section
-{
-	Section* parent { nullptr };
-	size_t   count { 0 };
-	using Ptr = std::unique_ptr<Section>;
-	std::unordered_map<QString, Ptr> children;
-};
 
 class HashParser final : public Util::SaxParser
 {
@@ -137,148 +132,6 @@ private:
 	Section::Ptr m_section { std::make_unique<Section>() };
 	Section*     m_currentSection { m_section.get() };
 };
-
-struct Series
-
-{
-	QString title;
-	QString serNo;
-	int     type { 0 };
-	int     level { 0 };
-};
-
-struct Book
-{
-	QString             author;
-	QString             genre;
-	QString             title;
-	std::vector<Series> series;
-	QString             file;
-	QString             size;
-	QString             libId;
-	bool                deleted;
-	QString             ext;
-	QString             date;
-	QString             lang;
-	double              rate;
-	int                 rateCount;
-	QString             keywords;
-	QString             year;
-
-	QString      id;
-	Section::Ptr section;
-
-	static Book fromString(const QString& str)
-	{
-		if (str.isEmpty())
-			return {};
-
-		//"AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG;LIBRATE;KEYWORDS;YEAR;"
-		auto l = str.split('\04');
-		assert(l.size() == 15);
-		return Book {
-			.author    = std::move(l[0]),
-			.genre     = std::move(l[1]),
-			.title     = std::move(l[2]),
-			.series    = { { std::move(l[3]), std::move(l[4]) } },
-			.file      = std::move(l[5]),
-			.size      = std::move(l[6]),
-			.libId     = std::move(l[7]),
-			.deleted   = l[8] == "1",
-			.ext       = std::move(l[9]),
-			.date      = std::move(l[10]),
-			.lang      = QString::fromStdWString(GetLanguage(l[11].toLower().toStdWString())),
-			.rate      = l[12].toDouble(),
-			.rateCount = 1,
-			.keywords  = std::move(l[13]),
-			.year      = std::move(l[14]),
-		};
-	}
-};
-
-struct Settings
-{
-	std::filesystem::path sqlFolder;
-	std::filesystem::path archivesFolder;
-	std::filesystem::path outputFolder;
-	std::filesystem::path collectionInfoTemplateFile;
-	std::filesystem::path hashFolder;
-
-	std::unordered_map<QString, Book*>   hashToBook;
-	std::unordered_map<QString, QString> fileToHash;
-	std::unordered_map<QString, QString> libIdToHash;
-
-	[[nodiscard]] Book* FromFile(const QString& file) const
-	{
-		return From(fileToHash, file);
-	}
-
-	[[nodiscard]] Book* FromLibId(const QString& libId) const
-	{
-		return From(libIdToHash, libId);
-	}
-
-private:
-	[[nodiscard]] Book* From(const std::unordered_map<QString, QString>& map, const QString& id) const
-	{
-		const auto hashIt = map.find(id);
-		if (hashIt == map.end())
-			return nullptr;
-
-		const auto bookIt = hashToBook.find(hashIt->second);
-		if (bookIt == hashToBook.end())
-			return nullptr;
-
-		return bookIt->second;
-	}
-};
-
-QByteArray& operator<<(QByteArray& bytes, const Book& book)
-{
-	const auto rate      = std::llround(book.rate / book.rateCount);
-	const auto rateBytes = rate > 0 && rate <= 5 ? QString::number(rate).toUtf8() : QByteArray {};
-
-	for (const auto& [seriesTitle, serNo, type, level] : book.series)
-	{
-		QByteArray data;
-		data.append(book.author.toUtf8())
-			.append('\04')
-			.append(book.genre.toUtf8())
-			.append('\04')
-			.append(book.title.toUtf8())
-			.append('\04')
-			.append(seriesTitle.toUtf8())
-			.append('\04')
-			.append(serNo.toUtf8())
-			.append('\04')
-			.append(book.file.toUtf8())
-			.append('\04')
-			.append(book.size.toUtf8())
-			.append('\04')
-			.append(book.libId.toUtf8())
-			.append('\04')
-			.append(book.deleted ? "1" : "0")
-			.append('\04')
-			.append(book.ext.toUtf8())
-			.append('\04')
-			.append(book.date.toUtf8())
-			.append('\04')
-			.append(book.lang.toUtf8())
-			.append('\04')
-			.append(rateBytes)
-			.append('\04')
-			.append(book.keywords.toUtf8())
-			.append('\04')
-			.append(book.year.toUtf8())
-			.append('\04');
-		data.replace('\n', ' ');
-		data.replace('\r', "");
-		data.append("\x0d\x0a");
-
-		bytes.append(data);
-	}
-	return bytes;
-}
 
 using InpData      = std::unordered_map<QString, std::unique_ptr<Book>, Util::CaseInsensitiveHash<QString>>;
 using FileToFolder = std::unordered_map<QString, QStringList>;
