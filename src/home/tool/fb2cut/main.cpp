@@ -1109,7 +1109,7 @@ private:
 			for (auto& image : images)
 			{
 				assert(!image.body.isEmpty());
-				if (auto encoded = encode(m_settings.image, image.fileName, image.image, image.body); encoded.size() < image.body.size())
+				if (auto encoded = encode(m_settings.image, image.fileName, image.image, image.body); !encoded.isEmpty() && encoded.size() < image.body.size())
 					encodedImages.emplace(ImageItem { .fileName = image.fileName, .body = std::move(encoded), .dateTime = image.dateTime, .hash = image.hash });
 				else
 					encodedImages.emplace(ImageItem { .fileName = image.fileName, .body = image.body, .dateTime = image.dateTime, .hash = image.hash });
