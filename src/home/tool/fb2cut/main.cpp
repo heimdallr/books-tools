@@ -100,6 +100,7 @@ struct ImageItem
 	QByteArray body;
 	QDateTime  dateTime;
 	QString    hash;
+	QImage     image;
 
 	bool operator<(const ImageItem& rhs) const
 	{
@@ -208,6 +209,7 @@ struct UniqueFile
 	void ClearImages()
 	{
 		cover.body.clear();
+		cover.image = {};
 		decltype(images) tmp;
 		std::ranges::transform(images, std::inserter(tmp, tmp.end()), [](const auto& image) {
 			return ImageItem { .hash = image.hash };
@@ -375,14 +377,34 @@ public:
 	}
 
 public:
-	void Add(QString hash, UniqueFile file)
+	std::pair<ImageItem, std::set<ImageItem>> GetImages(UniqueFile& file)
+	{
+		std::lock_guard lock(m_guard);
+		return std::make_pair(file.cover, file.images);
+	}
+
+	void SetImages(const QString& hash, const QString& fileName, ImageItem cover, std::set<ImageItem> images)
+	{
+		std::lock_guard lock(m_guard);
+		for (auto [it, end] = m_new.equal_range(hash); it != end; ++it)
+		{
+			if (it->second.first.file == fileName)
+			{
+				it->second.first.cover = std::move(cover);
+				it->second.first.images = std::move(images);
+				return;
+			}
+		}
+	}
+
+	UniqueFile* Add(QString hash, UniqueFile file)
 	{
 		file.title.erase(m_si);
 
 		std::lock_guard lock(m_guard);
 
 		if (m_dstDir.isEmpty())
-			return (void)m_new.emplace(std::move(hash), std::make_pair(std::move(file), std::vector<UniqueFile> {}));
+			return &m_new.emplace(std::move(hash), std::make_pair(std::move(file), std::vector<UniqueFile> {}))->second.first;
 
 		const auto log = [&](const UniqueFile& old) {
 			PLOGV << QString("duplicates detected: %1/%2 vs %3/%4, %5").arg(file.folder, file.file, old.folder, old.file, file.GetTitle());
@@ -392,7 +414,7 @@ public:
 		{
 			PLOGV << QString("%1/%2 skipped by %3/%4, %5").arg(file.folder, file.file, it->second.first, it->second.second, file.GetTitle());
 			m_dup.emplace_back(std::move(hash), std::move(file), UniqueFile { .folder = it->second.first, .file = it->second.second }).file.ClearImages();
-			return;
+			return nullptr;
 		}
 
 		for (auto [it, end] = m_old.equal_range(hash); it != end; ++it)
@@ -409,7 +431,7 @@ public:
 
 			log(it->second);
 			m_dup.emplace_back(std::move(hash), std::move(file), it->second).file.ClearImages();
-			return;
+			return nullptr;
 		}
 
 		for (auto [it, end] = m_new.equal_range(hash); it != end; ++it)
@@ -423,15 +445,15 @@ public:
 			if (imagesCompareResult == UniqueFile::ImagesCompareResult::Outer || (imagesCompareResult == UniqueFile::ImagesCompareResult::Equal && it->second.first.order > file.order))
 			{
 				it->second.second.emplace_back(std::move(file)).ClearImages();
-				return;
+				return nullptr;
 			}
 
 			it->second.second.emplace_back(std::move(it->second.first)).ClearImages();
 			it->second.first = std::move(file);
-			return;
+			return &it->second.first;
 		}
 
-		m_new.emplace(std::move(hash), std::make_pair(std::move(file), std::vector<UniqueFile> {}));
+		return &m_new.emplace(std::move(hash), std::make_pair(std::move(file), std::vector<UniqueFile> {}))->second.first;
 	}
 
 	std::pair<ImageItems, ImageItems> GetNewImages()
@@ -1035,16 +1057,12 @@ private:
 			auto       imageFile = settings.fileNameGetter(completeFileName, isCover ? name : QString::number(num));
 			idToNum.try_emplace(std::move(name), num);
 
-			ImageItem imageItem { .fileName = std::move(imageFile), .body = body, .dateTime = dateTime, .hash = it->first };
+			ImageItem imageItem { .fileName = std::move(imageFile), .body = body, .dateTime = dateTime, .hash = it->first, .image = std::move(image) };
 
-			if (settings.save)
-			{
-				if (auto encoded = encode(settings, imageItem.fileName, image, imageItem.body); encoded.size() < imageItem.body.size())
-					imageItem.body = std::move(encoded);
-			}
-			else
+			if (!settings.save)
 			{
 				imageItem.body = {};
+				imageItem.image = {};
 			}
 
 			if (isCover)
@@ -1065,8 +1083,8 @@ private:
 
 		auto split = parseResult.title.split(' ', Qt::SkipEmptyParts);
 
-		m_uniqueFileStorage.Add(
-			std::move(hash),
+		auto* file = m_uniqueFileStorage.Add(
+			hash,
 			{
 				.title        = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
 				.folder       = m_folder,
@@ -1078,6 +1096,28 @@ private:
 				.order        = QFileInfo(inputFilePath).baseName().toInt(),
         }
 		);
+		if (!file)
+			return bodyOutput;
+
+		std::tie(cover, images) = m_uniqueFileStorage.GetImages(*file);
+		if (m_settings.cover.save && !cover.body.isEmpty())
+			if (auto encoded = encode(m_settings.cover, cover.fileName, cover.image, cover.body); encoded.size() < cover.body.size())
+				cover.body = std::move(encoded);
+
+		decltype(images) encodedImages;
+		if (m_settings.image.save)
+			for (auto& image : images)
+			{
+				assert(!image.body.isEmpty());
+				if (auto encoded = encode(m_settings.image, image.fileName, image.image, image.body); encoded.size() < image.body.size())
+					encodedImages.emplace(ImageItem { .fileName = image.fileName, .body = std::move(encoded), .dateTime = image.dateTime, .hash = image.hash });
+				else
+					encodedImages.emplace(ImageItem { .fileName = image.fileName, .body = image.body, .dateTime = image.dateTime, .hash = image.hash });
+			}
+
+		cover.image = {};
+
+		m_uniqueFileStorage.SetImages(hash, inputFilePath, std::move(cover), std::move(encodedImages));
 
 		return bodyOutput;
 	}
@@ -1786,7 +1826,7 @@ bool run(int argc, char* argv[])
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
 
-	auto settings = ProcessCommandLine(app);
+	auto                                             settings = ProcessCommandLine(app);
 	Log::LoggingInitializer                          logging(settings.logFileName.toStdWString());
 	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
