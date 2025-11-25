@@ -44,6 +44,7 @@ struct Book
 	int                 rateCount;
 	QString             keywords;
 	QString             year;
+	QString             sourceLib;
 
 	QString      id;
 	Section::Ptr section;

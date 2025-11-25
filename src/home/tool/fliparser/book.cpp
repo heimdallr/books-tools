@@ -74,6 +74,8 @@ QByteArray& operator<<(QByteArray& bytes, const Book& book)
 			.append(book.keywords.toUtf8())
 			.append('\04')
 			.append(book.year.toUtf8())
+			.append('\04')
+			.append(book.sourceLib.toUtf8())
 			.append('\04');
 		data.replace('\n', ' ');
 		data.replace('\r', "");

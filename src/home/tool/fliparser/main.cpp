@@ -6,6 +6,7 @@
 
 #include <QBuffer>
 #include <QCommandLineParser>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -250,7 +251,7 @@ Book* GetBook(Settings& settings, const QString& fileName, const InpData& inpDat
 	return settings.hashToBook.try_emplace(fileName, book).first->second;
 }
 
-void CreateInpx(Settings& settings, InpData& inpData)
+void CreateInpx(Settings& settings, InpData& inpData, const QString& sourceLib)
 {
 	const auto unIndexed = []() -> QJsonObject {
 		QFile                       file(":/data/unindexed.json");
@@ -302,6 +303,8 @@ void CreateInpx(Settings& settings, InpData& inpData)
 				if (const auto it = inpData.find(bookFile); it != inpData.end())
 					book->libId = it->second->libId;
 
+				book->sourceLib = sourceLib;
+
 				file << *book;
 
 				maxTime = std::max(maxTime, zip.GetFileTime(bookFile));
@@ -320,7 +323,7 @@ void CreateInpx(Settings& settings, InpData& inpData)
 		return {};
 	}();
 
-	zipFileController->AddFile(Inpx::STRUCTURE_INFO, "AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG;LIBRATE;KEYWORDS;YEAR;", QDateTime::currentDateTime());
+	zipFileController->AddFile(Inpx::STRUCTURE_INFO, "AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;LANG;LIBRATE;KEYWORDS;YEAR;SOURCELIB", QDateTime::currentDateTime());
 	zipFileController->AddFile(QString::fromStdWString(Inpx::VERSION_INFO), maxTime.toString("yyyyMMdd").toUtf8(), QDateTime::currentDateTime());
 	if (!collectionInfo.isEmpty())
 		zipFileController->AddFile(QString::fromStdWString(Inpx::COLLECTION_INFO), collectionInfo.toUtf8(), QDateTime::currentDateTime());
@@ -352,13 +355,13 @@ QByteArray CreateReviewAdditional(const Settings& settings)
 	return QJsonDocument(jsonObject).toJson();
 }
 
-std::vector<std::tuple<QString, QByteArray>> CreateReviewData(IDatabase& db, const Settings& settings)
+std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDatabase& db, const Settings& settings)
 {
 	auto threadPool = std::make_unique<Util::ThreadPool>();
 
-	const auto                  reviewsFolder = settings.outputFolder / Inpx::REVIEWS_FOLDER;
-	[[maybe_unused]] const auto ok            = create_directory(reviewsFolder);
-	int                         currentMonth { -1 };
+	const auto reviewsFolder = settings.outputFolder / Inpx::REVIEWS_FOLDER / db.GetName().toStdWString();
+	QDir(reviewsFolder).mkpath(".");
+	int currentMonth { -1 };
 
 	std::map<QString, std::vector<std::tuple<QString, QString, QString>>> data;
 
@@ -649,7 +652,7 @@ void ProcessCompilations(Settings& settings)
 	zip.Write(std::move(zipFiles));
 }
 
-void CreateReview(const Settings& settings, IDatabase& db)
+void CreateReview(const Settings& settings, const IDatabase& db)
 {
 	PLOGI << "write reviews";
 
@@ -881,7 +884,7 @@ int main(int argc, char* argv[])
 	auto       inpData = CreateInpData(*db);
 	ReadHash(settings, inpData);
 
-	CreateInpx(settings, inpData);
+	CreateInpx(settings, inpData, db->GetName());
 	ProcessCompilations(settings);
 	CreateBookList(settings);
 

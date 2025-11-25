@@ -333,6 +333,11 @@ order by n.nid
 class Database final : public IDatabase
 {
 private: // IDatabase
+	const QString& GetName() const noexcept override
+	{
+		return m_name;
+	}
+
 	DB::IDatabase& SetDatabase(std::unique_ptr<DB::IDatabase> db) noexcept override
 	{
 		m_db = std::move(db);
@@ -439,6 +444,7 @@ private:
 
 private:
 	std::unique_ptr<DB::IDatabase> m_db;
+	const QString                  m_name { "flibusta" };
 };
 
 } // namespace

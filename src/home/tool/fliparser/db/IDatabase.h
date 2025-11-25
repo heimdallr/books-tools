@@ -22,6 +22,8 @@ public:
 
 	virtual DB::IDatabase& SetDatabase(std::unique_ptr<DB::IDatabase>) noexcept = 0;
 
+	virtual const QString& GetName() const noexcept = 0;
+
 	virtual void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const                  = 0;
 	virtual void CreateTables(const std::function<void(std::string_view)>& functor) const                    = 0;
 	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const                   = 0;
