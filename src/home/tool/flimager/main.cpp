@@ -255,7 +255,7 @@ bool ProcessArchives(const Settings& settings)
 void GetArchives(Settings& settings, const QStringList& wildCards)
 {
 	for (const auto& wildCard : wildCards)
-		settings.inputFiles << Util::ResolveWildcard(wildCard);
+		std::ranges::move(Util::ResolveWildcard(wildCard), std::back_inserter(settings.inputFiles));
 
 	settings.inputDir = QDir::fromNativeSeparators(QFileInfo(settings.inputFiles.front()).dir().path() + QDir::separator());
 	for (const auto& inputFile : settings.inputFiles | std::views::drop(1))

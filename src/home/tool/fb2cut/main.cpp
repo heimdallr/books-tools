@@ -1639,7 +1639,7 @@ QStringList ProcessArchives(Settings& settings)
 
 	QStringList files;
 	for (const auto& wildCard : settings.inputWildcards)
-		files << Util::ResolveWildcard(wildCard);
+		std::ranges::move(Util::ResolveWildcard(wildCard), std::back_inserter(files));
 
 	std::multimap<int, QString> sorted;
 
