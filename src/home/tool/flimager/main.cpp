@@ -62,6 +62,7 @@ struct Settings
 	QSize       size { std::numeric_limits<int>::max(), std::numeric_limits<int>::max() };
 	size_t      maxThreadCount { static_cast<size_t>(std::thread::hardware_concurrency()) };
 	int         totalImageCount { 0 };
+	QString     logFileName;
 };
 
 QByteArray Encode(const QImage& image, const char* format, const int quality)
@@ -310,10 +311,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << QString("%1 started").arg(APP_ID);
+	settings.logFileName = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
 
 	bool ok = false;
 
@@ -371,7 +369,12 @@ bool run(int argc, char* argv[])
 	const QGuiApplication app(argc, argv); //-V821
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
-	return ProcessArchives(ProcessCommandLine(app));
+	const auto                                       settings = ProcessCommandLine(app);
+	Log::LoggingInitializer                          logging(settings.logFileName.toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
+	return ProcessArchives(settings);
 }
 
 } // namespace
