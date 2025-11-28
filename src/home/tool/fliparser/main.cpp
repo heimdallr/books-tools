@@ -205,7 +205,7 @@ Book* ParseBook(Settings& settings, const QString& fileName, InpData& inpData, c
 	const auto hash = GetFileHash(zip, fileName).hash;
 	PLOGV << "parse " << fileName << ", hash: " << hash;
 
-	auto parsedBook = Book::fromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, true));
+	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, true));
 	if (parsedBook.title.isEmpty())
 		return nullptr;
 

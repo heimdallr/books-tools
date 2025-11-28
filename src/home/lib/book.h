@@ -53,9 +53,9 @@ struct Book
 	QString      id;
 	Section::Ptr section;
 
-	LIB_EXPORT static Book fromString(const QString& str);
+	LIB_EXPORT static Book FromString(const QString& str);
 };
 
 LIB_EXPORT QByteArray& operator<<(QByteArray& bytes, const Book& book);
 
-} // namespace HomeCompa::FliParser
+} // namespace HomeCompa

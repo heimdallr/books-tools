@@ -224,7 +224,7 @@ QDateTime ProcessInpx(IZipFileController& zipFiles, const QString& inpxFilePath,
 		for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
 		{
 			++total;
-			const auto book = Book::fromString(QString::fromUtf8(byteArray));
+			const auto book = Book::FromString(QString::fromUtf8(byteArray));
 			if (replacement.contains(std::make_pair(QFileInfo(inpFileName).completeBaseName() + ".7z", book.file + '.' + book.ext)))
 				++counter;
 			else

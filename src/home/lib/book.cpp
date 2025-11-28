@@ -8,7 +8,7 @@
 
 using namespace HomeCompa;
 
-Book Book::fromString(const QString& str)
+Book Book::FromString(const QString& str)
 {
 	if (str.isEmpty())
 		return {};
