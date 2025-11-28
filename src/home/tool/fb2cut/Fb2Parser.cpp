@@ -16,6 +16,7 @@
 #include "fnd/IsOneOf.h"
 #include "fnd/algorithm.h"
 
+#include "lib/book.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
 #include "util/xml/XmlWriter.h"
@@ -360,39 +361,10 @@ private: // Util::SaxParser
 
 		m_writer.WriteCharacters(valueCopy);
 
-		valueCopy = valueCopy.toLower();
-		valueCopy.replace(QChar { 0x0451 }, QChar { 0x0435 });
-		valueCopy.replace(QChar { 0x0439 }, QChar { 0x0438 });
-		valueCopy.replace(QChar { 0x044A }, QChar { 0x044C });
+		PrepareTitle(valueCopy);
 
 		if (path == TITLE)
-		{
-			valueCopy.removeIf([](const QChar ch) {
-				return ch != ' ' && !IsOneOf(ch.category(), QChar::Number_DecimalDigit, QChar::Letter_Lowercase);
-			});
-
-			QStringList digits;
-			auto        split = valueCopy.split(' ');
-			for (auto& word : split)
-			{
-				QString digitsWord;
-				word.removeIf([&](const QChar ch) {
-					const auto c = ch.category();
-					if (c == QChar::Number_DecimalDigit)
-					{
-						digitsWord.append(ch);
-						return true;
-					}
-
-					return c != QChar::Letter_Lowercase;
-				});
-				if (!digitsWord.isEmpty())
-					digits << std::move(digitsWord);
-			}
-			std::ranges::move(std::move(digits), std::back_inserter(split));
-
-			return (m_title = split.join(' ')), true;
-		}
+			return (m_title = SimplifyTitle(valueCopy)), true;
 
 		if (path.startsWith(BODY, Qt::CaseInsensitive) && !path.contains(SUBTITLE))
 		{
