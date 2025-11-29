@@ -64,6 +64,10 @@ using UniquePaths = std::unordered_set<QString>;
 using InputDir    = std::pair<QDir, UniquePaths>;
 using InputDirs   = std::vector<InputDir>;
 
+using CompilationParts = std::vector<std::pair<BookItem, int>>;
+using Compilation      = std::pair<CompilationParts, bool>;
+using Compilations     = std::unordered_map<BookItem, Compilation, Util::PairHash<QString, QString>>;
+
 struct Settings
 {
 	QDir        outputDir;
@@ -250,7 +254,7 @@ void GetReplacement(const Archive& archive, UniqueFileStorage& uniqueFileStorage
 
 	HashParser::Parse(
 		file,
-		[&, idBook = 0LL](
+		[&](
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
@@ -340,7 +344,7 @@ using Contents     = std::unordered_map<QString /*lang*/, std::unordered_map<Boo
 
 void WriteContents(const QDir& outputDir, Contents& contents)
 {
-	PLOGI << "collect contents";
+	PLOGI << "merge contents";
 
 	const auto outputFilePath = outputDir.absoluteFilePath(QString::fromStdWString(Inpx::CONTENTS));
 	QFile::remove(outputFilePath);
@@ -531,7 +535,7 @@ void MergeReviews(const QDir& outputDir, const InputDirs& inputDirs, const Repla
 
 void MergeReviewsAdditional(const QDir& outputDir, const InputDirs& inputDirs, const Replacement& replacement)
 {
-	PLOGI << "process reviews additional";
+	PLOGI << "merge reviews additional";
 	const auto additionalFileName = QString::fromStdWString(Inpx::REVIEWS_FOLDER) + "/" + QString::fromStdWString(Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 	std::vector<std::pair<QString, std::reference_wrapper<const UniquePaths>>> reviewsAdditional;
 	for (const auto& [inputDir, inputPaths] : inputDirs)
@@ -581,6 +585,90 @@ void MergeReviewsAdditional(const QDir& outputDir, const InputDirs& inputDirs, c
 	Zip  zip(outputReviewsAdditionalFilePath, Zip::Format::Zip);
 	auto zipFiles = Zip::CreateZipFileController();
 	zipFiles->AddFile(Inpx::REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, QJsonDocument(additionalArray).toJson(), std::move(maxDateTime));
+	zip.Write(std::move(zipFiles));
+}
+
+void ParseCompilations(const QString& filePath, const UniquePaths& inputPaths, Compilations& compilations)
+{
+	PLOGI << "parsing " << filePath;
+	QJsonParseError error;
+	const auto      doc = QJsonDocument::fromJson(Zip(filePath).Read(Inpx::COMPILATIONS_JSON)->GetStream().readAll(), &error);
+	if (error.error != QJsonParseError::NoError || !doc.isArray())
+		throw std::ios_base::failure(std::format("bad json: {}/{}", filePath, Inpx::COMPILATIONS_JSON));
+
+	const auto getBookItem = [](const auto& obj) {
+		return BookItem { obj[Inpx::FOLDER].toString(), obj[Inpx::FILE].toString() };
+	};
+
+	std::ranges::transform(
+		doc.array() | std::views::transform([](const auto& value) {
+			return value.toObject();
+		}),
+		std::inserter(compilations, compilations.end()),
+		[&](const auto& obj) {
+			return std::make_pair(
+				getBookItem(obj),
+				Compilation { obj[Inpx::COMPILATION].toArray() | std::views::transform([](const auto& item) {
+								  return item.toObject();
+							  }) | std::views::transform([&](const auto& item) {
+								  return std::make_pair(getBookItem(item), item[Inpx::PART].toInt());
+							  }) | std::views::filter([&](const auto& item) {
+								  return inputPaths.contains(item.first.first);
+							  }) | std::ranges::to<CompilationParts>(),
+		                      obj[Inpx::COVERED].toBool() }
+			);
+		}
+	);
+}
+
+void MergeCompilations(const QDir& outputDir, const InputDirs& inputDirs, const Replacement& replacement)
+{
+	PLOGI << "merge compilations info";
+	const auto outputCompilationsFilePath = outputDir.absoluteFilePath(QString::fromStdWString(Inpx::COMPILATIONS));
+	QFile::remove(outputCompilationsFilePath);
+
+	Compilations compilations;
+	for (const auto& [inputDir, inputPaths] : inputDirs)
+		if (auto reviewsAdditionalFile = inputDir.absoluteFilePath(QString::fromStdWString(Inpx::COMPILATIONS)); QFile::exists(reviewsAdditionalFile))
+			ParseCompilations(reviewsAdditionalFile, inputPaths, compilations);
+
+	erase_if(compilations, [&](const auto item) {
+		return replacement.contains(item.first);
+	});
+
+	QJsonArray jsonCompilationsArray;
+
+	for (auto& [uid, compilation] : compilations)
+	{
+		CompilationParts compilationParts;
+		for (auto&& part : compilation.first)
+			if (const auto it = replacement.find(part.first); it != replacement.end())
+				compilationParts.emplace_back(it->second, part.second);
+			else
+				compilationParts.emplace_back(std::move(part));
+		compilation.first = std::move(compilationParts);
+
+		QJsonArray compilationArray;
+		for (const auto& [partUid, index] : compilation.first)
+			compilationArray.append(QJsonObject {
+				{   Inpx::PART,          index },
+				{ Inpx::FOLDER,  partUid.first },
+				{   Inpx::FILE, partUid.second },
+			});
+
+		jsonCompilationsArray.append(QJsonObject {
+			{      Inpx::FOLDER,                   uid.first },
+			{        Inpx::FILE,                  uid.second },
+			{ Inpx::COMPILATION, std::move(compilationArray) },
+			{     Inpx::COVERED,          compilation.second },
+		});
+	}
+
+	PLOGI << "write compilations info";
+	auto zipFiles = Zip::CreateZipFileController();
+	zipFiles->AddFile(Inpx::COMPILATIONS_JSON, QJsonDocument(jsonCompilationsArray).toJson());
+	Zip zip(outputCompilationsFilePath, Zip::Format::SevenZip);
+	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
 	zip.Write(std::move(zipFiles));
 }
 
@@ -689,6 +777,7 @@ void run(int argc, char* argv[])
 	GetReplacement(archives, uniqueFileStorage);
 
 	settings.outputDir.mkpath(QString::fromStdWString(Inpx::REVIEWS_FOLDER));
+	MergeCompilations(settings.outputDir, inputDirs, replacement);
 	MergeReviews(settings.outputDir, inputDirs, replacement);
 	MergeReviewsAdditional(settings.outputDir, inputDirs, replacement);
 
