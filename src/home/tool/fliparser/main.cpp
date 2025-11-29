@@ -350,10 +350,10 @@ QByteArray CreateReviewAdditional(const Settings& settings)
 							}))
 	{
 		jsonArray.append(QJsonObject {
-			{ "folder",                 book->folder },
-			{   "file", book->file + '.' + book->ext },
-			{    "sum",                   book->rate },
-			{  "count",              book->rateCount },
+			{ Inpx::FOLDER,                 book->folder },
+			{   Inpx::FILE, book->file + '.' + book->ext },
+			{    Inpx::SUM,                   book->rate },
+			{  Inpx::COUNT,              book->rateCount },
 		});
 	}
 
@@ -605,9 +605,9 @@ void ProcessCompilations(Settings& settings)
 					continue;
 
 				found.append(QJsonObject {
-					{   "part",                      std::ssize(idFound) },
-					{ "folder",                 folderIt->second.front() },
-					{   "file", it->second->file + '.' + it->second->ext },
+					{       "part",                      std::ssize(idFound) },
+					{ Inpx::FOLDER,                 folderIt->second.front() },
+					{   Inpx::FILE, it->second->file + '.' + it->second->ext },
 				});
 
 				idFound.emplace(id);
@@ -631,8 +631,8 @@ void ProcessCompilations(Settings& settings)
 		if (idFound.size() > 1)
 		{
 			QJsonObject compilation {
-				{      "folder",     folderIt->second.front() },
-				{        "file", book->file + '.' + book->ext },
+				{  Inpx::FOLDER,     folderIt->second.front() },
+				{    Inpx::FILE, book->file + '.' + book->ext },
 				{ "compilation",             std::move(found) },
 				{     "covered",           idNotFound.empty() },
 			};
