@@ -480,7 +480,7 @@ void MergeReviews(const QDir& outputDir, const InputDirs& inputDirs, const Repla
 			PLOGI << QString("process %1: %2 (%3) %4%").arg(fileName).arg(index).arg(reviews.size()).arg(static_cast<qsizetype>(index) * 100 / reviews.size());
 		});
 
-		std::unordered_map<QString, std::pair<std::vector<std::tuple<QString, QString, QString>>, QDateTime>> data;
+		std::unordered_map<QString, std::pair<std::unordered_set<std::tuple<QString, QString, QString>, Util::TupleHash<QString, QString, QString>>, QDateTime>> data;
 
 		const auto outputReviewFilePath = outputDir.absoluteFilePath(QString("%1/%2").arg(QString::fromStdWString(Inpx::REVIEWS_FOLDER), fileName));
 		QFile::remove(outputReviewFilePath);
@@ -506,7 +506,7 @@ void MergeReviews(const QDir& outputDir, const InputDirs& inputDirs, const Repla
 				for (const auto reviewValue : doc.array())
 				{
 					const auto reviewObj = reviewValue.toObject();
-					dstArray.first.emplace_back(reviewObj[Inpx::NAME].toString(), reviewObj[Inpx::TIME].toString(), reviewObj[Inpx::TEXT].toString());
+					dstArray.first.emplace(reviewObj[Inpx::NAME].toString(), reviewObj[Inpx::TIME].toString(), reviewObj[Inpx::TEXT].toString());
 				}
 				if (auto dateTime = zip.GetFileTime(reviewBookFile); !dstArray.second.isValid() || dateTime > dstArray.second)
 					dstArray.second = std::move(dateTime);
