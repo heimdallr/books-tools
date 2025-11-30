@@ -27,6 +27,9 @@
 #include "icu/icu.h"
 #include "jxl/jxl.h"
 #include "lib/UniqueFile.h"
+#include "lib/dump/Factory.h"
+#include "lib/dump/IDump.h"
+#include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/ISettings.h"
@@ -75,7 +78,7 @@ constexpr auto MIN_IMAGE_FILE_SIZE_OPTION_NAME = "min-image-file-size";
 constexpr auto FORMAT                          = "format";
 constexpr auto IMAGE_STATISTICS                = "image-statistics";
 constexpr auto HASH                            = "hash";
-constexpr auto SKIP                            = "skip";
+constexpr auto DUMP                            = "dump";
 
 constexpr auto QUALITY     = "quality [-1]";
 constexpr auto THREADS     = "threads [%1]";
@@ -1209,8 +1212,14 @@ QStringList ProcessArchives(Settings& settings)
 	const Decoder decoder;
 
 	UniqueFileStorage uniqueFileStorage(settings.needHash ? settings.dstDir.path() : QString {});
-	if (!settings.skipFileName.isEmpty())
-		uniqueFileStorage.Skip(settings.skipFileName);
+
+	std::unique_ptr<IDump> dump;
+	if (!settings.dumpPath.isEmpty())
+	{
+		if (!QFile::exists(settings.dumpPath))
+			throw std::invalid_argument(std::format("dump database file {} not found", settings.dumpPath));
+		dump = Dump::Create({}, settings.dumpPath.toStdWString());
+	}
 
 	std::atomic_int fileCount;
 	QStringList     failed;
@@ -1298,7 +1307,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 		{ FFMPEG_OPTION_NAME, "Path to ffmpeg executable", PATH },
 		{ IMAGE_STATISTICS, "Image statistics output path", PATH },
 		{ HASH, "Create hash files" },
-		{ SKIP, "Skip files list", PATH },
+		{ DUMP, "Dump database file", PATH },
 
 		{ { QString(GRAYSCALE_OPTION_NAME[0]), GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
 		{ COVER_GRAYSCALE_OPTION_NAME, "Convert covers to grayscale" },
@@ -1344,7 +1353,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	SetValue(parser, MIN_IMAGE_FILE_SIZE_OPTION_NAME, settings.minImageFileSize);
 
 	settings.imageStatistics = parser.value(IMAGE_STATISTICS);
-	settings.skipFileName    = parser.value(SKIP);
+	settings.dumpPath        = parser.value(DUMP);
 	if (parser.isSet(HASH))
 		settings.needHash = true;
 

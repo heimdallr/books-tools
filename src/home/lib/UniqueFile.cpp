@@ -198,39 +198,20 @@ class DuplicateObserverStub final : public UniqueFileStorage::IDuplicateObserver
 	}
 };
 
-QString createSi()
+enum class ImagesCompareResult
 {
-	QString result;
-	result.append(QChar { 0x0441 });
-	result.append(QChar { 0x0438 });
-	return result;
-}
+	Equal,
+	Inner,
+	Outer,
+	Varied,
+};
 
-} // namespace
-
-bool ImageItem::operator<(const ImageItem& rhs) const
-{
-	return hash < rhs.hash;
-}
-
-bool UniqueFile::operator<(const UniqueFile& rhs) const
-{
-	assert(uid.folder == rhs.uid.folder);
-	return order > rhs.order;
-}
-
-QString UniqueFile::GetTitle() const
-{
-	const QStringList list { title.cbegin(), title.cend() };
-	return list.join(' ');
-}
-
-UniqueFile::ImagesCompareResult UniqueFile::CompareImages(const UniqueFile& rhs) const
+[[nodiscard]] ImagesCompareResult CompareImages(const UniqueFile& lhs, const UniqueFile& rhs)
 {
 	auto result = ImagesCompareResult::Equal;
-	if (cover.hash != rhs.cover.hash)
+	if (lhs.cover.hash != rhs.cover.hash)
 	{
-		if (cover.hash.isEmpty())
+		if (lhs.cover.hash.isEmpty())
 			result = ImagesCompareResult::Inner;
 		else if (rhs.cover.hash.isEmpty())
 			result = ImagesCompareResult::Outer;
@@ -238,8 +219,8 @@ UniqueFile::ImagesCompareResult UniqueFile::CompareImages(const UniqueFile& rhs)
 			return ImagesCompareResult::Varied;
 	}
 
-	auto lIt = images.cbegin(), rIt = rhs.images.cbegin();
-	while (lIt != images.cend() && rIt != rhs.images.cend())
+	auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
+	while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
 	{
 		if (lIt->hash < rIt->hash)
 		{
@@ -267,7 +248,7 @@ UniqueFile::ImagesCompareResult UniqueFile::CompareImages(const UniqueFile& rhs)
 	if (result == ImagesCompareResult::Varied)
 		return result;
 
-	if (lIt != images.cend())
+	if (lIt != lhs.images.cend())
 		result = result == ImagesCompareResult::Inner ? ImagesCompareResult::Varied : ImagesCompareResult::Outer;
 
 	if (result == ImagesCompareResult::Varied)
@@ -279,14 +260,35 @@ UniqueFile::ImagesCompareResult UniqueFile::CompareImages(const UniqueFile& rhs)
 	if (result == ImagesCompareResult::Varied)
 		return result;
 
-	if ((!images.empty() && !rhs.images.empty()) || (!cover.hash.isEmpty() && cover.hash == rhs.cover.hash))
+	if ((!lhs.images.empty() && !rhs.images.empty()) || (!lhs.cover.hash.isEmpty() && lhs.cover.hash == rhs.cover.hash))
 		return result;
 
-	if (std::ranges::includes(title, rhs.title) || std::ranges::includes(rhs.title, title))
+	if (std::ranges::includes(lhs.title, rhs.title) || std::ranges::includes(rhs.title, lhs.title))
 		return result;
 
-	PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(uid.folder, uid.file, GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
+	PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(lhs.uid.folder, lhs.uid.file, lhs.GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
 	return ImagesCompareResult::Varied;
+}
+
+QString createSi()
+{
+	QString result;
+	result.append(QChar { 0x0441 });
+	result.append(QChar { 0x0438 });
+	return result;
+}
+
+} // namespace
+
+bool ImageItem::operator<(const ImageItem& rhs) const
+{
+	return hash < rhs.hash;
+}
+
+QString UniqueFile::GetTitle() const
+{
+	const QStringList list { title.cbegin(), title.cend() };
+	return list.join(' ');
 }
 
 void UniqueFile::ClearImages()
@@ -369,11 +371,6 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 {
 	file.title.erase(m_si);
 
-	if (hash == "a79ea481b290bd2022c6a8765a000f48")
-	{
-		PLOGI << "here";
-	}
-
 	std::lock_guard lock(m_guard);
 
 	if (m_dstDir.isEmpty())
@@ -399,11 +396,11 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 	for (auto [it, end] = m_old.equal_range(hash); it != end; ++it)
 	{
-		const auto imagesCompareResult = it->second.CompareImages(file);
-		if (imagesCompareResult == UniqueFile::ImagesCompareResult::Varied)
+		const auto imagesCompareResult = CompareImages(it->second, file);
+		if (imagesCompareResult == ImagesCompareResult::Varied)
 			continue;
 
-		if (imagesCompareResult == UniqueFile::ImagesCompareResult::Inner)
+		if (imagesCompareResult == ImagesCompareResult::Inner)
 		{
 			PLOGW << QString("old duplicate detected by %1/%2: %3/%4, %5").arg(file.uid.folder, file.uid.file, it->second.uid.folder, it->second.uid.file, file.GetTitle());
 			continue;
@@ -417,13 +414,13 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 	for (auto [it, end] = m_new.equal_range(hash); it != end; ++it)
 	{
-		const auto imagesCompareResult = it->second.first.CompareImages(file);
-		if (imagesCompareResult == UniqueFile::ImagesCompareResult::Varied)
+		const auto imagesCompareResult = CompareImages(it->second.first, file);
+		if (imagesCompareResult == ImagesCompareResult::Varied)
 			continue;
 
 		log(it->second.first);
 
-		if (imagesCompareResult == UniqueFile::ImagesCompareResult::Outer || (imagesCompareResult == UniqueFile::ImagesCompareResult::Equal && it->second.first.order > file.order))
+		if (imagesCompareResult == ImagesCompareResult::Outer || (imagesCompareResult == ImagesCompareResult::Equal && it->second.first.order > file.order))
 		{
 			m_duplicateObserver->OnDuplicateFound(it->second.first.uid, file.uid);
 			it->second.second.emplace_back(std::move(file)).ClearImages();
@@ -506,25 +503,6 @@ void UniqueFileStorage::Save(const QString& folder, const bool moveDuplicates)
 
 	m_new.clear();
 	m_dup.clear();
-}
-
-void UniqueFileStorage::Skip(const QString& fileName)
-{
-	assert(!fileName.isEmpty());
-	QFile stream(fileName);
-	if (!stream.open(QIODevice::ReadOnly))
-	{
-		PLOGE << "cannot read " << fileName;
-		return;
-	}
-
-	QTextStream textStream(&stream);
-	while (!textStream.atEnd())
-	{
-		QString folder, file, duplicatesFolder, duplicatesFile;
-		textStream >> folder >> file >> duplicatesFolder >> duplicatesFile;
-		m_skip.try_emplace(std::make_pair(std::move(folder), std::move(file)), std::make_pair(std::move(duplicatesFolder), std::move(duplicatesFile)));
-	}
 }
 
 void UniqueFileStorage::SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver)

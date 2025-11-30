@@ -28,14 +28,6 @@ using ImageItems = std::vector<ImageItem>;
 
 struct LIB_EXPORT UniqueFile
 {
-	enum class ImagesCompareResult
-	{
-		Equal,
-		Inner,
-		Outer,
-		Varied,
-	};
-
 	struct Uid
 	{
 		QString folder;
@@ -51,10 +43,8 @@ struct LIB_EXPORT UniqueFile
 
 	int order { 0 };
 
-	bool                              operator<(const UniqueFile& rhs) const;
-	QString                           GetTitle() const;
-	[[nodiscard]] ImagesCompareResult CompareImages(const UniqueFile& rhs) const;
-	void                              ClearImages();
+	QString GetTitle() const;
+	void    ClearImages();
 };
 
 class LIB_EXPORT UniqueFileStorage
@@ -83,7 +73,6 @@ public:
 	UniqueFile*                               Add(QString hash, UniqueFile file);
 	std::pair<ImageItems, ImageItems>         GetNewImages();
 	void                                      Save(const QString& folder, bool moveDuplicates);
-	void                                      Skip(const QString& fileName);
 	void                                      SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
 
 private:
@@ -120,4 +109,4 @@ struct HashParser
 	LIB_EXPORT static void Parse(QIODevice& input, Callback callback);
 };
 
-} // namespace HomeCompa
+} // namespace HomeCompa::FliLib
