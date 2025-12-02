@@ -2,28 +2,16 @@
 
 #include <set>
 
-#include <QDateTime>
-#include <QImage>
-#include <QStringList>
-
+#include "fnd/NonCopyMovable.h"
 #include "fnd/algorithm.h"
+
+#include "ImageItem.h"
+#include "util.h"
 
 #include "export/lib.h"
 
 namespace HomeCompa::FliLib
 {
-
-struct LIB_EXPORT ImageItem
-{
-	QString    fileName;
-	QByteArray body;
-	QDateTime  dateTime;
-	QString    hash;
-
-	bool operator<(const ImageItem& rhs) const;
-};
-
-using ImageItems = std::vector<ImageItem>;
 
 struct LIB_EXPORT UniqueFile
 {
@@ -46,7 +34,51 @@ struct LIB_EXPORT UniqueFile
 	void    ClearImages();
 };
 
-class LIB_EXPORT UniqueFileStorage
+struct HashParser
+{
+#define HASH_PARSER_CALLBACK_ITEMS_X_MACRO \
+	HASH_PARSER_CALLBACK_ITEM(id)          \
+	HASH_PARSER_CALLBACK_ITEM(folder)      \
+	HASH_PARSER_CALLBACK_ITEM(file)        \
+	HASH_PARSER_CALLBACK_ITEM(title)
+
+	class IObserver // NOLINT(cppcoreguidelines-special-member-functions)
+	{
+	public:
+		virtual ~IObserver()                                  = default;
+		virtual void OnParseStarted(const QString& sourceLib) = 0;
+		virtual void OnBookParsed(
+#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
+			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+#undef HASH_PARSER_CALLBACK_ITEM
+				QString cover,
+			QStringList images
+		) = 0;
+	};
+
+	LIB_EXPORT static void Parse(QIODevice& input, IObserver& observer);
+};
+
+class LIB_EXPORT InpDataProvider
+{
+	NON_COPY_MOVABLE(InpDataProvider)
+public:
+	explicit InpDataProvider(const QString& dumpWildCards = {});
+	~InpDataProvider();
+
+public:
+	const InpData& GetInpData() const noexcept;
+	void           SetSourceLib(const QString& sourceLib);
+
+private:
+	const InpData  m_stub;
+	const InpData* m_currentInpData { &m_stub };
+
+	std::vector<std::pair<QString, std::unique_ptr<IDump>>> m_dumps;
+	std::vector<std::pair<QString, InpData>>                m_cache;
+};
+
+class LIB_EXPORT UniqueFileStorage final : HashParser::IObserver
 {
 	struct Dup
 	{
@@ -69,10 +101,11 @@ public:
 		virtual ~IUniqueFileConflictResolver() = default;
 
 		virtual bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const = 0;
+		virtual void SetSourceLib(const QString& sourceLib)                             = 0;
 	};
 
 public:
-	explicit UniqueFileStorage(QString dstDir);
+	explicit UniqueFileStorage(QString dstDir, std::shared_ptr<InpDataProvider> inpDataProvider = std::make_shared<InpDataProvider>());
 
 public:
 	std::pair<ImageItem, std::set<ImageItem>> GetImages(UniqueFile& file);
@@ -81,13 +114,24 @@ public:
 	std::pair<ImageItems, ImageItems>         GetNewImages();
 	void                                      Save(const QString& folder, bool moveDuplicates);
 	void                                      SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
-	void                                      SetConflictResolver(std::unique_ptr<const IUniqueFileConflictResolver> conflictResolver);
+	void                                      SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
 
 private:
-	const QString                                      m_hashDir;
-	std::mutex                                         m_guard;
-	std::unique_ptr<IDuplicateObserver>                m_duplicateObserver;
-	std::unique_ptr<const IUniqueFileConflictResolver> m_conflictResolver;
+	void OnParseStarted(const QString& sourceLib) override;
+	void OnBookParsed(
+#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
+		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+#undef HASH_PARSER_CALLBACK_ITEM
+			QString cover,
+		QStringList images
+	) override;
+
+private:
+	const QString                                m_hashDir;
+	std::mutex                                   m_guard;
+	std::shared_ptr<InpDataProvider>             m_inpDataProvider;
+	std::unique_ptr<IDuplicateObserver>          m_duplicateObserver;
+	std::shared_ptr<IUniqueFileConflictResolver> m_conflictResolver;
 
 	std::unordered_multimap<QString, UniqueFile> m_old;
 	std::vector<Dup>                             m_dup;
@@ -97,25 +141,6 @@ private:
 	std::unordered_multimap<QString, std::pair<UniqueFile, std::vector<UniqueFile>>> m_new;
 
 	const QString m_si;
-};
-
-struct HashParser
-{
-#define HASH_PARSER_CALLBACK_ITEMS_X_MACRO \
-	HASH_PARSER_CALLBACK_ITEM(id)          \
-	HASH_PARSER_CALLBACK_ITEM(folder)      \
-	HASH_PARSER_CALLBACK_ITEM(file)        \
-	HASH_PARSER_CALLBACK_ITEM(title)
-
-	using Callback = std::function<void(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-			QString cover,
-		QStringList images
-	)>;
-
-	LIB_EXPORT static void Parse(QIODevice& input, Callback callback);
 };
 
 } // namespace HomeCompa::FliLib

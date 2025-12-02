@@ -2,7 +2,6 @@
 
 #include <queue>
 #include <ranges>
-#include <set>
 
 #include <QBuffer>
 #include <QCommandLineParser>
@@ -26,7 +25,7 @@
 
 #include "icu/icu.h"
 #include "jxl/jxl.h"
-#include "lib/UniqueFile.h"
+#include "lib/ImageItem.h"
 #include "lib/book.h"
 #include "lib/dump/Factory.h"
 #include "lib/util.h"
@@ -116,29 +115,6 @@ struct ImageStatisticsItem
 	int         height { 0 };
 	PixelSchema schema { PixelSchema::Unknown };
 	QString     hash;
-};
-
-class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileConflictResolver
-{
-public:
-	explicit UniqueFileConflictResolver(const InpData& inpData)
-		: m_inpData { inpData }
-	{
-	}
-
-private: // UniqueFileStorage::IUniqueFileConflictResolver
-	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
-	{
-		const auto isDeleted = [this](const UniqueFile& item) {
-			const auto it = m_inpData.find(item.uid.file);
-			return it == m_inpData.end() || it->second->deleted;
-		};
-
-		return isDeleted(duplicate) && !isDeleted(file);
-	}
-
-private:
-	const InpData& m_inpData;
 };
 
 using ImageStatistics = std::vector<ImageStatisticsItem>;

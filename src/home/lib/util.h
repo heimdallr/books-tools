@@ -20,7 +20,7 @@ namespace HomeCompa::FliLib
 class IDump;
 struct Book;
 
-using InpData = std::unordered_map<QString, std::unique_ptr<Book>, Util::CaseInsensitiveHash<QString>>;
+using InpData = std::unordered_map<QString, std::shared_ptr<Book>, Util::CaseInsensitiveHash<QString>>;
 
 LIB_EXPORT void     Write(const QString& fileName, const QByteArray& data);
 LIB_EXPORT QString& ReplaceTags(QString& str);

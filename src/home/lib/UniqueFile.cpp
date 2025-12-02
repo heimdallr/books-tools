@@ -5,6 +5,10 @@
 #include <QDir>
 #include <QFile>
 
+#include "book.h"
+#include "dump/Factory.h"
+#include "dump/IDump.h"
+#include "util/files.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
 #include "util/xml/XmlWriter.h"
@@ -20,15 +24,16 @@ namespace
 
 class HashParserImpl final : public Util::SaxParser
 {
-	static constexpr auto BOOK       = "books/book";
-	static constexpr auto COVER      = "books/book/cover";
-	static constexpr auto IMAGE      = "books/book/image";
-	static constexpr auto DUPLICATES = "books/book/duplicates";
+	static constexpr auto BOOKS  = "books";
+	static constexpr auto BOOK   = "books/book";
+	static constexpr auto COVER  = "books/book/cover";
+	static constexpr auto IMAGE  = "books/book/image";
+	static constexpr auto ORIGIN = "books/book/origin";
 
 public:
-	HashParserImpl(QIODevice& input, HashParser::Callback callback)
+	HashParserImpl(QIODevice& input, HashParser::IObserver& observer)
 		: SaxParser(input, 512)
-		, m_callback { std::move(callback) }
+		, m_observer { observer }
 	{
 		Parse();
 	}
@@ -36,13 +41,17 @@ public:
 private: // Util::SaxParser
 	bool OnStartElement(const QString& /*name*/, const QString& path, const Util::XmlAttributes& attributes) override
 	{
+		if (path == BOOKS)
+		{
+			m_observer.OnParseStarted(attributes.GetAttribute("source"));
+		}
 		if (path == BOOK)
 		{
 #define HASH_PARSER_CALLBACK_ITEM(NAME) m_##NAME = attributes.GetAttribute(#NAME);
 			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 		}
-		else if (path == DUPLICATES)
+		else if (path == ORIGIN)
 		{
 #define HASH_PARSER_CALLBACK_ITEM(NAME) m_##NAME.clear();
 			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
@@ -59,7 +68,7 @@ private: // Util::SaxParser
 		if (path == BOOK)
 		{
 			if (!m_id.isEmpty())
-				m_callback(
+				m_observer.OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) std::move(m_##NAME),
 					HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
@@ -88,7 +97,7 @@ private: // Util::SaxParser
 	}
 
 private:
-	HashParser::Callback m_callback;
+	HashParser::IObserver& m_observer;
 #define HASH_PARSER_CALLBACK_ITEM(NAME) QString m_##NAME;
 	HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
@@ -171,6 +180,10 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
 		return file.order > duplicate.order;
+	}
+
+	void SetSourceLib(const QString&) override
+	{
 	}
 };
 
@@ -256,11 +269,6 @@ QString createSi()
 
 } // namespace
 
-bool ImageItem::operator<(const ImageItem& rhs) const
-{
-	return hash < rhs.hash;
-}
-
 QString UniqueFile::GetTitle() const
 {
 	const QStringList list { title.cbegin(), title.cend() };
@@ -277,8 +285,59 @@ void UniqueFile::ClearImages()
 	images = std::move(tmp);
 }
 
-UniqueFileStorage::UniqueFileStorage(QString dstDir)
+InpDataProvider::InpDataProvider(const QString& dumpWildCards)
+{
+	for (const auto& wildCard : dumpWildCards.split(';', Qt::SkipEmptyParts))
+		for (const auto& dumpPath : Util::ResolveWildcard(wildCard))
+		{
+			auto        dump = Dump::Create({}, dumpPath.toStdWString());
+			const auto& ref  = *dump;
+			m_dumps.emplace_back(ref.GetName(), std::move(dump));
+		}
+}
+
+InpDataProvider::~InpDataProvider() = default;
+
+const InpData& InpDataProvider::GetInpData() const noexcept
+{
+	return *m_currentInpData;
+}
+
+void InpDataProvider::SetSourceLib(const QString& sourceLib)
+{
+	if (const auto it = std::ranges::find_if(
+			m_cache,
+			[&](const auto& item) {
+				return item.first.compare(sourceLib, Qt::CaseInsensitive) == 0;
+			}
+		);
+	    it != m_cache.end())
+	{
+		m_currentInpData = &it->second;
+		return;
+	}
+
+	if (const auto it = std::ranges::find_if(
+			m_dumps,
+			[&](const auto& item) {
+				return item.first.compare(sourceLib, Qt::CaseInsensitive) == 0;
+			}
+		);
+	    it != m_dumps.end())
+	{
+		assert(it->second);
+		auto& inpData    = m_cache.emplace_back(sourceLib, CreateInpData(*it->second)).second;
+		m_currentInpData = &inpData;
+		it->second.reset();
+		return;
+	}
+
+	m_currentInpData = &m_stub;
+}
+
+UniqueFileStorage::UniqueFileStorage(QString dstDir, std::shared_ptr<InpDataProvider> inpDataProvider)
 	: m_hashDir { std::move(dstDir) }
+	, m_inpDataProvider { std::move(inpDataProvider) }
 	, m_duplicateObserver { std::make_unique<DuplicateObserverStub>() }
 	, m_conflictResolver { std::make_unique<UniqueFileConflictResolver>() }
 	, m_si { createSi() }
@@ -294,31 +353,7 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir)
 		if (!file.open(QIODevice::ReadOnly))
 			continue;
 
-		HashParser::Parse(
-			file,
-			[this](
-#define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
-				HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-					QString cover,
-				QStringList images
-			) {
-				decltype(UniqueFile::images) imageItems;
-				std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
-					return ImageItem { .hash = std::move(hash) };
-				});
-				auto       split = title.split(' ', Qt::SkipEmptyParts);
-				UniqueFile uniqueFile {
-					.uid      = { .folder = std::move(folder), .file = std::move(file) },
-					.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
-					.hashText = id,
-					.cover    = { .hash = std::move(cover) },
-					.images   = std::move(imageItems),
-				};
-				uniqueFile.order = QFileInfo(uniqueFile.uid.file).baseName().toInt();
-				m_old.emplace(std::move(id), std::move(uniqueFile));
-			}
-		);
+		HashParser::Parse(file, *this);
 	}
 
 	PLOGI << "ready books found: " << m_old.size();
@@ -383,7 +418,9 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 		log(it->second.first);
 
-		if (imagesCompareResult == ImagesCompareResult::Outer || (imagesCompareResult == ImagesCompareResult::Equal && !m_conflictResolver->Resolve(file, it->second.first)))
+		if (imagesCompareResult == ImagesCompareResult::Outer
+		    || (imagesCompareResult == ImagesCompareResult::Equal
+		        && (m_conflictResolver->Resolve(it->second.first, file) || (!m_conflictResolver->Resolve(file, it->second.first) && it->second.first.order > file.order))))
 		{
 			m_duplicateObserver->OnDuplicateFound(it->second.first.uid, file.uid);
 			it->second.second.emplace_back(std::move(file)).ClearImages();
@@ -473,12 +510,49 @@ void UniqueFileStorage::SetDuplicateObserver(std::unique_ptr<IDuplicateObserver>
 	m_duplicateObserver = std::move(duplicateObserver);
 }
 
-void UniqueFileStorage::SetConflictResolver(std::unique_ptr<const IUniqueFileConflictResolver> conflictResolver)
+void UniqueFileStorage::SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver)
 {
 	m_conflictResolver = std::move(conflictResolver);
 }
 
-void HashParser::Parse(QIODevice& input, Callback callback)
+void UniqueFileStorage::OnParseStarted(const QString& sourceLib)
 {
-	[[maybe_unused]] const HashParserImpl parser(input, std::move(callback));
+	m_conflictResolver->SetSourceLib(sourceLib);
+	m_inpDataProvider->SetSourceLib(sourceLib);
+}
+
+void UniqueFileStorage::OnBookParsed(
+#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
+	HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+#undef HASH_PARSER_CALLBACK_ITEM
+		QString cover,
+	QStringList images
+)
+{
+	decltype(UniqueFile::images) imageItems;
+	std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
+		return ImageItem { .hash = std::move(hash) };
+	});
+	const auto& inpData = m_inpDataProvider->GetInpData();
+	if (const auto it = inpData.find(file); it != inpData.end())
+	{
+		auto dumpTitle = it->second->title;
+		title          = SimplifyTitle(PrepareTitle(dumpTitle));
+	}
+	auto split = title.split(' ', Qt::SkipEmptyParts);
+
+	UniqueFile uniqueFile {
+		.uid      = { .folder = std::move(folder), .file = std::move(file) },
+		.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
+		.hashText = id,
+		.cover    = { .hash = std::move(cover) },
+		.images   = std::move(imageItems),
+	};
+	uniqueFile.order = QFileInfo(uniqueFile.uid.file).baseName().toInt();
+	m_old.emplace(std::move(id), std::move(uniqueFile));
+}
+
+void HashParser::Parse(QIODevice& input, IObserver& observer)
+{
+	[[maybe_unused]] const HashParserImpl parser(input, observer);
 }

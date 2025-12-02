@@ -13,14 +13,18 @@
 
 #include "fnd/ScopedCall.h"
 
+#include "impl/FileItem.h"
 #include "lib/UniqueFile.h"
 #include "lib/book.h"
+#include "lib/dump/Factory.h"
+#include "lib/dump/IDump.h"
 #include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/BookUtil.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/files.h"
+#include "util/progress.h"
 #include "util/xml/Initializer.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
@@ -40,9 +44,9 @@ namespace
 constexpr auto APP_ID = "flimerger";
 
 constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
-constexpr auto COLLECTION_INFO_TEMPLATE     = "collection-info-template";
 constexpr auto FOLDER                       = "folder";
-constexpr auto PATH                         = "path";
+constexpr auto DUMP                         = "dump";
+constexpr auto HASH                         = "hash";
 
 struct Archive
 {
@@ -53,26 +57,53 @@ struct Archive
 using Archives    = std::vector<Archive>;
 using BookItem    = std::pair<QString, QString>;
 using Replacement = std::unordered_map<BookItem, BookItem, Util::PairHash<QString, QString>>;
-using UniquePaths = std::unordered_set<QString>;
-using InputDir    = std::pair<QDir, UniquePaths>;
-using InputDirs   = std::vector<InputDir>;
 
 struct Settings
 {
 	QDir        outputDir;
 	QStringList arguments;
-	QString     collectionInfoTemplateFile;
 	QString     logFileName;
+	QString     dumpWildCards;
+};
+
+class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileConflictResolver
+{
+public:
+	explicit UniqueFileConflictResolver(std::shared_ptr<InpDataProvider> inpDataProvider)
+		: m_inpDataProvider { std::move(inpDataProvider) }
+	{
+	}
+
+private: // UniqueFileStorage::IUniqueFileConflictResolver
+	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
+	{
+		const auto& inpData   = m_inpDataProvider->GetInpData();
+		const auto  isDeleted = [&](const UniqueFile& item) {
+            const auto it = inpData.find(item.uid.file);
+            return it == inpData.end() || it->second->deleted;
+		};
+
+		return isDeleted(duplicate) && !isDeleted(file);
+	}
+
+	void SetSourceLib(const QString& sourceLib) override
+	{
+		m_inpDataProvider->SetSourceLib(sourceLib);
+	}
+
+private:
+	std::shared_ptr<InpDataProvider> m_inpDataProvider;
 };
 
 class HashCopier final : public Util::SaxParser
 {
+	static constexpr auto BOOK = "books/book";
+
 public:
-	HashCopier(QIODevice& input, QIODevice& output, QString folder, const Replacement& replacement)
+	HashCopier(QIODevice& input, QIODevice& output, const Replacement& replacement)
 		: SaxParser(input, 512)
 		, m_replacement { replacement }
 		, m_writer { output }
-		, m_folder { std::move(folder) }
 	{
 		Parse();
 	}
@@ -80,8 +111,9 @@ public:
 private:
 	bool OnStartElement(const QString& name, const QString& path, const Util::XmlAttributes& attributes) override
 	{
-		if (path == "books/book")
-			m_file = attributes.GetAttribute("file");
+		if (path == BOOK)
+			if (const auto it = m_replacement.find(BookItem { attributes.GetAttribute(Inpx::FOLDER), attributes.GetAttribute(Inpx::FILE) }); it != m_replacement.end())
+				m_origin = it->second;
 
 		m_writer.WriteStartElement(name, attributes);
 		return true;
@@ -89,15 +121,11 @@ private:
 
 	bool OnEndElement(const QString& /*name*/, const QString& path) override
 	{
-		if (path == "books/book")
+		if (path == BOOK && m_origin)
 		{
-			if (const auto it = m_replacement.find(std::make_pair(m_folder, m_file)); it != m_replacement.end())
-			{
-				auto duplicates = m_writer.Guard("duplicates");
-				duplicates->WriteAttribute(Inpx::FOLDER, QFileInfo(it->second.first).completeBaseName());
-				duplicates->WriteAttribute(Inpx::FILE, it->second.second);
-			}
-			m_file.clear();
+			const auto originGuard = m_writer.Guard("origin");
+			originGuard->WriteAttribute(Inpx::FOLDER, m_origin->first).WriteAttribute(Inpx::FILE, m_origin->second);
+			m_origin.reset();
 		}
 
 		m_writer.WriteEndElement();
@@ -111,10 +139,9 @@ private:
 	}
 
 private:
-	const Replacement& m_replacement;
-	Util::XmlWriter    m_writer;
-	const QString      m_folder;
-	QString            m_file;
+	const Replacement&      m_replacement;
+	Util::XmlWriter         m_writer;
+	std::optional<BookItem> m_origin;
 };
 
 class DuplicateObserver final : public UniqueFileStorage::IDuplicateObserver
@@ -196,20 +223,20 @@ void MergeArchives(const QDir& outputDir, const Archives& archives, const Replac
 void ProcessHash(const QDir& outputDir, const Archive& archive, const Replacement& replacement)
 {
 	PLOGI << "parsing " << archive.hashPath;
-	outputDir.mkpath("hash");
+	outputDir.mkpath(HASH);
 	QFileInfo fileInfo(archive.hashPath);
 
 	QFile input(archive.hashPath);
 	if (!input.open(QIODevice::ReadOnly))
 		throw std::ios_base::failure(std::format("Cannot read from {}", archive.hashPath));
 
-	const auto outputFilePath = outputDir.filePath(QString("hash/%1").arg(fileInfo.fileName()));
+	const auto outputFilePath = outputDir.filePath(QString("%1/%2").arg(HASH, fileInfo.fileName()));
 
 	QFile output(outputFilePath);
 	if (!output.open(QIODevice::WriteOnly))
 		throw std::ios_base::failure(std::format("Cannot write to", outputFilePath));
 
-	HashCopier parser(input, output, QFileInfo(archive.filePath).fileName(), replacement);
+	[[maybe_unused]] const HashCopier parser(input, output, replacement);
 }
 
 void MergeHash(const QDir& outputDir, const Archives& archives, const Replacement& replacement)
@@ -218,71 +245,94 @@ void MergeHash(const QDir& outputDir, const Archives& archives, const Replacemen
 		ProcessHash(outputDir, archive, replacement);
 }
 
-void GetReplacement(const Archive& archive, UniqueFileStorage& uniqueFileStorage)
+class ReplacementGetter : HashParser::IObserver
 {
-	QFile file(archive.hashPath);
-	if (!file.open(QIODevice::ReadOnly))
-		throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
-
-	const QFileInfo fileInfo(archive.filePath);
-
-	std::unordered_map<QString, QString> titles;
-	for (const auto& inpx : fileInfo.dir().entryList({ "*.inpx" }, QDir::Files))
+public:
+	ReplacementGetter(const Archive& archive, UniqueFileStorage& uniqueFileStorage, UniqueFileStorage::IUniqueFileConflictResolver& conflictResolver, Util::Progress& progress)
+		: m_fileInfo { archive.filePath }
+		, m_uniqueFileStorage { uniqueFileStorage }
+		, m_conflictResolver { conflictResolver }
+		, m_progress { progress }
 	{
-		Zip        zip(fileInfo.dir().absoluteFilePath(inpx));
-		const auto zipFile = zip.Read(fileInfo.completeBaseName() + ".inp");
-		auto&      stream  = zipFile->GetStream();
-		for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
+		QFile file(archive.hashPath);
+		if (!file.open(QIODevice::ReadOnly))
+			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
+
+		for (const auto& inpx : m_fileInfo.dir().entryList({ "*.inpx" }, QDir::Files))
 		{
-			auto book = Book::FromString(QString::fromUtf8(byteArray));
-			titles.try_emplace(book.GetFileName(), SimplifyTitle(PrepareTitle(book.title)));
+			Zip        zip(m_fileInfo.dir().absoluteFilePath(inpx));
+			const auto zipFile = zip.Read(m_fileInfo.completeBaseName() + ".inp");
+			auto&      stream  = zipFile->GetStream();
+			for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
+			{
+				auto book = Book::FromString(QString::fromUtf8(byteArray));
+				m_titles.try_emplace(book.GetFileName(), SimplifyTitle(PrepareTitle(book.title)));
+			}
 		}
+
+		m_bookFiles = Zip(archive.filePath).GetFileNameList() | std::ranges::to<std::unordered_set<QString>>();
+
+		HashParser::Parse(file, *this);
 	}
 
-	const auto bookFiles = Zip(archive.filePath).GetFileNameList() | std::ranges::to<std::unordered_set<QString>>();
+private:
+	void OnParseStarted(const QString& sourceLib) override
+	{
+		m_conflictResolver.SetSourceLib(sourceLib);
+	}
 
-	HashParser::Parse(
-		file,
-		[&](
+	void OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
-			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-				QString cover,
-			QStringList images
-		) mutable {
-			decltype(UniqueFile::images) imageItems;
-			std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
-				return ImageItem { .hash = std::move(hash) };
-			});
+			QString cover,
+		QStringList images
+	) override
+	{
+		m_progress.Increment(1, file.toStdString());
 
-			if (!bookFiles.contains(file))
-				return;
+		decltype(UniqueFile::images) imageItems;
+		std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
+			return ImageItem { .hash = std::move(hash) };
+		});
 
-			const auto it = titles.find(file);
-			if (it != titles.end() && !it->second.isEmpty())
-				title = std::move(it->second);
+		if (!m_bookFiles.contains(file))
+			return;
 
-			auto split    = title.split(' ', Qt::SkipEmptyParts);
-			auto hashText = id;
+		const auto it = m_titles.find(file);
+		if (it != m_titles.end() && !it->second.isEmpty())
+			title = std::move(it->second);
 
-			uniqueFileStorage.Add(
-				std::move(id),
-				UniqueFile {
-					.uid      = { .folder = fileInfo.fileName(), .file = file },
-					.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
-					.hashText = std::move(hashText),
-					.cover    = { .hash = std::move(cover) },
-					.images   = std::move(imageItems)
-            }
-			);
-		}
-	);
-}
+		auto split    = title.split(' ', Qt::SkipEmptyParts);
+		auto hashText = id;
 
-void GetReplacement(const Archives& archives, UniqueFileStorage& uniqueFileStorage)
+		m_uniqueFileStorage.Add(
+			std::move(id),
+			UniqueFile {
+				.uid      = { .folder = m_fileInfo.fileName(), .file = file },
+				.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
+				.hashText = std::move(hashText),
+				.cover    = { .hash = std::move(cover) },
+				.images   = std::move(imageItems)
+        }
+		);
+	}
+
+private:
+	const QFileInfo                                 m_fileInfo;
+	UniqueFileStorage&                              m_uniqueFileStorage;
+	UniqueFileStorage::IUniqueFileConflictResolver& m_conflictResolver;
+	Util::Progress&                                 m_progress;
+	std::unordered_map<QString, QString>            m_titles;
+	std::unordered_set<QString>                     m_bookFiles;
+};
+
+void GetReplacement(const size_t totalFileCount, const Archives& archives, UniqueFileStorage& uniqueFileStorage, UniqueFileStorage::IUniqueFileConflictResolver& conflictResolver)
 {
+	Util::Progress progress(totalFileCount, "parsing");
+
 	for (const auto& archive : archives)
-		GetReplacement(archive, uniqueFileStorage);
+		ReplacementGetter(archive, uniqueFileStorage, conflictResolver, progress);
 }
 
 Archives GetArchives(const Settings& settings)
@@ -328,35 +378,6 @@ Archives GetArchives(const Settings& settings)
 	return std::move(sorted) | std::views::values | std::views::reverse | std::ranges::to<Archives>();
 }
 
-InputDirs GetInputFolders(const Archives& archives)
-{
-	UniquePaths                           uniquePaths;
-	std::unordered_map<QString, InputDir> unique;
-	std::vector<QDir>                     dirs;
-	for (auto&& [dir, path] : archives | std::views::transform([](const Archive& item) {
-								  return std::make_pair(QFileInfo(item.filePath).dir(), item.filePath);
-							  }))
-	{
-		auto& [uniqueDir, paths] = unique[dir.absolutePath().toLower()];
-		if (!paths.empty())
-			continue;
-
-		uniqueDir = std::move(dir);
-		std::ranges::move(
-			uniqueDir.entryList(QDir::Files) | std::views::filter([&](const auto& item) {
-				return !uniquePaths.contains(item);
-			}),
-			std::inserter(paths, paths.end())
-		);
-		std::ranges::copy(paths, std::inserter(uniquePaths, uniquePaths.end()));
-	}
-
-	InputDirs result;
-	std::ranges::move(unique | std::views::values, std::back_inserter(result));
-
-	return result;
-}
-
 Settings ProcessCommandLine(const QCoreApplication& app)
 {
 	Settings settings;
@@ -367,34 +388,21 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
 	parser.addOptions({
-		{				   { "o", FOLDER }, "Output folder (required)", FOLDER },
-		{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template",   PATH },
+		{ { "o", FOLDER }, "Output folder (required)",                              FOLDER },
+		{			DUMP,  "Dump database wildcards", "Semicolon separated wildcard list" },
 	});
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	settings.logFileName                = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
-	settings.collectionInfoTemplateFile = parser.value(COLLECTION_INFO_TEMPLATE);
-
-	if (const auto& positionalArguments = parser.positionalArguments(); !positionalArguments.isEmpty())
-	{
-		settings.arguments = parser.positionalArguments();
-	}
-	else
-	{
+	if (parser.positionalArguments().isEmpty() || !parser.isSet(FOLDER))
 		parser.showHelp();
-	}
 
-	if (parser.isSet(FOLDER))
-	{
-		settings.outputDir = QDir { parser.value(FOLDER) };
-	}
-	else
-	{
-		parser.showHelp();
-	}
+	settings.logFileName   = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
+	settings.arguments     = parser.positionalArguments();
+	settings.outputDir     = QDir { parser.value(FOLDER) };
+	settings.dumpWildCards = parser.value(DUMP);
 
 	return settings;
 }
@@ -416,8 +424,8 @@ void run(int argc, char* argv[])
 	if (!settings.outputDir.exists() && !settings.outputDir.mkpath("."))
 		throw std::ios_base::failure(std::format("Cannot create folder {}", settings.outputDir.path()));
 
-	const auto archives  = GetArchives(settings);
-	const auto inputDirs = GetInputFolders(archives);
+	const auto archives = GetArchives(settings);
+	//	const auto inputDirs = GetInputFolders(archives);
 
 	PLOGD << "Total file count calculation";
 	const auto totalFileCount = std::accumulate(archives.cbegin(), archives.cend(), size_t { 0 }, [](const size_t init, const Archive& archive) {
@@ -426,13 +434,17 @@ void run(int argc, char* argv[])
 	});
 	PLOGI << "Total file count: " << totalFileCount;
 
-	UniqueFileStorage uniqueFileStorage(settings.outputDir.absolutePath());
+	auto inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
+
+	UniqueFileStorage uniqueFileStorage(settings.outputDir.absoluteFilePath(HASH), inpDataProvider);
+
+	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(inpDataProvider);
+	uniqueFileStorage.SetConflictResolver(conflictResolver);
 
 	Replacement replacement;
 	uniqueFileStorage.SetDuplicateObserver(std::make_unique<DuplicateObserver>(replacement));
-	GetReplacement(archives, uniqueFileStorage);
+	GetReplacement(totalFileCount, archives, uniqueFileStorage, *conflictResolver);
 
-	settings.outputDir.mkpath(QString::fromStdWString(Inpx::REVIEWS_FOLDER));
 	MergeArchives(settings.outputDir, archives, replacement);
 	MergeHash(settings.outputDir, archives, replacement);
 }
