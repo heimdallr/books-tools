@@ -119,7 +119,7 @@ struct ImageStatisticsItem
 
 using ImageStatistics = std::vector<ImageStatisticsItem>;
 
-void WriteError(const QDir& dir, std::mutex& guard, const QString& name, const QString& ext, const QByteArray& body)
+void WriteErrorImpl(const QDir& dir, std::mutex& guard, const QString& name, const QString& ext, const QByteArray& body)
 {
 	std::scoped_lock lock(guard);
 
@@ -442,7 +442,7 @@ private:
 		const ScopedCall logGuard([&] {
 			m_progress.Increment(1, inputFilePath.toStdString());
 		});
-		auto fixedInputFileBody = Decode(m_decoder, inputFileBody);
+		auto             fixedInputFileBody = Decode(m_decoder, inputFileBody);
 		if (const auto errorText = Validate(m_validator, fixedInputFileBody); !errorText.isEmpty())
 		{
 			PLOGW << errorText << " trying to fix";
@@ -458,14 +458,14 @@ private:
 		auto bodyOutput = ParseFile(inputFilePath, input, dateTime);
 
 		if (bodyOutput.isEmpty())
-			return WriteError(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), "fb2", inputFileBody), false;
+			return WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), "fb2", inputFileBody), false;
 
 #ifndef NDEBUG
-//		AddError("fb2", fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2", false);
-//		AddError("fb2", fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2", false);
+//		WriteError(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2", false);
+//		WriteError(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2", false);
 #endif
 		if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
-			return AddError("fb2", fileInfo.completeBaseName(), inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, "fb2", false), true;
+			return WriteError(fileInfo.completeBaseName(), inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, "fb2"), true;
 
 		if (!m_settings.saveFb2)
 			return false;
@@ -502,7 +502,7 @@ private:
 			if (auto bytes = JXL::Encode(image, settings.quality); !bytes.isEmpty())
 				return bytes;
 
-			(void)AddError(settings.type, fileName, body, QString("Cannot compress %1 %2").arg(settings.type).arg(fileName), true, {}, false);
+			(void)AddError(settings, fileName, body, QString("Cannot compress %1 %2").arg(settings.type).arg(fileName), true, {}, false);
 			return {};
 		};
 
@@ -550,7 +550,7 @@ private:
 
 			const auto& settings = isCover ? m_settings.cover : m_settings.image;
 
-			auto image = ReadImage(body, settings.type, settings.fileNameGetter(completeFileName, name), fail, settings.save);
+			auto image = ReadImage(body, settings, settings.fileNameGetter(completeFileName, name), fail, settings.save);
 			if (image.isNull())
 				return;
 
@@ -611,7 +611,7 @@ private:
 		return bodyOutput;
 	}
 
-	QImage ReadImage(QByteArray& body, const char* imageType, const QString& imageFile, const char*& fail, const bool needSaveBody) const
+	QImage ReadImage(QByteArray& body, const ImageSettings& settings, const QString& imageFile, const char*& fail, const bool needSaveBody) const
 	{
 		struct Signature
 		{
@@ -647,7 +647,7 @@ private:
 		    it != std::end(base64Signatures))
 		{
 			body = QByteArray::fromBase64(body);
-			return ReadImage(body, imageType, imageFile, fail, needSaveBody);
+			return ReadImage(body, settings, imageFile, fail, needSaveBody);
 		}
 
 		auto [image, errorString] = ToImage(body);
@@ -656,7 +656,7 @@ private:
 
 		if (body.size() < m_settings.minImageFileSize)
 		{
-			PLOGW << QString("%1 %2 too small file size: %3").arg(imageType).arg(imageFile).arg(body.size());
+			PLOGW << QString("%1 %2 too small file size: %3").arg(settings.type).arg(imageFile).arg(body.size());
 			return {};
 		}
 
@@ -668,7 +668,7 @@ private:
 			);
 		    it != std::end(signatures))
 			return (fail = it->extension),
-			       AddError(imageType, imageFile, body, QString("%1 %2 may be damaged: %3").arg(imageType).arg(imageFile).arg(errorString), needSaveBody && it->needSaveBody, it->extension);
+			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(errorString), needSaveBody && it->needSaveBody, it->extension);
 
 		if (const auto it = std::ranges::find_if(
 				unsupportedSignatures,
@@ -678,7 +678,7 @@ private:
 			);
 		    it != std::end(unsupportedSignatures))
 			return (fail = it->extension),
-			       AddError(imageType, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(imageType).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension);
+			       AddError(settings, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(settings.type).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension);
 
 		if (const auto it = std::ranges::find_if(
 				knownSignatures,
@@ -688,48 +688,54 @@ private:
 			);
 		    it != std::end(knownSignatures))
 			return (fail = it->extension),
-			       AddError(imageType, imageFile, body, QString("%1 %2 is %3").arg(imageType).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension, false);
+			       AddError(settings, imageFile, body, QString("%1 %2 is %3").arg(settings.type).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension, false);
 
 		if (QString::fromUtf8(body).contains("!doctype html", Qt::CaseInsensitive))
-			return fail = knownSignatures[0].extension, AddError(imageType, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(imageType).arg(imageFile).arg("html"), false, "html", false);
+			return fail = knownSignatures[0].extension, AddError(settings, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(settings.type).arg(imageFile).arg("html"), false, "html", false);
 
-		return AddError(imageType, imageFile, body, QString("%1 %2 may be damaged: %3").arg(imageType).arg(imageFile).arg(errorString), needSaveBody);
+		return AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(errorString), needSaveBody);
 	}
 
-	QImage AddError(const char* imageType, const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext = {}, const bool tryToFix = true) const
+	QImage AddError(const ImageSettings& settings, const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext = {}, const bool tryToFix = true) const
 	{
 		if (tryToFix)
-			if (auto fixed = TryToFix(imageType, file, body); !fixed.isNull())
+			if (auto fixed = TryToFix(settings, file, body); !fixed.isNull())
 				return fixed;
 
-		PLOGW << errorText;
-		if (needSaveBody)
-		{
-			WriteError(m_settings.dstDir, m_fileSystemGuard, file, ext, body);
-			m_hasError = true;
-		}
+		WriteError(file, body, errorText, needSaveBody, ext);
 		return {};
 	}
 
-	QImage TryToFix(const char* imageType, const QString& imageFile, const QByteArray& body) const
+	void WriteError(const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext) const
+	{
+		PLOGW << errorText;
+		if (needSaveBody)
+		{
+			WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, file, ext, body);
+			m_hasError = true;
+		}
+	}
+
+	QImage TryToFix(const ImageSettings& settings, const QString& imageFile, const QByteArray& body) const
 	{
 		if (m_settings.ffmpeg.isEmpty() || body.size() < 128)
 			return {};
 
 		QProcess   process;
 		QEventLoop eventLoop;
-		const auto args           = QStringList() << "-i" << "pipe:0" << "-f" << "mjpeg" << "pipe:1";
+		const auto args = QStringList() << "-i" << "pipe:0" << "-f" << "mjpeg" << "-vf"
+		                                << QString("scale='min(%1,iw)':min'(%2,ih)':force_original_aspect_ratio=decrease").arg(settings.maxSize.width()).arg(settings.maxSize.height()) << "pipe:1";
 		const auto ffmpegFileName = QFileInfo(m_settings.ffmpeg).fileName();
 
 		QByteArray fixed;
 		QObject::connect(&process, &QProcess::started, [&] {
-			PLOGI << QString("ffmpeg launched for %1 %2\n%3 %4").arg(imageType, imageFile, ffmpegFileName, args.join(" "));
+			PLOGI << QString("ffmpeg launched for %1 %2\n%3 %4").arg(settings.type, imageFile, ffmpegFileName, args.join(" "));
 		});
 		QObject::connect(&process, &QProcess::finished, [&](const int code, const QProcess::ExitStatus) {
 			if (code == 0)
-				PLOGI << QString("%1 %2 is probably fixed").arg(imageType, imageFile);
+				PLOGI << QString("%1 %2 is probably fixed").arg(settings.type, imageFile);
 			else
-				PLOGW << QString("Cannot fix %1 %2, ffmpeg finished with %3").arg(imageType, imageFile).arg(code);
+				PLOGW << QString("Cannot fix %1 %2, ffmpeg finished with %3").arg(settings.type, imageFile).arg(code);
 			eventLoop.exit(code);
 		});
 		QObject::connect(&process, &QProcess::readyReadStandardError, [&] {
@@ -1158,7 +1164,7 @@ QStringList ProcessArchives(Settings& settings)
 
 	Util::Progress progress(settings.totalFileCount, "repacking fb2 library");
 
-	QStringList     failed;
+	QStringList failed;
 	for (auto&& file : sorted | std::views::values | std::views::reverse)
 		if (ProcessArchive(file, settings, progress, imageStatisticsStream.get(), decoder))
 			failed << std::move(file);
