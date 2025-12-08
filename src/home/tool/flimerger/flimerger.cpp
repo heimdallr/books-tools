@@ -223,7 +223,8 @@ private:
 				.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
 				.hashText = std::move(hashText),
 				.cover    = { .hash = std::move(cover) },
-				.images   = std::move(imageItems)
+				.images   = std::move(imageItems),
+				.order    = QFileInfo(file).baseName().toInt(),
         }
 		);
 	}

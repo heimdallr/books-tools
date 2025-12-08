@@ -416,7 +416,7 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 		if (imagesCompareResult == ImagesCompareResult::Outer
 		    || (imagesCompareResult == ImagesCompareResult::Equal
-		        && (m_conflictResolver->Resolve(it->second.first, file) || (!m_conflictResolver->Resolve(file, it->second.first) && it->second.first.order > file.order))))
+		        && (m_conflictResolver->Resolve(it->second.first, file) || (!m_conflictResolver->Resolve(file, it->second.first) && it->second.first.order >= file.order))))
 		{
 			m_duplicateObserver->OnDuplicateFound(it->second.first.uid, file.uid);
 			it->second.second.emplace_back(std::move(file)).ClearImages();
