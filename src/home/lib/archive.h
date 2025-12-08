@@ -13,6 +13,7 @@ struct Archive
 {
 	QString filePath;
 	QString hashPath;
+	QString sourceLib;
 };
 
 using Archives = std::vector<Archive>;

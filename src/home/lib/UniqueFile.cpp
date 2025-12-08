@@ -179,10 +179,6 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 	{
 		return file.order > duplicate.order;
 	}
-
-	void SetSourceLib(const QString&) override
-	{
-	}
 };
 
 enum class ImagesCompareResult
@@ -290,13 +286,13 @@ InpDataProvider::InpDataProvider(const QString& dumpWildCards)
 		{
 			auto        dump = Dump::Create({}, dumpPath.toStdWString());
 			const auto& ref  = *dump;
-			m_dumps.emplace_back(ref.GetName(), std::move(dump));
+			m_cache.emplace_back(ref.GetName(), std::move(dump));
 		}
 }
 
 InpDataProvider::~InpDataProvider() = default;
 
-const Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
+Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 {
 	const auto it = m_data.find(QString("%1#%2").arg(uid.folder, uid.file));
 	return it != m_data.end() ? it->second.get() : nullptr;
@@ -307,31 +303,25 @@ void InpDataProvider::SetSourceLib(const QString& sourceLib)
 	if (const auto it = std::ranges::find_if(
 			m_cache,
 			[&](const auto& item) {
-				return item.first.compare(sourceLib, Qt::CaseInsensitive) == 0;
+				return item.sourceLib.compare(sourceLib, Qt::CaseInsensitive) == 0;
 			}
 		);
 	    it != m_cache.end())
 	{
-		m_currentInpData = &it->second;
-		return;
-	}
-
-	if (const auto it = std::ranges::find_if(
-			m_dumps,
-			[&](const auto& item) {
-				return item.first.compare(sourceLib, Qt::CaseInsensitive) == 0;
-			}
-		);
-	    it != m_dumps.end())
-	{
-		assert(it->second);
-		auto& inpData    = m_cache.emplace_back(sourceLib, CreateInpData(*it->second)).second;
-		m_currentInpData = &inpData;
-		it->second.reset();
+		if (it->inpData.empty())
+			it->inpData = CreateInpData(*it->dump);
+		m_currentInpData = &it->inpData;
 		return;
 	}
 
 	m_currentInpData = &m_stub;
+}
+
+bool InpDataProvider::Enumerate(std::function<bool(const QString&, const IDump&)> functor) const
+{
+	return std::ranges::any_of(m_cache, [functor = std::move(functor)](const CacheItem& item) {
+		return functor(item.sourceLib.toLower(), *item.dump);
+	});
 }
 
 void InpDataProvider::SetFile(const UniqueFile::Uid& uid)
@@ -523,7 +513,6 @@ void UniqueFileStorage::SetConflictResolver(std::shared_ptr<IUniqueFileConflictR
 
 void UniqueFileStorage::OnParseStarted(const QString& sourceLib)
 {
-	m_conflictResolver->SetSourceLib(sourceLib);
 	m_inpDataProvider->SetSourceLib(sourceLib);
 }
 

@@ -64,22 +64,31 @@ struct HashParser
 class LIB_EXPORT InpDataProvider
 {
 	NON_COPY_MOVABLE(InpDataProvider)
+
+private:
+	struct CacheItem
+	{
+		QString                sourceLib;
+		std::unique_ptr<IDump> dump;
+		InpData                inpData;
+	};
+
 public:
 	explicit InpDataProvider(const QString& dumpWildCards = {});
 	~InpDataProvider();
 
 public:
-	const Book* GetBook(const UniqueFile::Uid& uid) const;
-	void        SetSourceLib(const QString& sourceLib);
-	void        SetFile(const UniqueFile::Uid& uid);
+	Book* GetBook(const UniqueFile::Uid& uid) const;
+	void  SetSourceLib(const QString& sourceLib);
+	void  SetFile(const UniqueFile::Uid& uid);
+	bool  Enumerate(std::function<bool(const QString&, const IDump&)> functor) const;
 
 private:
 	InpData  m_stub;
 	InpData* m_currentInpData { &m_stub };
 
-	std::vector<std::pair<QString, std::unique_ptr<IDump>>> m_dumps;
-	std::vector<std::pair<QString, InpData>>                m_cache;
-	InpData                                                 m_data;
+	std::vector<CacheItem> m_cache;
+	InpData                m_data;
 };
 
 class LIB_EXPORT UniqueFileStorage final : HashParser::IObserver
@@ -105,7 +114,6 @@ public:
 		virtual ~IUniqueFileConflictResolver() = default;
 
 		virtual bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const = 0;
-		virtual void SetSourceLib(const QString& sourceLib)                             = 0;
 	};
 
 public:

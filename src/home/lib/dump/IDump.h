@@ -23,8 +23,10 @@ public:
 	virtual void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const                       = 0;
 	virtual void CreateTables(const std::function<void(std::string_view)>& functor) const                         = 0;
 	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const                        = 0;
-	virtual void Review(const std::function<void(const QString&, QString, QString, QString)>& functor) const      = 0;
 	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir) const = 0;
+
+	virtual std::vector<std::pair<int, int>> GetReviewMonths() const                                                                                          = 0;
+	virtual void                             Review(int year, int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const = 0;
 };
 
 }

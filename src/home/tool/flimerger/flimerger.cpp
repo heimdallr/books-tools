@@ -62,8 +62,8 @@ struct Settings
 class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileConflictResolver
 {
 public:
-	explicit UniqueFileConflictResolver(std::shared_ptr<InpDataProvider> inpDataProvider)
-		: m_inpDataProvider { std::move(inpDataProvider) }
+	explicit UniqueFileConflictResolver(InpDataProvider& inpDataProvider)
+		: m_inpDataProvider { inpDataProvider }
 	{
 	}
 
@@ -71,20 +71,15 @@ private: // UniqueFileStorage::IUniqueFileConflictResolver
 	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
 		const auto isDeleted = [this](const UniqueFile& item) {
-			const auto* book = m_inpDataProvider->GetBook(item.uid);
+			const auto* book = m_inpDataProvider.GetBook(item.uid);
 			return !book || book->deleted;
 		};
 
 		return isDeleted(duplicate) && !isDeleted(file);
 	}
 
-	void SetSourceLib(const QString& sourceLib) override
-	{
-		m_inpDataProvider->SetSourceLib(sourceLib);
-	}
-
 private:
-	std::shared_ptr<InpDataProvider> m_inpDataProvider;
+	InpDataProvider& m_inpDataProvider;
 };
 
 class HashCopier final : public Util::SaxParser
@@ -152,6 +147,94 @@ private: // UniqueFileStorage::IDuplicateObserver
 
 private:
 	Replacement& m_replacement;
+};
+
+class ReplacementGetter : HashParser::IObserver
+{
+public:
+	ReplacementGetter(const Archive& archive, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider, Util::Progress& progress)
+		: m_fileInfo { archive.filePath }
+		, m_uniqueFileStorage { uniqueFileStorage }
+		, m_inpDataProvider { inpDataProvider }
+		, m_progress { progress }
+	{
+		QFile file(archive.hashPath);
+		if (!file.open(QIODevice::ReadOnly))
+			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
+
+		for (const auto& inpx : m_fileInfo.dir().entryList({ "*.inpx" }, QDir::Files))
+		{
+			Zip        zip(m_fileInfo.dir().absoluteFilePath(inpx));
+			const auto zipFile = zip.Read(m_fileInfo.completeBaseName() + ".inp");
+			auto&      stream  = zipFile->GetStream();
+			for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
+			{
+				auto book = Book::FromString(QString::fromUtf8(byteArray));
+				m_titles.try_emplace(book.GetFileName(), SimplifyTitle(PrepareTitle(book.title)));
+			}
+		}
+
+		m_bookFiles = Zip(archive.filePath).GetFileNameList() | std::ranges::to<std::unordered_set<QString>>();
+
+		HashParser::Parse(file, *this);
+	}
+
+private:
+	void OnParseStarted(const QString& sourceLib) override
+	{
+		m_inpDataProvider.SetSourceLib(sourceLib);
+	}
+
+	void OnBookParsed(
+#define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
+		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+#undef HASH_PARSER_CALLBACK_ITEM
+			QString cover,
+		QStringList images
+	) override
+	{
+		if (!originFolder.isEmpty())
+			return;
+
+		m_progress.Increment(1, file.toStdString());
+
+		decltype(UniqueFile::images) imageItems;
+		std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
+			return ImageItem { .hash = std::move(hash) };
+		});
+
+		if (!m_bookFiles.contains(file))
+			return;
+
+		const auto it = m_titles.find(file);
+		if (it != m_titles.end() && !it->second.isEmpty())
+			title = std::move(it->second);
+
+		auto split    = title.split(' ', Qt::SkipEmptyParts);
+		auto hashText = id;
+
+		UniqueFile::Uid uid { .folder = m_fileInfo.fileName(), .file = file };
+		m_inpDataProvider.SetFile(uid);
+
+		m_uniqueFileStorage.Add(
+			std::move(id),
+			UniqueFile {
+				.uid      = std::move(uid),
+				.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
+				.hashText = std::move(hashText),
+				.cover    = { .hash = std::move(cover) },
+				.images   = std::move(imageItems)
+        }
+		);
+	}
+
+private:
+	const QFileInfo                      m_fileInfo;
+	UniqueFileStorage&                   m_uniqueFileStorage;
+	InpDataProvider&                     m_inpDataProvider;
+	Util::Progress&                      m_progress;
+	std::unordered_map<QString, QString> m_titles;
+	std::unordered_set<QString>          m_bookFiles;
 };
 
 void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replacement& replacement)
@@ -237,97 +320,12 @@ void MergeHash(const QDir& outputDir, const Archives& archives, const Replacemen
 		ProcessHash(outputDir, archive, replacement);
 }
 
-class ReplacementGetter : HashParser::IObserver
-{
-public:
-	ReplacementGetter(const Archive& archive, UniqueFileStorage& uniqueFileStorage, UniqueFileStorage::IUniqueFileConflictResolver& conflictResolver, Util::Progress& progress)
-		: m_fileInfo { archive.filePath }
-		, m_uniqueFileStorage { uniqueFileStorage }
-		, m_conflictResolver { conflictResolver }
-		, m_progress { progress }
-	{
-		QFile file(archive.hashPath);
-		if (!file.open(QIODevice::ReadOnly))
-			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
-
-		for (const auto& inpx : m_fileInfo.dir().entryList({ "*.inpx" }, QDir::Files))
-		{
-			Zip        zip(m_fileInfo.dir().absoluteFilePath(inpx));
-			const auto zipFile = zip.Read(m_fileInfo.completeBaseName() + ".inp");
-			auto&      stream  = zipFile->GetStream();
-			for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
-			{
-				auto book = Book::FromString(QString::fromUtf8(byteArray));
-				m_titles.try_emplace(book.GetFileName(), SimplifyTitle(PrepareTitle(book.title)));
-			}
-		}
-
-		m_bookFiles = Zip(archive.filePath).GetFileNameList() | std::ranges::to<std::unordered_set<QString>>();
-
-		HashParser::Parse(file, *this);
-	}
-
-private:
-	void OnParseStarted(const QString& sourceLib) override
-	{
-		m_conflictResolver.SetSourceLib(sourceLib);
-	}
-
-	void OnBookParsed(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-			QString cover,
-		QStringList images
-	) override
-	{
-		if (!originFolder.isEmpty())
-			return;
-
-		m_progress.Increment(1, file.toStdString());
-
-		decltype(UniqueFile::images) imageItems;
-		std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](QString&& hash) {
-			return ImageItem { .hash = std::move(hash) };
-		});
-
-		if (!m_bookFiles.contains(file))
-			return;
-
-		const auto it = m_titles.find(file);
-		if (it != m_titles.end() && !it->second.isEmpty())
-			title = std::move(it->second);
-
-		auto split    = title.split(' ', Qt::SkipEmptyParts);
-		auto hashText = id;
-
-		m_uniqueFileStorage.Add(
-			std::move(id),
-			UniqueFile {
-				.uid      = { .folder = m_fileInfo.fileName(), .file = file },
-				.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
-				.hashText = std::move(hashText),
-				.cover    = { .hash = std::move(cover) },
-				.images   = std::move(imageItems)
-        }
-		);
-	}
-
-private:
-	const QFileInfo                                 m_fileInfo;
-	UniqueFileStorage&                              m_uniqueFileStorage;
-	UniqueFileStorage::IUniqueFileConflictResolver& m_conflictResolver;
-	Util::Progress&                                 m_progress;
-	std::unordered_map<QString, QString>            m_titles;
-	std::unordered_set<QString>                     m_bookFiles;
-};
-
-void GetReplacement(const size_t totalFileCount, const Archives& archives, UniqueFileStorage& uniqueFileStorage, UniqueFileStorage::IUniqueFileConflictResolver& conflictResolver)
+void GetReplacement(const size_t totalFileCount, const Archives& archives, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider)
 {
 	Util::Progress progress(totalFileCount, "parsing");
 
 	for (const auto& archive : archives)
-		ReplacementGetter(archive, uniqueFileStorage, conflictResolver, progress);
+		ReplacementGetter(archive, uniqueFileStorage, inpDataProvider, progress);
 }
 
 Settings ProcessCommandLine(const QCoreApplication& app)
@@ -368,12 +366,12 @@ void run(const Settings& settings)
 
 	UniqueFileStorage uniqueFileStorage(settings.outputDir.absoluteFilePath(HASH), inpDataProvider);
 
-	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(inpDataProvider);
+	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(*inpDataProvider);
 	uniqueFileStorage.SetConflictResolver(conflictResolver);
 
 	Replacement replacement;
 	uniqueFileStorage.SetDuplicateObserver(std::make_unique<DuplicateObserver>(replacement));
-	GetReplacement(totalFileCount, archives, uniqueFileStorage, *conflictResolver);
+	GetReplacement(totalFileCount, archives, uniqueFileStorage, *inpDataProvider);
 
 	MergeArchives(settings.outputDir, archives, replacement);
 	MergeHash(settings.outputDir, archives, replacement);

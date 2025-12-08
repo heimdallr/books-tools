@@ -142,7 +142,7 @@ constexpr const char* g_commands[] { g_libavtor, g_libavtors, g_libbook, g_libge
 constexpr const char* g_indices[] {
 	"CREATE INDEX ix_libbook_primary_key ON libbook (bid)", "CREATE INDEX ix_libavtor_bid ON libavtor (bid)",           "CREATE INDEX ix_libavtors_primary_key ON libavtors (aid)",
 	"CREATE INDEX ix_libgenre_bid ON libgenre (bid)",       "CREATE INDEX ix_libgenres_primary_key ON libgenres (gid)", "CREATE INDEX ix_libseq_bid ON libseq (bid)",
-	"CREATE INDEX ix_libseqs_primary_key ON libseqs (sid)",
+	"CREATE INDEX ix_libseqs_primary_key ON libseqs (sid)", "CREATE INDEX ix_libpolka_time ON libpolka (Time)",
 };
 
 class Dump final : public IDump
@@ -209,9 +209,26 @@ left join libseqs s on s.sid = ls.sid
 			functor(*query);
 	}
 
-	void Review(const std::function<void(const QString&, QString, QString, QString)>& functor) const override
+	//	void Review(const std::function<void(const QString&, QString, QString, QString)>& functor) const override
+	//	{
+	//		const auto query = m_db->CreateQuery("select p.bid, null, p.Time, p.Text from libpolka p where p.type = 'b'");
+	//		for (query->Execute(); !query->Eof(); query->Next())
+	//			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
+	//	}
+
+	std::vector<std::pair<int, int>> GetReviewMonths() const override
 	{
-		const auto query = m_db->CreateQuery("select p.bid, null, p.Time, p.Text from libpolka p where p.type = 'b'");
+		std::vector<std::pair<int, int>> result;
+		const auto                       query = m_db->CreateQuery("select distinct strftime('%Y', p.Time), strftime('%m', p.Time) from libpolka p");
+		for (query->Execute(); !query->Eof(); query->Next())
+			result.emplace_back(query->Get<int>(0), query->Get<int>(1));
+		return result;
+	}
+
+	void Review(const int year, const int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const override
+	{
+		const auto query =
+			m_db->CreateQuery(std::format("select p.bid, null, p.Time, p.Text from libpolka p where p.type = 'b' and p.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
 		for (query->Execute(); !query->Eof(); query->Next())
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
@@ -232,4 +249,4 @@ std::unique_ptr<IDump> CreateLibRusEcDatabase()
 	return std::make_unique<Dump>();
 }
 
-} // namespace HomeCompa::FliParser::Database
+} // namespace HomeCompa::FliLib::Dump

@@ -400,9 +400,18 @@ left join libfilename f on f.BookId=b.BookID
 			functor(*query);
 	}
 
-	void Review(const std::function<void(const QString&, QString, QString, QString)>& functor) const override
+	std::vector<std::pair<int, int>> GetReviewMonths() const override
 	{
-		const auto query = m_db->CreateQuery("select r.BookId, r.Name, r.Time, r.Text from libreviews r order by r.Time");
+		std::vector<std::pair<int, int>> result;
+		const auto                       query = m_db->CreateQuery("select distinct strftime('%Y', r.Time), strftime('%m', r.Time) from libreviews r");
+		for (query->Execute(); !query->Eof(); query->Next())
+			result.emplace_back(query->Get<int>(0), query->Get<int>(1));
+		return result;
+	}
+
+	void Review(const int year, const int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const override
+	{
+		const auto query = m_db->CreateQuery(std::format("select r.BookId, r.Name, r.Time, r.Text from libreviews r where r.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
 		for (query->Execute(); !query->Eof(); query->Next())
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
@@ -453,4 +462,4 @@ std::unique_ptr<IDump> CreateFlibustaDatabase()
 	return std::make_unique<Dump>();
 }
 
-} // namespace HomeCompa::FliParser::Database
+} // namespace HomeCompa::FliLib::Dump

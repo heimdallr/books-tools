@@ -1,6 +1,7 @@
 ﻿#include <QCryptographicHash>
 
 #include <filesystem>
+#include <ranges>
 #include <regex>
 #include <set>
 
@@ -19,6 +20,8 @@
 
 #include "database/interface/IQuery.h"
 
+#include "lib/UniqueFile.h"
+#include "lib/archive.h"
 #include "lib/book.h"
 #include "lib/dump/Factory.h"
 #include "lib/dump/IDump.h"
@@ -29,6 +32,7 @@
 #include "util/LogConsoleFormatter.h"
 #include "util/executor/ThreadPool.h"
 #include "util/language.h"
+#include "util/progress.h"
 #include "util/xml/Initializer.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
@@ -45,28 +49,23 @@ using namespace HomeCompa;
 namespace
 {
 
-constexpr auto SQL                      = "sql";
-constexpr auto COLLECTION_INFO_TEMPLATE = "collection-info-template";
-constexpr auto ARCHIVES                 = "archives";
-constexpr auto OUTPUT                   = "output";
-constexpr auto FOLDER                   = "folder";
-constexpr auto PATH                     = "path";
-constexpr auto HASH                     = "hash";
-constexpr auto LIBRARY                  = "library";
+constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
+constexpr auto COLLECTION_INFO_TEMPLATE     = "collection-info-template";
+constexpr auto DUMP                         = "dump";
+constexpr auto OUTPUT                       = "output";
+constexpr auto FOLDER                       = "folder";
+constexpr auto PATH                         = "path";
 
 constexpr auto APP_ID = "fliparser";
 
 using FileToFolder = std::unordered_map<QString, QStringList>;
+using BookItem     = std::pair<QString, QString>;
+using Replacement  = std::unordered_map<BookItem, BookItem, Util::PairHash<QString, QString>>;
 
 struct Settings
 {
-	std::filesystem::path sqlFolder;
-	std::filesystem::path archivesFolder;
 	std::filesystem::path outputFolder;
 	std::filesystem::path collectionInfoTemplateFile;
-	std::filesystem::path hashFolder;
-
-	QString library;
 
 	std::unordered_map<QString, Book*>   hashToBook;
 	std::unordered_map<QString, QString> fileToHash;
@@ -99,80 +98,22 @@ private:
 	}
 };
 
-class HashParser final : public Util::SaxParser
+struct BookStorage
 {
-	static constexpr auto BOOK       = "books/book";
-	static constexpr auto DUPLICATES = "books/book/duplicates";
-	static constexpr auto SECTION    = "section";
+	std::vector<Book*> books;
 
-	using Callback = std::function<void(QString file, QString duplicate, QString id, Section::Ptr)>;
-
-public:
-	HashParser(QIODevice& input, Callback callback)
-		: SaxParser(input, 512)
-		, m_callback { std::move(callback) }
+	Book* Add(Book* book)
 	{
-		Parse();
+		return books.emplace_back(book);
 	}
 
-private: // Util::SaxParser
-	bool OnStartElement(const QString& name, const QString& path, const Util::XmlAttributes& attributes) override
+	Book* Add(std::unique_ptr<Book> book)
 	{
-		if (path == BOOK)
-		{
-			m_id   = attributes.GetAttribute("id");
-			m_file = attributes.GetAttribute("file");
-		}
-		else if (path == DUPLICATES)
-		{
-			m_duplicates = attributes.GetAttribute("file");
-		}
-		else if (name == SECTION)
-		{
-			m_currentSection =
-				m_currentSection->children.try_emplace(attributes.GetAttribute("id"), std::make_unique<Section>(m_currentSection, attributes.GetAttribute("count").toULongLong())).first->second.get();
-		}
-
-		return true;
-	}
-
-	bool OnEndElement(const QString& name, const QString& path) override
-	{
-		if (path == BOOK)
-		{
-			const auto enumerate = [](Section& parent, const auto& r) -> void {
-				const auto ids = parent.children | std::views::filter([](const auto& item) {
-									 return item.second->count < 100;
-								 })
-				               | std::views::keys | std::ranges::to<std::vector<QString>>();
-				for (const auto& id : ids)
-					parent.children.erase(id);
-				for (const auto& child : parent.children | std::views::values)
-					r(*child, r);
-			};
-			enumerate(*m_section, enumerate);
-
-			m_callback(std::move(m_file), std::move(m_duplicates), std::move(m_id), std::move(m_section));
-			m_id             = {};
-			m_file           = {};
-			m_duplicates     = {};
-			m_section        = std::make_unique<Section>();
-			m_currentSection = m_section.get();
-		}
-		else if (name == SECTION)
-		{
-			assert(m_currentSection->parent);
-			m_currentSection = m_currentSection->parent;
-		}
-
-		return true;
+		return books.emplace_back(m_storage.emplace_back(std::move(book)).get());
 	}
 
 private:
-	Callback     m_callback;
-	QString      m_id, m_file, m_duplicates;
-	Section::Ptr m_section { std::make_unique<Section>() };
-	Section*     m_currentSection { m_section.get() };
+	std::vector<std::unique_ptr<Book>> m_storage;
 };
 
 struct FileInfo
@@ -190,7 +131,7 @@ FileInfo GetFileHash(const Zip& zip, const QString& fileName)
 	return { hash.result().toHex(), fileData.size() };
 }
 
-Book* GetBookCustom(Settings& settings, const QString& fileName, InpData& inpData, const Zip& zip, const QJsonObject& unIndexed)
+Book* GetBookCustom(const QString& fileName, BookStorage& storage, const Zip& zip, const QJsonObject& unIndexed)
 {
 	const auto [key, size] = GetFileHash(zip, fileName);
 
@@ -211,33 +152,24 @@ Book* GetBookCustom(Settings& settings, const QString& fileName, InpData& inpDat
 	if (series.empty())
 		series.emplace_back();
 
-	auto& book = inpData
-	                 .try_emplace(
-						 fileName,
-						 std::make_unique<Book>(Book {
-							 .author   = value["author"].toString(),
-							 .genre    = value["genre"].toString(),
-							 .title    = value["title"].toString(),
-							 .series   = std::move(series),
-							 .file     = fileInfo.baseName(),
-							 .size     = QString::number(size),
-							 .libId    = fileInfo.baseName(),
-							 .deleted  = true,
-							 .ext      = fileInfo.suffix(),
-							 .date     = value["date"].toString(),
-							 .lang     = value["lang"].toString(),
-							 .keywords = value["keywords"].toString(),
-							 .year     = value["year"].toString(),
-						 })
-					 )
-	                 .first->second;
-
-	settings.fileToHash[fileName]     = fileName;
-	settings.libIdToHash[book->libId] = fileName;
-	return settings.hashToBook.try_emplace(fileName, book.get()).first->second;
+	return storage.Add(std::make_unique<Book>(Book {
+		.author   = value["author"].toString(),
+		.genre    = value["genre"].toString(),
+		.title    = value["title"].toString(),
+		.series   = std::move(series),
+		.file     = fileInfo.baseName(),
+		.size     = QString::number(size),
+		.libId    = fileInfo.baseName(),
+		.deleted  = true,
+		.ext      = fileInfo.suffix(),
+		.date     = value["date"].toString(),
+		.lang     = value["lang"].toString(),
+		.keywords = value["keywords"].toString(),
+		.year     = value["year"].toString(),
+	}));
 }
 
-Book* ParseBook(Settings& settings, const QString& fileName, InpData& inpData, const QString& folder, const Zip& zip, const QDateTime& zipDateTime)
+Book* ParseBook(const QString& fileName, BookStorage& storage, const QString& folder, const Zip& zip, const QDateTime& zipDateTime)
 {
 	if (!fileName.endsWith(".fb2", Qt::CaseInsensitive))
 		return nullptr;
@@ -249,11 +181,7 @@ Book* ParseBook(Settings& settings, const QString& fileName, InpData& inpData, c
 	if (parsedBook.title.isEmpty())
 		return nullptr;
 
-	auto* book = inpData.try_emplace(fileName, std::make_unique<Book>(std::move(parsedBook))).first->second.get();
-
-	settings.fileToHash[fileName]     = fileName;
-	settings.libIdToHash[book->libId] = fileName;
-	return settings.hashToBook.try_emplace(fileName, book).first->second;
+	return storage.Add(std::make_unique<Book>(std::move(parsedBook)));
 }
 
 Book* GetBook(Settings& settings, const QString& fileName, const InpData& inpData)
@@ -291,7 +219,7 @@ Book* GetBook(Settings& settings, const QString& fileName, const InpData& inpDat
 	return settings.hashToBook.try_emplace(fileName, book).first->second;
 }
 
-void CreateInpx(Settings& settings, InpData& inpData, const QString& sourceLib)
+BookStorage CreateInpx(const Settings& settings, const Archives& archives, const InpDataProvider& inpDataProvider)
 {
 	const auto unIndexed = []() -> QJsonObject {
 		QFile                       file(":/data/unindexed.json");
@@ -305,61 +233,54 @@ void CreateInpx(Settings& settings, InpData& inpData, const QString& sourceLib)
 		return doc.object();
 	}();
 
-	const auto inpxFileName = settings.outputFolder / (settings.archivesFolder.filename().wstring() + L".inpx");
+	const auto inpxFileName = settings.outputFolder / L"inpx.inpx";
 	if (exists(inpxFileName))
 		remove(inpxFileName);
 
 	auto      zipFileController = Zip::CreateZipFileController();
 	QDateTime maxTime;
 
-	std::ranges::for_each(
-		std::filesystem::directory_iterator { settings.archivesFolder } | std::views::filter([](const auto& entry) {
-			return !entry.is_directory() && Zip::IsArchive(QString::fromStdWString(entry.path()));
-		}),
-		[&](const auto& entry) {
-			const auto& path = entry.path();
-			PLOGV << path.string();
+	BookStorage bookStorage;
 
-			QByteArray      file;
-			const QFileInfo zipFileInfo(QString::fromStdWString(path));
-			Zip             zip(zipFileInfo.filePath());
-			for (const auto& bookFile : zip.GetFileNameList())
+	for (const auto& [zipFileInfo, sourceLib] : archives | std::views::transform([](const auto& item) {
+													return std::make_pair(QFileInfo(item.filePath), item.sourceLib);
+												}))
+	{
+		PLOGV << zipFileInfo.fileName();
+		QByteArray file;
+		Zip        zip(zipFileInfo.filePath());
+		for (const auto& bookFile : zip.GetFileNameList())
+		{
+			auto* book = inpDataProvider.GetBook({ zipFileInfo.fileName(), bookFile });
+			if (book)
 			{
-				auto* book = GetBook(settings, bookFile, inpData);
+				bookStorage.Add(book);
+			}
+			else
+			{
+				book = GetBookCustom(bookFile, bookStorage, zip, unIndexed);
 				if (!book)
 				{
-					book = GetBookCustom(settings, bookFile, inpData, zip, unIndexed);
+					book = ParseBook(bookFile, bookStorage, zipFileInfo.fileName(), zip, zipFileInfo.birthTime());
 					if (!book)
 					{
-						book = ParseBook(settings, bookFile, inpData, QString::fromStdWString(path.filename()), zip, zipFileInfo.birthTime());
-						if (!book)
-						{
-							PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
-							continue;
-						}
+						PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
+						continue;
 					}
 				}
-
-				if (const auto it = inpData.find(bookFile); it != inpData.end())
-					book->libId = it->second->libId;
-
-				book->sourceLib = sourceLib;
-
-				QFileInfo fileInfo(bookFile);
-				book->file   = fileInfo.completeBaseName();
-				book->ext    = fileInfo.suffix();
-				book->folder = QString::fromStdWString(path.filename());
-
-				file << *book;
-
-				maxTime = std::max(maxTime, zip.GetFileTime(bookFile));
-				settings.fileToFolder[bookFile].emplace_back(zipFileInfo.fileName());
 			}
 
-			if (!file.isEmpty())
-				zipFileController->AddFile(QString::fromStdWString(path.filename().replace_extension("inp")), std::move(file), QDateTime::currentDateTime());
+			book->sourceLib = sourceLib;
+			book->folder    = zipFileInfo.fileName();
+
+			file << *book;
+
+			maxTime = std::max(maxTime, zip.GetFileTime(bookFile));
 		}
-	);
+
+		if (!file.isEmpty())
+			zipFileController->AddFile(zipFileInfo.completeBaseName() + ".inp", std::move(file), QDateTime::currentDateTime());
+	}
 
 	const auto collectionInfo = [&]() -> QString {
 		if (!QFile::exists(settings.collectionInfoTemplateFile))
@@ -380,13 +301,15 @@ void CreateInpx(Settings& settings, InpData& inpData, const QString& sourceLib)
 		Zip inpx(QString::fromStdWString(inpxFileName), ZipDetails::Format::Zip);
 		inpx.Write(std::move(zipFileController));
 	}
+
+	return bookStorage;
 }
 
-QByteArray CreateReviewAdditional(const Settings& settings)
+QByteArray CreateReviewAdditional(const BookStorage& bookStorage)
 {
 	QJsonArray jsonArray;
-	for (const auto& book : settings.hashToBook | std::views::values | std::views::filter([&](const Book* item) {
-								return item->rate > std::numeric_limits<double>::epsilon() && settings.fileToFolder.contains(item->file + "." + item->ext);
+	for (const auto& book : bookStorage.books | std::views::filter([&](const Book* item) {
+								return item->rate > std::numeric_limits<double>::epsilon();
 							}))
 	{
 		jsonArray.append(QJsonObject {
@@ -403,15 +326,12 @@ QByteArray CreateReviewAdditional(const Settings& settings)
 	return QJsonDocument(jsonArray).toJson();
 }
 
-std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDump& db, const Settings& settings)
+std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesystem::path& outputFolder, const InpDataProvider& inpDataProvider, const Replacement& replacement, const BookStorage& bookStorage)
 {
 	auto threadPool = std::make_unique<Util::ThreadPool>();
 
-	const auto reviewsFolder = settings.outputFolder / Inpx::REVIEWS_FOLDER;
+	const auto reviewsFolder = outputFolder / Inpx::REVIEWS_FOLDER;
 	QDir(reviewsFolder).mkpath(".");
-	int currentMonth { -1 };
-
-	std::map<QString, std::vector<std::tuple<QString, QString, QString>>> data;
 
 	std::mutex                                   archivesGuard;
 	std::vector<std::tuple<QString, QByteArray>> archives;
@@ -427,7 +347,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDump& db, c
 			}
 		);
 
-		auto additional = CreateReviewAdditional(settings);
+		auto additional = CreateReviewAdditional(bookStorage);
 		if (additional.isEmpty())
 			return;
 
@@ -452,20 +372,12 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDump& db, c
 		archives.emplace_back(std::move(archiveName), std::move(zipBytes));
 	});
 
-	const auto write = [&](const int month) {
-		ScopedCall monthGuard([&] {
-			currentMonth = month;
-			data.clear();
-		});
-		if (currentMonth < 0)
-			return;
+	using Data = std::vector<std::tuple<QString, QString, QString, QString, QString>>;
 
-		auto archiveName = QString::fromStdWString(reviewsFolder / std::to_string(currentMonth)) + ".7z";
+	const auto write = [&](const int year, const int month, Data data) {
+		auto archiveName = QString::fromStdWString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
 
-		auto dataCopy = std::move(data);
-		data          = {};
-
-		threadPool->enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(dataCopy)]() mutable {
+		threadPool->enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)]() mutable {
 			size_t           counter = 0;
 			const ScopedCall logGuard(
 				[&] {
@@ -476,21 +388,25 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDump& db, c
 				}
 			);
 
+			std::map<std::pair<QString, QString>, std::map<std::pair<QString, QString>, QString>> sorted;
+			for (auto&& [folder, file, name, time, text] : data)
+				sorted[std::make_pair(std::move(folder), std::move(file))].try_emplace(std::make_pair(std::move(time), std::move(name)), std::move(text));
+
 			auto zipFiles = Zip::CreateZipFileController();
-			std::ranges::for_each(data, [&](auto& value) {
+			std::ranges::for_each(sorted, [&](auto& value) {
 				QJsonArray array;
-				for (auto& [name, time, text] : value.second)
+				for (auto& [id, text] : value.second)
 				{
 					text.prepend(' ');
 					text.append(' ');
 					array.append(QJsonObject {
-						{ Inpx::NAME,              name.simplified() },
-						{ Inpx::TIME,                           time },
+						{ Inpx::NAME,         id.second.simplified() },
+						{ Inpx::TIME,                       id.first },
 						{ Inpx::TEXT, ReplaceTags(text).simplified() },
 					});
 					++counter;
 				}
-				zipFiles->AddFile(value.first, QJsonDocument(array).toJson());
+				zipFiles->AddFile(QString("%1#%2").arg(value.first.first, value.first.second), QJsonDocument(array).toJson());
 			});
 
 			QByteArray zipBytes;
@@ -515,25 +431,49 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const IDump& db, c
 		});
 	};
 
-	db.Review([&](const QString& bookId, QString name, QString time, QString text) {
-		const auto* book = settings.FromLibId(bookId);
-		if (!book || !settings.fileToFolder.contains(book->file + "." + book->ext))
-			return;
+	const auto libIdToBook = bookStorage.books | std::views::transform([](const Book* book) {
+								 return std::make_pair(std::make_pair(book->libId, book->sourceLib.toLower()), book);
+							 })
+	                       | std::ranges::to<std::unordered_map<std::pair<QString, QString>, const Book*, Util::PairHash<QString, QString>>>();
 
-		if (const auto month = QStringView(time.begin(), std::next(time.begin(), 4)).toInt() * 100 + QStringView(std::next(time.begin(), 5), std::next(time.begin(), 7)).toInt(); month != currentMonth)
-			write(month);
-
-		data[book->GetUid()].emplace_back(std::move(name), std::move(time), std::move(text));
+	std::set<std::pair<int, int>> months;
+	inpDataProvider.Enumerate([&](const QString&, const IDump& dump) {
+		std::ranges::move(dump.GetReviewMonths(), std::inserter(months, months.end()));
+		return false;
 	});
 
-	write(currentMonth);
+	for (const auto& [year, month] : months)
+	{
+		inpDataProvider.Enumerate([&](const QString& sourceLib, const IDump& dump) {
+			Data data;
+
+			dump.Review(year, month, [&](const QString& libId, QString name, QString time, QString text) {
+				const auto it = libIdToBook.find(std::make_pair(libId, sourceLib));
+				if (it == libIdToBook.end())
+					return;
+
+				auto* book = it->second;
+				if (const auto rIt = replacement.find({ book->folder, book->file }); rIt != replacement.end())
+					book = inpDataProvider.GetBook({ rIt->second.first, rIt->second.second });
+				if (!book)
+					return;
+
+				data.emplace_back(book->folder, book->GetFileName(), std::move(name), std::move(time), std::move(text));
+			});
+
+			if (!data.empty())
+				write(year, month, std::move(data));
+
+			return false;
+		});
+	}
 
 	threadPool.reset();
 
 	return archives;
 }
 
-void CreateBookList(const Settings& settings)
+void CreateBookList(const std::filesystem::path& outputFolder, const BookStorage& bookStorage)
 {
 	PLOGI << "write contents";
 
@@ -550,14 +490,13 @@ void CreateBookList(const Settings& settings)
 	};
 
 	std::unordered_map<QString, std::vector<std::pair<const Book*, std::tuple<QString, QString, int, QString>>>> langs;
-	for (const auto& book : settings.hashToBook | std::views::values)
+	for (const auto* book : bookStorage.books)
 	{
 		assert(book);
-		if (settings.fileToFolder.contains(book->file + '.' + book->ext))
-			langs[book->lang].emplace_back(
-				book,
-				std::make_tuple(getSortedString(book->author), getSortedString(book->series.front().title), getSortedNum(book->series.front().serNo), getSortedString(book->title))
-			);
+		langs[book->lang].emplace_back(
+			book,
+			std::make_tuple(getSortedString(book->author), getSortedString(book->series.front().title), getSortedNum(book->series.front().serNo), getSortedString(book->title))
+		);
 	}
 
 	auto zipFiles = Zip::CreateZipFileController();
@@ -568,30 +507,23 @@ void CreateBookList(const Settings& settings)
 		});
 
 		for (const Book* book : value.second | std::views::keys)
-		{
-			const auto fileName = book->file + "." + book->ext;
-			const auto it       = settings.fileToFolder.find(fileName);
-			assert(it != settings.fileToFolder.end());
-
-			data.append(book->author.toUtf8()).append("\t").append(book->title.toUtf8()).append("\t");
-			if (!book->series.empty())
-			{
-				if (const auto& series = book->series.front(); !series.title.isEmpty())
-				{
-					data.append("[").append(series.title.toUtf8());
-					if (!series.serNo.isEmpty())
-						data.append(" #").append(series.serNo.toUtf8());
-					data.append("]");
-				}
-			}
-			data.append("\t").append(it->second.join(',').toUtf8()).append("\t").append(fileName.toUtf8()).append("\x0d\x0a");
-		}
+			data.append(QString("%1\t%2\t%3\t%4\t%5\x0d\x0a")
+			                .arg(
+								book->author,
+								book->title,
+								book->series.empty() || book->series.front().title.isEmpty()
+									? QString()
+									: QString("[%1%2]").arg(book->series.front().title, book->series.front().serNo.isEmpty() ? QString {} : QString(" #%1").arg(book->series.front().serNo)),
+								book->folder,
+								book->GetFileName()
+							)
+			                .toUtf8());
 
 		zipFiles->AddFile(value.first + ".txt", std::move(data));
 	});
 
 	PLOGI << "archive contents";
-	const auto contentsFile = settings.outputFolder / Inpx::CONTENTS;
+	const auto contentsFile = outputFolder / Inpx::CONTENTS;
 	remove(contentsFile);
 
 	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
@@ -700,119 +632,89 @@ void ProcessCompilations(Settings& settings)
 	zip.Write(std::move(zipFiles));
 }
 
-void CreateReview(const Settings& settings, const IDump& db)
+void CreateReview(const std::filesystem::path& outputFolder, const InpDataProvider& inpDataProvider, const Replacement& replacement, const BookStorage& bookStorage)
 {
 	PLOGI << "write reviews";
 
-	for (const auto& [fileName, data] : CreateReviewData(db, settings))
+	for (const auto& [fileName, data] : CreateReviewData(outputFolder, inpDataProvider, replacement, bookStorage))
 		Write(fileName, data);
 }
 
-void ReadHash(Settings& settings, InpData& inpData)
+class FileHashParser : HashParser::IObserver
 {
-	for (const auto& [file, book] : inpData)
+public:
+	FileHashParser(Archive& archive, InpDataProvider& inpDataProvider, Replacement& replacement, Util::Progress& progress)
+		: m_sourceLib { archive.sourceLib }
+		, m_inpDataProvider { inpDataProvider }
+		, m_replacement { replacement }
+		, m_progress { progress }
 	{
-		settings.hashToBook.try_emplace(file, book.get());
-		settings.fileToHash.try_emplace(file, file);
-		settings.libIdToHash.try_emplace(book->libId, file);
+		QFile file(archive.hashPath);
+		if (!file.open(QIODevice::ReadOnly))
+			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
+		HashParser::Parse(file, *this);
 	}
 
-	if (settings.hashFolder.empty())
-		return;
-
-	PLOGI << "reading hash files";
-
-	size_t n = 0;
-
-	std::unordered_map<QString, std::set<QString>>                files;
-	std::unordered_map<QString, std::pair<QString, Section::Ptr>> sections;
-
-	for (const auto& entry : std::filesystem::directory_iterator(settings.hashFolder) | std::views::filter([](const std::filesystem::path& item) {
-								 return !is_directory(item) && item.extension() == ".xml";
-							 }))
+private:
+	void OnParseStarted(const QString& sourceLib) override
 	{
-		const auto entryPath = QString::fromStdWString(entry.path());
+		m_sourceLib = sourceLib;
+		m_inpDataProvider.SetSourceLib(sourceLib);
+	}
 
-		QFile stream(entryPath);
-		if (!stream.open(QIODevice::ReadOnly))
+	void OnBookParsed(
+#define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
+		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+#undef HASH_PARSER_CALLBACK_ITEM
+			QString /*cover*/,
+		QStringList /*images*/
+	) override
+	{
+		UniqueFile::Uid uid { folder, file };
+		m_inpDataProvider.SetFile(uid);
+
+		if (!originFolder.isEmpty())
+			return (void)m_replacement.try_emplace(std::make_pair(std::move(uid.file), std::move(uid.file)), std::make_pair(std::move(originFolder), std::move(originFile)));
+
+		m_progress.Increment(1, file.toStdString());
+	}
+
+private:
+	QString&         m_sourceLib;
+	InpDataProvider& m_inpDataProvider;
+	Replacement&     m_replacement;
+	Util::Progress&  m_progress;
+};
+
+Replacement ReadHash(const size_t totalFileCount, InpDataProvider& inpDataProvider, Archives& archives)
+{
+	Replacement    replacement;
+	Util::Progress progress(totalFileCount, "parsing");
+
+	for (auto& archive : archives)
+		FileHashParser(archive, inpDataProvider, replacement, progress);
+
+	return replacement;
+}
+
+void MergeRate(const InpDataProvider& inpDataProvider, const Replacement& replacement)
+{
+	for (const auto& [fileUid, originUid] : replacement)
+	{
+		if (const auto* file = inpDataProvider.GetBook({ fileUid.first, fileUid.second }))
 		{
-			PLOGW << "cannot read from " << entryPath;
-			continue;
+			if (auto* origin = inpDataProvider.GetBook({ originUid.first, originUid.second }))
+			{
+				origin->rate      += file->rate;
+				origin->rateCount += file->rateCount;
+			}
 		}
-
-		PLOGI << "reading " << entryPath;
-
-		const HashParser parser(stream, [&](QString file, QString duplicate, QString id, Section::Ptr section) {
-			sections.try_emplace(file, std::make_pair(std::move(id), std::move(section)));
-
-			auto it = [&] {
-				if (duplicate.isEmpty())
-					return files.try_emplace(std::move(file), std::set<QString> {}).first;
-
-				auto result = files.try_emplace(std::move(duplicate), std::set<QString> {}).first;
-				result->second.emplace(std::move(file));
-				return result;
-			}();
-			it->second.emplace(it->first);
-
-			++n;
-			PLOGV_IF(n % 50000 == 0) << n << " entries read";
-		});
 	}
-
-	for (size_t id = 0; const auto& siblings : files | std::views::values)
-	{
-		assert(!siblings.empty());
-		auto& [hash, book] = *settings.hashToBook.try_emplace(QString::number(++id), static_cast<Book*>(nullptr)).first;
-
-		for (const auto& file : siblings)
-		{
-			const auto it = inpData.find(file);
-			if (it == inpData.end())
-				continue;
-
-			if (const auto sectionIt = sections.find(file); sectionIt != sections.end())
-			{
-				it->second->id      = std::move(sectionIt->second.first);
-				it->second->section = std::move(sectionIt->second.second);
-			}
-
-			settings.hashToBook.erase(file);
-			settings.fileToHash[file]               = hash;
-			settings.libIdToHash[it->second->libId] = hash;
-
-			if (!book)
-			{
-				book = it->second.get();
-				continue;
-			}
-
-			const auto rate      = book->rate + it->second->rate;
-			const auto rateCount = book->rateCount + it->second->rateCount;
-
-			if ((book->deleted && !it->second->deleted) || (book->deleted == it->second->deleted && book->file.toInt() < it->second->file.toInt()))
-			{
-				book->id.clear();
-				book->section.reset();
-				book = it->second.get();
-			}
-
-			book->rate      = rate;
-			book->rateCount = rateCount;
-		}
-
-		if (!book)
-			settings.hashToBook.erase(hash);
-	}
-	assert(std::ranges::all_of(settings.hashToBook | std::views::values, [](const auto* item) {
-		return !!item;
-	}));
 }
 
 } // namespace
 
 int main(int argc, char* argv[])
-
 {
 	const QCoreApplication app(argc, argv);
 
@@ -824,13 +726,11 @@ int main(int argc, char* argv[])
 	parser.setApplicationDescription(QString("%1 creates inpx for flibusta collections").arg(APP_ID));
 	parser.addHelpOption();
 	parser.addVersionOption();
+	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
 	parser.addOptions({
-		{					  { "s", SQL },     "Folder with sql files (required)",                          FOLDER },
-		{				 { "a", ARCHIVES }, "Folder with book archives (required)",                          FOLDER },
-		{				   { "o", OUTPUT },             "Output folder (required)",                          FOLDER },
-		{ { "i", COLLECTION_INFO_TEMPLATE },             "Collection info template",                            PATH },
-		{							  HASH,						  "Hash folder",                          FOLDER },
-		{						   LIBRARY,							  "Library", "(Flibusta | RusEc) [Flibusta]" },
+		{				   { "o", OUTPUT }, "Output folder (required)",                              FOLDER },
+		{							  DUMP,  "Dump database wildcards", "Semicolon separated wildcard list" },
+		{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template",                                PATH },
 	});
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
@@ -841,27 +741,24 @@ int main(int argc, char* argv[])
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	PLOGI << QString("%1 started").arg(APP_ID);
 
-	settings.sqlFolder                  = parser.value(SQL).toStdWString();
-	settings.archivesFolder             = parser.value(ARCHIVES).toStdWString();
-	settings.outputFolder               = parser.value(OUTPUT).toStdWString();
-	settings.collectionInfoTemplateFile = parser.value(COLLECTION_INFO_TEMPLATE).toStdWString();
-	settings.hashFolder                 = parser.value(HASH).toStdWString();
-	settings.library                    = parser.value(LIBRARY);
-
-	if (settings.sqlFolder.empty() || settings.archivesFolder.empty() || settings.outputFolder.empty())
+	if (parser.positionalArguments().isEmpty() || !parser.isSet(OUTPUT))
 		parser.showHelp(1);
 
-	const auto dump = Dump::Create(settings.sqlFolder, settings.outputFolder / (settings.archivesFolder.filename().wstring() + L".db"), settings.library);
+	settings.outputFolder               = parser.value(OUTPUT).toStdWString();
+	settings.collectionInfoTemplateFile = parser.value(COLLECTION_INFO_TEMPLATE).toStdWString();
 
-	auto inpData = CreateInpData(*dump);
-	ReadHash(settings, inpData);
+	auto       archives        = GetArchives(parser.positionalArguments());
+	const auto totalFileCount  = Total(archives);
+	const auto inpDataProvider = std::make_shared<InpDataProvider>(parser.value(DUMP));
+	const auto replacement     = ReadHash(totalFileCount, *inpDataProvider, archives);
+	MergeRate(*inpDataProvider, replacement);
 
-	CreateInpx(settings, inpData, dump->GetName());
-	ProcessCompilations(settings);
-	CreateBookList(settings);
+	const auto bookStorage = CreateInpx(settings, archives, *inpDataProvider);
 
-	CreateReview(settings, *dump);
-	dump->CreateAdditional(settings.sqlFolder, settings.outputFolder);
+	CreateBookList(settings.outputFolder, bookStorage);
+	CreateReview(settings.outputFolder, *inpDataProvider, replacement, bookStorage);
+	//	ProcessCompilations(settings);
+	//	dump->CreateAdditional(settings.sqlFolder, settings.outputFolder);
 
 	return 0;
 }
