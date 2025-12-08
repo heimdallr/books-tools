@@ -68,7 +68,8 @@ void run(int argc, char* argv[])
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	PLOGI << QString("%1 started").arg(APP_ID);
 
-	FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library);
+	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library);
+	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path());
 }
 
 } // namespace
