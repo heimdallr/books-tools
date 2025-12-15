@@ -366,7 +366,7 @@ void InpDataProvider::SetFile(const UniqueFile::Uid& uid, QString id)
 	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
 	{
 		assert(it->second);
-		auto& book = m_data.try_emplace(QString("%1#%2").arg(uid.folder, uid.file), std::move(it->second)).first->second;
+		auto& book = m_data.try_emplace(QString("%1#%2").arg(uid.folder, uid.file), it->second).first->second;
 		book->id   = std::move(id);
 	}
 }
