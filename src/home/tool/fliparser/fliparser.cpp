@@ -572,10 +572,8 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 	for (const auto* book : inpDataProvider.Books())
 	{
 		assert(book);
-		langs[book->lang].emplace_back(
-			book,
-			std::make_tuple(getSortedString(book->author), getSortedString(book->series.front().title), getSortedNum(book->series.front().serNo), getSortedString(book->title))
-		);
+		const auto& series = book->series.front();
+		langs[book->lang].emplace_back(book, std::make_tuple(getSortedString(book->author), getSortedString(series.title), getSortedNum(series.serNo), getSortedString(book->title)));
 	}
 
 	auto zipFiles = Zip::CreateZipFileController();
@@ -586,17 +584,18 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 		});
 
 		for (const Book* book : value.second | std::views::keys)
+		{
+			const auto& series = book->series.front();
 			data.append(QString("%1\t%2\t%3\t%4\t%5\x0d\x0a")
 			                .arg(
 								book->author,
 								book->title,
-								book->series.empty() || book->series.front().title.isEmpty()
-									? QString()
-									: QString("[%1%2]").arg(book->series.front().title, book->series.front().serNo.isEmpty() ? QString {} : QString(" #%1").arg(book->series.front().serNo)),
+								book->series.empty() || series.title.isEmpty() ? QString() : QString("[%1%2]").arg(series.title, series.serNo.isEmpty() ? QString {} : QString(" #%1").arg(series.serNo)),
 								book->folder,
 								book->GetFileName()
 							)
 			                .toUtf8());
+		}
 
 		zipFiles->AddFile(value.first + ".txt", std::move(data));
 	});
