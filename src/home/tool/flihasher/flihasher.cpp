@@ -42,6 +42,7 @@ constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
 
 struct ParseResult
 {
+	QString     id;
 	QString     title;
 	QString     hashText;
 	QStringList hashSections;
@@ -113,7 +114,7 @@ public:
 		m_section.CalculateHash();
 		enumerate(m_section, enumerate);
 
-		return { .title = std::move(m_title), .hashText = std::move(m_section.hash), .hashSections = std::move(sections) };
+		return { .id = QString::fromUtf8(m_md5.result().toHex()), .title = std::move(m_title), .hashText = std::move(m_section.hash), .hashSections = std::move(sections) };
 	}
 
 private: // Util::SaxParser
@@ -139,6 +140,8 @@ private: // Util::SaxParser
 
 	bool OnCharacters(const QString& path, const QString& value) override
 	{
+		UpdateHash(value.toLower());
+
 		auto valueCopy = value;
 
 		FliLib::PrepareTitle(valueCopy);
@@ -170,9 +173,19 @@ private: // Util::SaxParser
 	}
 
 private:
-	QString  m_title;
-	Section  m_section;
-	Section* m_currentSection { &m_section };
+	void UpdateHash(QString value)
+	{
+		value.removeIf([](const QChar ch) {
+			return ch.category() != QChar::Letter_Lowercase;
+		});
+		m_md5.addData(value.toUtf8());
+	}
+
+private:
+	QString            m_title;
+	Section            m_section;
+	Section*           m_currentSection { &m_section };
+	QCryptographicHash m_md5 { QCryptographicHash::Md5 };
 };
 
 QString GetHash(const Zip& zip, const QString& file, QCryptographicHash& md5)
@@ -220,7 +233,7 @@ void ProcessFile(
 	const auto zipFile   = zip.Read(file);
 	Fb2Parser  parser(zipFile->GetStream());
 	const auto parseResult = parser.GetResult();
-	bookGuard->WriteAttribute("id", parseResult.hashText).WriteAttribute(Inpx::FOLDER, folder).WriteAttribute(Inpx::FILE, file).WriteAttribute("title", parseResult.title);
+	bookGuard->WriteAttribute("hash", parseResult.id).WriteAttribute("id", parseResult.hashText).WriteAttribute(Inpx::FOLDER, folder).WriteAttribute(Inpx::FILE, file).WriteAttribute("title", parseResult.title);
 
 	const auto baseName = QFileInfo(file).completeBaseName();
 	if (coverZip && coverFiles.contains(baseName))
