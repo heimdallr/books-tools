@@ -1,3 +1,4 @@
+#include <queue>
 #include <unordered_set>
 
 #include <QBuffer>
@@ -12,6 +13,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QString>
+#include <QThread>
 #include <QTimer>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -95,13 +97,41 @@ QString GetDownloadFileName(const QString& fileName)
 template <typename T>
 void KillMe(T* obj);
 
+bool Validate(const QByteArray& page, const QJsonArray& regexps)
+{
+	const auto file = QString::fromUtf8(page);
+	return std::ranges::any_of(regexps, [&](const auto& item) {
+		QRegularExpression rx(item.toString());
+		return rx.globalMatch(file).hasNext();
+	});
+}
+
+bool Validate(const QString& path, const QString& ext)
+{
+	using namespace std::literals;
+	static constexpr auto                                                      empty = "";
+	static constexpr std::pair<const char* /*ext*/, std::string_view /*sign*/> signatures[] {
+		{ "zip", "PK\x03\x04\x14\x00\x00\x00"sv },
+		{  "gz",           "\x1F\x8B\x08\x00"sv },
+	};
+	const QFileInfo fileInfo(path);
+	const auto      signature = FindSecond(signatures, ext.toStdString().data(), empty, PszComparer {});
+
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+		return false;
+
+	const auto content = file.read(static_cast<qsizetype>(signature.size()));
+	return content.startsWith(signature);
+}
+
 struct Task
 {
 	EventLooper&               eventLooper;
 	Network::Downloader        downloader;
 	std::unique_ptr<QIODevice> stream;
 
-	Task(const QString& path, const QString& file, EventLooper& eventLooper, std::unique_ptr<QIODevice> stream, std::function<void()> callback)
+	Task(const QString& path, const QString& file, EventLooper& eventLooper, std::unique_ptr<QIODevice> stream, std::function<void(bool)> callback)
 		: eventLooper { eventLooper }
 		, stream { std::move(stream) }
 	{
@@ -112,11 +142,8 @@ struct Task
 			*this->stream,
 			[this_ = this, file, callback = std::move(callback)](size_t, const int code, const QString& message) {
 				PLOGI << file << " finished " << (code ? "with " + message : "successfully");
-				if (code == 0)
-				{
-					this_->stream.reset();
-					callback();
-				}
+				this_->stream.reset();
+				callback(code == 0);
 
 				KillMe(this_);
 			},
@@ -151,7 +178,33 @@ void KillMe(T* obj)
 	});
 }
 
-void GetFiles(const QJsonValue& value, EventLooper& eventLooper)
+using TaskQueue = std::queue<std::function<void()>>;
+
+void GetFile(const QString& path, const QString& file, const QString& tmpFile, const QString& dstFile, EventLooper& eventLooper, TaskQueue& taskQueue, const int count = 1)
+{
+	auto stream = std::make_unique<QFile>(tmpFile);
+	if (!stream->open(QIODevice::WriteOnly))
+	{
+		PLOGW << "cannot open " << tmpFile;
+		return;
+	}
+
+	PLOGI << "download " << path + file << " try " << count;
+
+	new Task(path, file, eventLooper, std::move(stream), [path, file, tmpFile, dstFile, &eventLooper, &taskQueue, count](const bool success) mutable {
+		if (success && Validate(tmpFile, QFileInfo(dstFile).suffix().toLower()))
+			return (void)QFile::rename(tmpFile, dstFile);
+
+		if (count <= 10)
+			return taskQueue.push([path, file, tmpFile, dstFile, &eventLooper, &taskQueue, count] {
+				GetFile(path, file, tmpFile, dstFile, eventLooper, taskQueue, count + 1);
+			});
+
+		PLOGE << "download " << path + file << " failed";
+	});
+}
+
+void GetFiles(const QJsonValue& value, EventLooper& eventLooper, TaskQueue& taskQueue)
 {
 	assert(value.isObject());
 	const auto obj  = value.toObject();
@@ -166,20 +219,13 @@ void GetFiles(const QJsonValue& value, EventLooper& eventLooper)
 			continue;
 		}
 
-		auto stream = std::make_unique<QFile>(tmpFile);
-		if (!stream->open(QIODevice::WriteOnly))
-		{
-			PLOGW << "cannot open " << tmpFile;
-			continue;
-		}
-
-		new Task(path, file, eventLooper, std::move(stream), [tmpFile = std::move(tmpFile), dstFile = std::move(dstFile)] {
-			QFile::rename(tmpFile, dstFile);
+		taskQueue.push([path, file, tmpFile, dstFile, &eventLooper, &taskQueue] {
+			GetFile(path, file, tmpFile, dstFile, eventLooper, taskQueue);
 		});
 	}
 }
 
-void GetDaily(const QJsonArray& regexps, EventLooper& eventLooper, const QString& path, const QString& data)
+void GetDaily(const QJsonArray& regexps, EventLooper& eventLooper, const QString& path, const QString& data, TaskQueue& taskQueue)
 {
 	std::unordered_set<QString> files;
 	for (const auto regexpObj : regexps)
@@ -197,10 +243,31 @@ void GetDaily(const QJsonArray& regexps, EventLooper& eventLooper, const QString
 		{ "file", filesArray }
 	};
 
-	GetFiles(obj, eventLooper);
+	GetFiles(obj, eventLooper, taskQueue);
 }
 
-void GetDaily(const QJsonValue& value, EventLooper& eventLooper)
+void GetDaily(const QString& path, const QString& file, const QJsonArray& regexps, EventLooper& eventLooper, TaskQueue& taskQueue, const int count = 1)
+{
+	auto page   = std::make_shared<QByteArray>();
+	auto stream = std::make_unique<QBuffer>(page.get());
+	stream->open(QIODevice::WriteOnly);
+
+	PLOGI << "download " << path + file << " try " << count;
+
+	new Task(path, file, eventLooper, std::move(stream), [path, file, regexps, &eventLooper, &taskQueue, count, page = std::move(page)](const bool success) {
+		if (success && Validate(*page, regexps))
+			return GetDaily(regexps, eventLooper, path + file, QString::fromUtf8(*page), taskQueue);
+
+		if (count <= 10)
+			return taskQueue.push([path, file, regexps, &eventLooper, &taskQueue, count] {
+				GetDaily(path, file, regexps, eventLooper, taskQueue, count + 1);
+			});
+
+		PLOGE << "download " << path + file << " failed";
+	});
+}
+
+void GetDaily(const QJsonValue& value, EventLooper& eventLooper, TaskQueue& taskQueue)
 {
 	assert(value.isObject());
 	const auto obj    = value.toObject();
@@ -208,22 +275,17 @@ void GetDaily(const QJsonValue& value, EventLooper& eventLooper)
 	const auto file   = obj["file"].toString();
 	const auto regexp = obj["regexp"];
 	assert(regexp.isArray());
-
-	auto page   = std::make_shared<QByteArray>();
-	auto stream = std::make_unique<QBuffer>(page.get());
-	stream->open(QIODevice::WriteOnly);
-
-	new Task(path, file, eventLooper, std::move(stream), [&, regexps = regexp.toArray(), path = path + file, page = std::move(page)] {
-		GetDaily(regexps, eventLooper, path, QString::fromUtf8(*page));
+	taskQueue.push([path, file, regexps = regexp.toArray(), &eventLooper, &taskQueue] {
+		GetDaily(path, file, regexps, eventLooper, taskQueue);
 	});
 }
 
-void ScanStub(const QJsonValue&, EventLooper&)
+void ScanStub(const QJsonValue&, EventLooper&, TaskQueue&)
 {
 	PLOGE << "unexpected parameter";
 }
 
-constexpr std::pair<const char*, void (*)(const QJsonValue&, EventLooper&)> SCANNERS[] {
+constexpr std::pair<const char*, void (*)(const QJsonValue&, EventLooper&, TaskQueue&)> SCANNERS[] {
 	{ "zip", &GetDaily },
 	{ "sql", &GetFiles },
 };
@@ -290,15 +352,31 @@ int main(int argc, char* argv[])
 	const auto config = ReadConfig(configFileName);
 
 	EventLooper evenLooper;
+	TaskQueue   taskQueue;
 
 	for (const auto& arg : parser.positionalArguments())
 	{
 		const auto invoker = FindSecond(SCANNERS, arg.toStdString().data(), &ScanStub, PszComparer {});
 		PLOGI << arg << " in process";
-		std::invoke(invoker, config[arg], evenLooper);
+		std::invoke(invoker, config[arg], std::ref(evenLooper), std::ref(taskQueue));
 	}
 
-	const auto result = evenLooper.Start();
-	PLOGI << APP_ID << " finished with " << result;
-	return result;
+	while (true)
+	{
+		for (int i = 0; i < 3 && !taskQueue.empty(); ++i)
+		{
+			auto task = std::move(taskQueue.front());
+			taskQueue.pop();
+			task();
+		}
+
+		evenLooper.Start();
+
+		if (taskQueue.empty())
+			break;
+
+		QThread::sleep(std::chrono::seconds(5));
+	}
+
+	return 0;
 }
