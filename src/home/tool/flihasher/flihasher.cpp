@@ -233,7 +233,11 @@ void ProcessFile(
 	const auto zipFile   = zip.Read(file);
 	Fb2Parser  parser(zipFile->GetStream());
 	const auto parseResult = parser.GetResult();
-	bookGuard->WriteAttribute("hash", parseResult.id).WriteAttribute("id", parseResult.hashText).WriteAttribute(Inpx::FOLDER, folder).WriteAttribute(Inpx::FILE, file).WriteAttribute("title", parseResult.title);
+	bookGuard->WriteAttribute("hash", parseResult.id)
+		.WriteAttribute("id", parseResult.hashText)
+		.WriteAttribute(Inpx::FOLDER, folder)
+		.WriteAttribute(Inpx::FILE, file)
+		.WriteAttribute("title", parseResult.title);
 
 	const auto baseName = QFileInfo(file).completeBaseName();
 	if (coverZip && coverFiles.contains(baseName))
