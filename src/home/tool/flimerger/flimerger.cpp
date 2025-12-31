@@ -54,6 +54,7 @@ using Replacement = std::unordered_map<BookItem, BookItem, Util::PairHash<QStrin
 struct Settings
 {
 	QDir        outputDir;
+	QDir        hashDir;
 	QStringList arguments;
 	QString     logFileName;
 	QString     dumpWildCards;
@@ -298,17 +299,17 @@ void MergeArchives(const QDir& outputDir, const Archives& archives, const Replac
 		ProcessArchive(outputDir, archive, replacement);
 }
 
-void ProcessHash(const QDir& outputDir, const Archive& archive, const Replacement& replacement)
+void ProcessHash(const QDir& hashDir, const Archive& archive, const Replacement& replacement)
 {
 	PLOGI << "parsing " << archive.hashPath;
-	outputDir.mkpath(HASH);
+	hashDir.mkpath(".");
 	QFileInfo fileInfo(archive.hashPath);
 
 	QFile input(archive.hashPath);
 	if (!input.open(QIODevice::ReadOnly))
 		throw std::ios_base::failure(std::format("Cannot read from {}", archive.hashPath));
 
-	const auto outputFilePath = outputDir.filePath(QString("%1/%2").arg(HASH, fileInfo.fileName()));
+	const auto outputFilePath = hashDir.filePath(fileInfo.fileName());
 
 	QFile output(outputFilePath);
 	if (!output.open(QIODevice::WriteOnly))
@@ -317,10 +318,10 @@ void ProcessHash(const QDir& outputDir, const Archive& archive, const Replacemen
 	[[maybe_unused]] const HashCopier parser(input, output, replacement);
 }
 
-void MergeHash(const QDir& outputDir, const Archives& archives, const Replacement& replacement)
+void MergeHash(const QDir& hashDir, const Archives& archives, const Replacement& replacement)
 {
 	for (const auto& archive : archives)
-		ProcessHash(outputDir, archive, replacement);
+		ProcessHash(hashDir, archive, replacement);
 }
 
 void GetReplacement(const size_t totalFileCount, const Archives& archives, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider)
@@ -341,8 +342,9 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
 	parser.addOptions({
-		{ { "o", FOLDER }, "Output folder (required)",                              FOLDER },
-		{			DUMP,  "Dump database wildcards", "Semicolon separated wildcard list" },
+		{ { "o", FOLDER }, "Output folder (required)", FOLDER },
+		{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
+		{ HASH, "Hash output folder", QString("%1 [output_folder/%2]").arg(FOLDER, HASH) },
 	});
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -355,6 +357,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	settings.logFileName   = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
 	settings.arguments     = parser.positionalArguments();
 	settings.outputDir     = QDir { parser.value(FOLDER) };
+	settings.hashDir       = QDir { parser.isSet(HASH) ? parser.value(HASH) : settings.outputDir.absoluteFilePath(HASH) };
 	settings.dumpWildCards = parser.value(DUMP);
 
 	return settings;
@@ -367,7 +370,7 @@ void run(const Settings& settings)
 
 	auto inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
 
-	UniqueFileStorage uniqueFileStorage(settings.outputDir.absoluteFilePath(HASH), inpDataProvider);
+	UniqueFileStorage uniqueFileStorage(settings.hashDir.absolutePath(), inpDataProvider);
 
 	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(*inpDataProvider);
 	uniqueFileStorage.SetConflictResolver(conflictResolver);
@@ -377,7 +380,7 @@ void run(const Settings& settings)
 	GetReplacement(totalFileCount, archives, uniqueFileStorage, *inpDataProvider);
 
 	MergeArchives(settings.outputDir, archives, replacement);
-	MergeHash(settings.outputDir, archives, replacement);
+	MergeHash(settings.hashDir, archives, replacement);
 }
 
 } // namespace
