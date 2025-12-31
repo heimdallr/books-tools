@@ -266,6 +266,9 @@ void ProcessArchive(const QDir& dstDir, const QString& filePath, const QString& 
 	const auto coversZip = getZip(Global::COVERS);
 	const auto imagesZip = getZip(Global::IMAGES);
 
+	const auto covers = (coversZip ? coversZip->GetFileNameList() : QStringList {}) | std::ranges::to<std::set<QString>>();
+	const auto images = (imagesZip ? imagesZip->GetFileNameList() : QStringList {}) | std::ranges::to<std::set<QString>>();
+
 	QFile output(dstDir.filePath(fileInfo.completeBaseName() + ".xml"));
 	if (!output.open(QIODevice::WriteOnly))
 		throw std::ios_base::failure(std::format("Cannot create {}", dstDir.filePath(fileInfo.completeBaseName() + ".xml")));
@@ -276,16 +279,7 @@ void ProcessArchive(const QDir& dstDir, const QString& filePath, const QString& 
 
 	for (const auto& file : zip.GetFileNameList())
 	{
-		ProcessFile(
-			fileInfo.fileName(),
-			file,
-			zip,
-			coversZip.get(),
-			(coversZip ? coversZip->GetFileNameList() : QStringList {}) | std::ranges::to<std::set<QString>>(),
-			imagesZip.get(),
-			(imagesZip ? imagesZip->GetFileNameList() : QStringList {}) | std::ranges::to<std::set<QString>>(),
-			writer
-		);
+		ProcessFile(fileInfo.fileName(), file, zip, coversZip.get(), covers, imagesZip.get(), images, writer);
 		progress.Increment(1, file.toStdString());
 	}
 }
