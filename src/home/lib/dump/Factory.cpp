@@ -118,6 +118,9 @@ std::unique_ptr<IDump> Create(const std::filesystem::path& sqlDir, const std::fi
 {
 	if (exists(dbPath))
 	{
+		if (is_directory(dbPath))
+			throw std::invalid_argument("database path must be a file");
+
 		auto       db    = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag={}", dbPath.string(), "READONLY"));
 		const auto query = db->CreateQuery("select Value from Settings where Id='SourceLib'");
 		query->Execute();

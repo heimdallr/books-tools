@@ -33,14 +33,17 @@ struct Settings
 	std::filesystem::path sqlDir;
 	std::filesystem::path dbPath;
 	QString               library;
+	QString               logPath { QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID) };
 };
 
-void run(int argc, char* argv[])
+void run(const Settings& settings)
 {
-	const QCoreApplication app(argc, argv); //-V821
-	QCoreApplication::setApplicationName(APP_ID);
-	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
+	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library);
+	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path());
+}
 
+Settings parseCommandLine(const QCoreApplication& app)
+{
 	Settings settings {};
 
 	QCommandLineParser parser;
@@ -52,8 +55,7 @@ void run(int argc, char* argv[])
 		{ { "o", OUTPUT },  "Output database path (required)",                               PATH },
 		{         LIBRARY,						  "Library", "(Flibusta | LibRusEc) [Flibusta]" },
 	});
-	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
-	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
+	const auto logOption = Log::LoggingInitializer::AddLogFileOption(parser, settings.logPath);
 	parser.process(app);
 
 	settings.sqlDir  = parser.value(SQL).toStdWString();
@@ -63,22 +65,29 @@ void run(int argc, char* argv[])
 	if (settings.sqlDir.empty() || settings.dbPath.empty())
 		parser.showHelp(1);
 
-	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << QString("%1 started").arg(APP_ID);
+	if (parser.isSet(logOption))
+		settings.logPath = parser.value(logOption);
 
-	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library);
-	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path());
+	return settings;
 }
 
 } // namespace
 
-int main(const int argc, char* argv[])
+int main(int argc, char* argv[])
 {
+	const QCoreApplication app(argc, argv);
+	QCoreApplication::setApplicationName(APP_ID);
+	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
+
+	const auto                                       settings = parseCommandLine(app);
+	Log::LoggingInitializer                          logging(settings.logPath.toStdWString());
+	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
+	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	PLOGI << QString("%1 started").arg(APP_ID);
+
 	try
 	{
-		run(argc, argv);
+		run(settings);
 		return 0;
 	}
 	catch (const std::exception& ex)
@@ -89,5 +98,6 @@ int main(const int argc, char* argv[])
 	{
 		PLOGE << QString("%1 failed").arg(APP_ID);
 	}
+
 	return 1;
 }
