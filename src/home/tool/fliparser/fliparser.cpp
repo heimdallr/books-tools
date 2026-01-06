@@ -102,7 +102,7 @@ private: // HashParser::IObserver
 	{
 		UniqueFile::Uid uid { folder, file };
 		if (!originFolder.isEmpty())
-			return (void)m_replacement.try_emplace(std::make_pair(std::move(uid.file), std::move(uid.file)), std::make_pair(std::move(originFolder), std::move(originFile)));
+			m_replacement.try_emplace(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
 
 		m_inpDataProvider.SetFile(uid, std::move(id));
 		m_progress.Increment(1, file.toStdString());
@@ -650,17 +650,58 @@ Replacement ReadHash(const size_t totalFileCount, InpDataProvider& inpDataProvid
 	return replacement;
 }
 
-void MergeRate(const InpDataProvider& inpDataProvider, const Replacement& replacement)
+void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& replacement)
 {
+	struct BookIndexItem
+	{
+		BookItem                    uid;
+		std::vector<BookIndexItem*> children;
+	};
+
+	std::unordered_map<BookItem, BookIndexItem, Util::PairHash<QString, QString>> index;
 	for (const auto& [fileUid, originUid] : replacement)
 	{
-		if (const auto* file = inpDataProvider.GetBook({ fileUid.first, fileUid.second }))
+		auto& origin = index.try_emplace(originUid, BookIndexItem { originUid }).first->second;
+		auto& file   = index.try_emplace(fileUid, BookIndexItem { fileUid }).first->second;
+		origin.children.emplace_back(&file);
+	}
+
+	const auto enumerate = [&](Book& origin, const BookIndexItem& parent, const auto& r) -> void {
+		for (const auto* item : parent.children)
 		{
-			if (auto* origin = inpDataProvider.GetBook({ originUid.first, originUid.second }))
+			if (const auto* file = inpDataProvider.GetBook({ item->uid.first, item->uid.second }))
 			{
-				origin->rate      += file->rate;
-				origin->rateCount += file->rateCount;
+				origin.rate      += file->rate;
+				origin.rateCount += file->rateCount;
+
+				std::ranges::copy(file->series, std::back_inserter(origin.series));
+
+				origin.deleted = origin.deleted && file->deleted;
 			}
+			r(origin, *item, r);
+		}
+	};
+
+	const auto seriesUniquePredicate = [](const auto& item) {
+		return item.title;
+	};
+	const auto seriesOrdNumPredicate = [](const auto& item) {
+		return item.level;
+	};
+
+	for (const auto& indexItem : index | std::views::filter([&](const auto& item) {
+									 return !replacement.contains(item.first);
+								 }) | std::views::values)
+	{
+		if (auto* origin = inpDataProvider.GetBook({ indexItem.uid.first, indexItem.uid.second }))
+		{
+			enumerate(*origin, indexItem, enumerate);
+			std::ranges::sort(origin->series, std::greater {}, seriesUniquePredicate);
+			if (const auto [begin, end] = std::ranges::unique(origin->series, {}, seriesUniquePredicate); begin != end)
+				origin->series.erase(begin, end);
+			if (origin->series.size() > 1 && origin->series.back().title.isEmpty())
+				origin->series.pop_back();
+			std::ranges::sort(origin->series, {}, seriesOrdNumPredicate);
 		}
 	}
 }
@@ -705,7 +746,7 @@ int main(int argc, char* argv[])
 	const auto inpDataProvider = std::make_shared<InpDataProvider>(parser.value(DUMP));
 	const auto replacement     = ReadHash(totalFileCount, *inpDataProvider, archives);
 
-	MergeRate(*inpDataProvider, replacement);
+	MergeBookData(*inpDataProvider, replacement);
 	CreateInpx(settings, archives, *inpDataProvider);
 	CreateBookList(settings.outputFolder, *inpDataProvider);
 	CreateReview(settings.outputFolder, *inpDataProvider, replacement);
