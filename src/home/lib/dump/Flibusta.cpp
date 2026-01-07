@@ -355,6 +355,12 @@ private: // IDatabase
 			functor(index);
 	}
 
+	const SeriesTable& GetSeriesTable() const noexcept override
+	{
+		static constexpr SeriesTable table { "libseqname", "SeqId", "SeqName" };
+		return table;
+	}
+
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
 		const auto query = m_db->CreateQuery(R"(

@@ -5,6 +5,7 @@
 #include <regex>
 
 #include <QDir>
+#include <QRegularExpression>
 
 #include "database/interface/ICommand.h"
 #include "database/interface/IDatabase.h"
@@ -161,6 +162,40 @@ std::unique_ptr<IDump> Create(const std::filesystem::path& sqlDir, const std::fi
 			PLOGI << index;
 			tr->CreateCommand(index)->Execute();
 		});
+		tr->Commit();
+	}
+
+	{
+		std::vector<std::pair<long long, QString>> series;
+
+		const auto& seriesTable = dump->GetSeriesTable();
+
+		{
+			const auto query = db.CreateQuery(std::format("select {}, {} from {}", seriesTable.id, seriesTable.name, seriesTable.table));
+			for (query->Execute(); !query->Eof(); query->Next())
+				series.emplace_back(query->Get<long long>(0), query->Get<const char*>(1));
+		}
+
+		const auto tr      = db.CreateTransaction();
+		const auto command = tr->CreateCommand(std::format("update {} set {} = ? where {} = ?", seriesTable.table, seriesTable.name, seriesTable.id));
+
+		const QRegularExpression exprs[] { QRegularExpression { R"(^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]\s*(.*?)$)" } };
+
+		for (const auto& [id, name] : series)
+		{
+			QString newName = name.simplified();
+			for (const auto& expr : exprs)
+				if (const auto match = expr.match(newName); match.hasMatch())
+					newName = QString("%1 [%2]%3").arg(match.captured(1), match.captured(2), match.captured(3)).simplified();
+
+			if (newName != name)
+			{
+				command->Bind(0, newName.toStdString());
+				command->Bind(1, id);
+				command->Execute();
+			}
+		}
+
 		tr->Commit();
 	}
 
