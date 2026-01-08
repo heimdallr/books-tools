@@ -27,18 +27,20 @@ constexpr auto OUTPUT  = "output";
 constexpr auto FOLDER  = "folder";
 constexpr auto PATH    = "path";
 constexpr auto LIBRARY = "library";
+constexpr auto REPLACE = "replace";
 
 struct Settings
 {
 	std::filesystem::path sqlDir;
 	std::filesystem::path dbPath;
+	std::filesystem::path replacementPath;
 	QString               library;
 	QString               logPath { QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID) };
 };
 
 void run(const Settings& settings)
 {
-	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library);
+	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library, settings.replacementPath);
 	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path());
 }
 
@@ -51,16 +53,18 @@ Settings parseCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addOptions({
-		{    { "s", SQL }, "Folder with sql files (required)",                             FOLDER },
-		{ { "o", OUTPUT },  "Output database path (required)",                               PATH },
-		{         LIBRARY,						  "Library", "(Flibusta | LibRusEc) [Flibusta]" },
+		{     { "s", SQL }, "Folder with sql files (required)",                             FOLDER },
+		{  { "o", OUTPUT },  "Output database path (required)",                               PATH },
+		{ { "r", REPLACE },            "Replacement file path",                               PATH },
+		{		  LIBRARY,						  "Library", "(Flibusta | LibRusEc) [Flibusta]" },
 	});
 	const auto logOption = Log::LoggingInitializer::AddLogFileOption(parser, settings.logPath);
 	parser.process(app);
 
-	settings.sqlDir  = parser.value(SQL).toStdWString();
-	settings.dbPath  = parser.value(OUTPUT).toStdWString();
-	settings.library = parser.value(LIBRARY);
+	settings.sqlDir          = parser.value(SQL).toStdWString();
+	settings.dbPath          = parser.value(OUTPUT).toStdWString();
+	settings.replacementPath = parser.value(REPLACE).toStdWString();
+	settings.library         = parser.value(LIBRARY);
 
 	if (settings.sqlDir.empty() || settings.dbPath.empty())
 		parser.showHelp(1);

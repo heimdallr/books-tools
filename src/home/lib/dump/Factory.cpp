@@ -245,7 +245,9 @@ void ReplaceImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tab
 		if (newValues == oldValues)
 			continue;
 
-		//			command->Bind(0, newName.toStdString());
+		for (const auto index : std::views::iota(0, static_cast<int>(tableDescription.names.size())))
+			command->Bind(index, newValues[index].toStdString());
+
 		command->Bind(tableDescription.names.size(), id);
 		command->Execute();
 	}
