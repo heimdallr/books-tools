@@ -14,6 +14,14 @@ namespace HomeCompa::FliLib
 class IDump // NOLINT(cppcoreguidelines-special-member-functions)
 {
 public:
+	struct DictionaryTableDescription
+	{
+		const char*              table;
+		const char*              id;
+		std::vector<const char*> names;
+	};
+
+public:
 	virtual ~IDump() = default;
 
 	virtual DB::IDatabase& SetDatabase(std::unique_ptr<DB::IDatabase>) noexcept = 0;
@@ -25,8 +33,11 @@ public:
 	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const                        = 0;
 	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir) const = 0;
 
+	virtual const DictionaryTableDescription& GetAuthorTable() const noexcept = 0;
+	virtual const DictionaryTableDescription& GetSeriesTable() const noexcept = 0;
+
 	virtual std::vector<std::pair<int, int>> GetReviewMonths() const                                                                                          = 0;
 	virtual void                             Review(int year, int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const = 0;
 };
 
-}
+} // namespace HomeCompa::FliLib

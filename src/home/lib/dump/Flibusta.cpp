@@ -355,6 +355,22 @@ private: // IDatabase
 			functor(index);
 	}
 
+	const DictionaryTableDescription& GetAuthorTable() const noexcept override
+	{
+		static const DictionaryTableDescription table {
+			"libavtorname",
+			"AvtorId",
+			{ "FirstName", "MiddleName", "LastName" }
+		};
+		return table;
+	}
+
+	const DictionaryTableDescription& GetSeriesTable() const noexcept override
+	{
+		static const DictionaryTableDescription table { "libseqname", "SeqId", { "SeqName" } };
+		return table;
+	}
+
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
 		const auto query = m_db->CreateQuery(R"(

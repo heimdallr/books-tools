@@ -309,6 +309,13 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		return doc.object();
 	}();
 
+	const auto seriesUniquePredicate = [](const auto& item) {
+		return item.title;
+	};
+	const auto seriesOrdNumPredicate = [](const auto& item) {
+		return item.level;
+	};
+
 	const auto inpxFileName = settings.outputFolder / (QFileInfo(archives.front().filePath).dir().dirName() + ".inpx").toStdString();
 	if (exists(inpxFileName))
 		remove(inpxFileName);
@@ -346,6 +353,14 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 
 			book->sourceLib = sourceLib;
 			book->folder    = zipFileInfo.fileName();
+
+			auto& series = book->series;
+			std::ranges::sort(series, std::greater {}, seriesUniquePredicate);
+			if (const auto [begin, end] = std::ranges::unique(series, {}, seriesUniquePredicate); begin != end)
+				series.erase(begin, end);
+			if (series.size() > 1 && series.back().title.isEmpty())
+				series.pop_back();
+			std::ranges::sort(series, {}, seriesOrdNumPredicate);
 
 			file << *book;
 
@@ -681,13 +696,6 @@ void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& re
 		}
 	};
 
-	const auto seriesUniquePredicate = [](const auto& item) {
-		return item.title;
-	};
-	const auto seriesOrdNumPredicate = [](const auto& item) {
-		return item.level;
-	};
-
 	for (const auto& indexItem : index | std::views::filter([&](const auto& item) {
 									 return !replacement.contains(item.first);
 								 }) | std::views::values)
@@ -695,12 +703,6 @@ void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& re
 		if (auto* origin = inpDataProvider.GetBook({ indexItem.uid.first, indexItem.uid.second }))
 		{
 			enumerate(*origin, indexItem, enumerate);
-			std::ranges::sort(origin->series, std::greater {}, seriesUniquePredicate);
-			if (const auto [begin, end] = std::ranges::unique(origin->series, {}, seriesUniquePredicate); begin != end)
-				origin->series.erase(begin, end);
-			if (origin->series.size() > 1 && origin->series.back().title.isEmpty())
-				origin->series.pop_back();
-			std::ranges::sort(origin->series, {}, seriesOrdNumPredicate);
 		}
 	}
 }
