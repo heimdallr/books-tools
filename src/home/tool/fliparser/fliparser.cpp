@@ -323,7 +323,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 	auto      zipFileController = Zip::CreateZipFileController();
 	QDateTime maxTime;
 
-	for (const auto& [zipFileInfo, sourceLib] : archives | std::views::transform([](const auto& item) {
+	for (const auto& [zipFileInfo, sourceLib] : archives | std::views::reverse | std::views::transform([](const auto& item) {
 													return std::make_pair(QFileInfo(item.filePath), item.sourceLib);
 												}))
 	{
