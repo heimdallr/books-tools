@@ -35,8 +35,16 @@ namespace
 {
 constexpr auto APP_ID        = "fliscaner";
 constexpr auto OUTPUT_FOLDER = "output-folder";
+constexpr auto TIMEOUT       = "timeout";
 constexpr auto CONFIG        = "config";
-QString        DST_PATH;
+constexpr auto ATTEMPTS      = "attempts";
+constexpr auto COUNT         = "count";
+
+constexpr auto DEFAULT_COUNT   = 3;
+constexpr auto DEFAULT_TIMEOUT = 5000;
+int            MAX_ATTEMPTS    = 10;
+
+QString DST_PATH;
 
 class EventLooper
 {
@@ -195,7 +203,7 @@ void GetFile(const QString& path, const QString& file, const QString& tmpFile, c
 		if (success && Validate(tmpFile, QFileInfo(dstFile).suffix().toLower()))
 			return (void)QFile::rename(tmpFile, dstFile);
 
-		if (count <= 10)
+		if (count <= MAX_ATTEMPTS)
 			return taskQueue.push([path, file, tmpFile, dstFile, &eventLooper, &taskQueue, count] {
 				GetFile(path, file, tmpFile, dstFile, eventLooper, taskQueue, count + 1);
 			});
@@ -258,7 +266,7 @@ void GetDaily(const QString& path, const QString& file, const QJsonArray& regexp
 		if (success && Validate(*page, regexps))
 			return GetDaily(regexps, eventLooper, path + file, QString::fromUtf8(*page), taskQueue);
 
-		if (count <= 10)
+		if (count <= MAX_ATTEMPTS)
 			return taskQueue.push([path, file, regexps, &eventLooper, &taskQueue, count] {
 				GetDaily(path, file, regexps, eventLooper, taskQueue, count + 1);
 			});
@@ -305,8 +313,11 @@ int main(int argc, char* argv[])
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addOptions({
-		{ { "o", OUTPUT_FOLDER }, "Output folder",                                                  DST_PATH },
-		{        { "c", CONFIG },        "Config", "Apply config or extract it from resources if not exists" },
+		{ { "o", OUTPUT_FOLDER },                                "Output folder",                         DST_PATH },
+		{        { "c", CONFIG },							 "Config file path", "config.json from app resources" },
+		{				TIMEOUT,          "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
+		{			   ATTEMPTS, "Maximum number of download attempts per file",    QString::number(MAX_ATTEMPTS) },
+		{				  COUNT,    "Number of files downloaded simultaneously",   QString::number(DEFAULT_COUNT) },
 	});
 	parser.addPositionalArgument("sql", "Download dump files");
 	parser.addPositionalArgument("zip", "Download book archives");
@@ -361,9 +372,14 @@ int main(int argc, char* argv[])
 		std::invoke(invoker, config[arg], std::ref(evenLooper), std::ref(taskQueue));
 	}
 
+	const auto fileCount = parser.isSet(COUNT) ? parser.value(COUNT).toInt() : DEFAULT_COUNT;
+	const auto timeout   = parser.isSet(TIMEOUT) ? parser.value(TIMEOUT).toInt() : DEFAULT_TIMEOUT;
+	if (parser.isSet(ATTEMPTS))
+		MAX_ATTEMPTS = parser.value(ATTEMPTS).toInt();
+
 	while (true)
 	{
-		for (int i = 0; i < 3 && !taskQueue.empty(); ++i)
+		for (int i = 0; i < fileCount && !taskQueue.empty(); ++i)
 		{
 			auto task = std::move(taskQueue.front());
 			taskQueue.pop();
@@ -375,7 +391,7 @@ int main(int argc, char* argv[])
 		if (taskQueue.empty())
 			break;
 
-		QThread::sleep(std::chrono::seconds(5));
+		QThread::sleep(std::chrono::milliseconds(timeout));
 	}
 
 	return 0;
