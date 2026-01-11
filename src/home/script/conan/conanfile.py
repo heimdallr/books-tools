@@ -21,7 +21,7 @@ def configure_libjxl(recipe):
 def configure_qt(recipe):
     recipe.options["qt"].shared = True
     recipe.options["qt"].commercial = False
-    recipe.options["qt"].openssl = False
+    recipe.options["qt"].openssl = True
     recipe.options["qt"].with_pcre2 = True
     recipe.options["qt"].with_glib = False
     recipe.options["qt"].with_doubleconversion = True
