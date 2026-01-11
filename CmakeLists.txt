@@ -41,6 +41,10 @@ find_package(7zip REQUIRED)
 find_package(ICU REQUIRED)
 find_package(libjxl REQUIRED)
 
+set(QtModules Core Gui Widgets Network Svg)
+find_package(Qt6 REQUIRED COMPONENTS ${QtModules})
+include(QtInstallPaths)
+
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home/common)
 
@@ -57,10 +61,6 @@ include(${FOUNDATION_ROOT}/icu/icu.cmake)
 
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPER)
 file(WRITE "${CMAKE_BINARY_DIR}/path/7z" "${7zip_BIN_DIRS_${CMAKE_BUILD_TYPE_UPPER}}/")
-
-set(QtModules Core Gui Widgets Network Svg)
-find_package(Qt6 REQUIRED COMPONENTS ${QtModules})
-include(QtInstallPaths)
 
 add_compile_definitions(PLOG_IMPORT)
 add_compile_definitions(UNICODE _UNICODE NOMINMAX _USE_MATH_DEFINES)
