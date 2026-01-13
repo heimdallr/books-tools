@@ -122,8 +122,7 @@ bool Validate(const QString& path, const QString& ext)
 		{ "zip",       "PK\x03\x04"sv },
 		{  "gz", "\x1F\x8B\x08\x00"sv },
 	};
-	const QFileInfo fileInfo(path);
-	const auto      signature = FindSecond(signatures, ext.toStdString().data(), empty, PszComparer {});
+	const auto signature = FindSecond(signatures, ext.toStdString().data(), empty, PszComparer {});
 
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly))
