@@ -1,6 +1,7 @@
 #include "UniqueFile.h"
 
 #include <ranges>
+#include <unordered_set>
 
 #include <QDir>
 #include <QFile>
@@ -218,15 +219,6 @@ enum class ImagesCompareResult
 
 constexpr auto POP_COUNT_THRESHOLD = 5;
 
-void EraseFromPHashes(std::vector<uint64_t>& lpHashes, const std::vector<uint64_t>& rpHashes)
-{
-	erase_if(lpHashes, [&](const uint64_t lItem) {
-		return std::ranges::any_of(rpHashes, [&](const uint64_t rItem) {
-			return std::popcount(lItem ^ rItem) <= POP_COUNT_THRESHOLD;
-		});
-	});
-}
-
 [[nodiscard]] ImagesCompareResult CompareImages(const UniqueFile& lhs, const UniqueFile& rhs)
 {
 	auto result = ImagesCompareResult::Equal;
@@ -236,29 +228,25 @@ void EraseFromPHashes(std::vector<uint64_t>& lpHashes, const std::vector<uint64_
 			result = ImagesCompareResult::Inner;
 		else if (rhs.cover.hash.isEmpty())
 			result = ImagesCompareResult::Outer;
-		else
+		else if (lhs.cover.pHash == 0 || rhs.cover.pHash == 0 || std::popcount(lhs.cover.pHash ^ rhs.cover.pHash) > POP_COUNT_THRESHOLD)
 			return ImagesCompareResult::Varied;
 	}
 
-	auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
+	std::vector<uint64_t>             lpHashes;
+	std::unordered_multiset<uint64_t> rpHashes;
+	auto                              lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
 	while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
 	{
 		if (lIt->hash < rIt->hash)
 		{
-			if (result == ImagesCompareResult::Inner)
-				return ImagesCompareResult::Varied;
-
-			result = ImagesCompareResult::Outer;
+			lpHashes.emplace_back(lIt->pHash);
 			++lIt;
 			continue;
 		}
 
 		if (lIt->hash > rIt->hash)
 		{
-			if (result == ImagesCompareResult::Outer)
-				return ImagesCompareResult::Varied;
-
-			result = ImagesCompareResult::Inner;
+			rpHashes.emplace(rIt->pHash);
 			++rIt;
 			continue;
 		}
@@ -266,22 +254,43 @@ void EraseFromPHashes(std::vector<uint64_t>& lpHashes, const std::vector<uint64_
 		++rIt;
 	}
 
-	if (result == ImagesCompareResult::Varied)
-		return result;
+	if (!(lpHashes.empty() || rpHashes.empty()))
+	{
+		for (; lIt != lhs.images.cend(); ++lIt)
+			lpHashes.emplace_back(lIt->pHash);
+		for (; rIt != rhs.images.cend(); ++rIt)
+			rpHashes.emplace(rIt->pHash);
+		erase_if(lpHashes, [&](const uint64_t lItem) {
+			if (lItem == 0)
+				return false;
+			if (const auto it = std::ranges::find_if(
+					rpHashes,
+					[&](const uint64_t rItem) {
+						return std::popcount(lItem ^ rItem) <= POP_COUNT_THRESHOLD;
+					}
+				);
+			    it != rpHashes.end())
+			{
+				rpHashes.erase(it);
+				return true;
+			}
+			return false;
+		});
+	}
 
-	if (lIt != lhs.images.cend())
+	if (!lpHashes.empty())
 		result = result == ImagesCompareResult::Inner ? ImagesCompareResult::Varied : ImagesCompareResult::Outer;
 
 	if (result == ImagesCompareResult::Varied)
 		return result;
 
-	if (rIt != rhs.images.cend())
+	if (!rpHashes.empty())
 		result = result == ImagesCompareResult::Outer ? ImagesCompareResult::Varied : ImagesCompareResult::Inner;
 
 	if (result == ImagesCompareResult::Varied)
 		return result;
 
-	if ((!lhs.images.empty() && !rhs.images.empty()) || (!lhs.cover.hash.isEmpty() && lhs.cover.hash == rhs.cover.hash))
+	if (!((lhs.images.empty() || rhs.images.empty()) && (lhs.cover.hash.isEmpty() || rhs.cover.hash.isEmpty())))
 		return result;
 
 	if (std::ranges::includes(lhs.title, rhs.title) || std::ranges::includes(rhs.title, lhs.title))

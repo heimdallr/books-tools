@@ -94,8 +94,8 @@ private: // HashParser::IObserver
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-			QString /*cover*/,
-		QStringList /*images*/,
+			HashParser::HashImageItem /*cover*/,
+		std::vector<HashParser::HashImageItem> /*images*/,
 		Section::Ptr
 	) override
 	{
@@ -154,8 +154,8 @@ private: // HashParser::IObserver
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-			QString /*cover*/,
-		QStringList /*images*/,
+			HashParser::HashImageItem /*cover*/,
+		std::vector<HashParser::HashImageItem> /*images*/,
 		Section::Ptr section
 	) override
 	{
