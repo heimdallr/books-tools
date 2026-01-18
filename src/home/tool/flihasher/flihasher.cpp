@@ -1,4 +1,5 @@
-﻿#include <QCryptographicHash>
+﻿#include <CImg.h>
+#include <QCryptographicHash>
 
 #include <condition_variable>
 #include <queue>
@@ -7,8 +8,9 @@
 
 #include <QBuffer>
 #include <QCommandLineParser>
-#include <QCoreApplication>
 #include <QDir>
+#include <QGuiApplication>
+#include <QPixmap>
 #include <QStandardPaths>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -18,6 +20,7 @@
 #include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
+#include "util/ImageUtil.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/files.h"
 #include "util/progress.h"
@@ -36,6 +39,8 @@ using namespace HomeCompa;
 namespace
 {
 
+using namespace cimg_library;
+
 constexpr auto APP_ID = "flihasher";
 
 constexpr auto OUTPUT                       = "output";
@@ -43,6 +48,21 @@ constexpr auto FOLDER                       = "folder";
 constexpr auto LIBRARY                      = "library";
 constexpr auto THREADS                      = "threads";
 constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
+
+CImg<float> GetDctMatrix(const int N)
+{
+	const auto  n = static_cast<float>(N);
+	CImg<float> matrix(N, N, 1, 1, 1 / std::sqrt(n));
+	const auto  c1 = std::sqrt(2.0f / n);
+	for (int x = 0; x < N; ++x)
+		for (int y = 1; y < N; ++y)
+			matrix(x, y) = c1 * static_cast<float>(std::cos((cimg::PI / 2.0 / N) * y * (2.0 * x + 1)));
+	return matrix;
+}
+
+const CImg<float> DCT   = GetDctMatrix(32);
+const CImg<float> DCT_T = DCT.get_transpose();
+const CImg<float> MEAN_FILTER(7, 7, 1, 1, 1);
 
 struct Options
 {
@@ -65,6 +85,7 @@ struct ImageTaskItem
 	QString    file;
 	QByteArray body;
 	QString    hash;
+	uint64_t   pHash { 0 };
 };
 
 struct BookTaskItem
@@ -76,6 +97,51 @@ struct BookTaskItem
 	std::vector<ImageTaskItem> images;
 	ParseResult                parseResult;
 };
+
+uint64_t GetPHash(const QByteArray& body)
+{
+	auto pixmap = Util::Decode(body);
+	if (pixmap.isNull())
+		return 0;
+
+	auto       image    = pixmap.toImage();
+	const auto hasAlpha = image.pixelFormat().alphaUsage() == QPixelFormat::UsesAlpha;
+	image.convertTo(hasAlpha ? QImage::Format_RGBA8888 : QImage::Format_RGB888);
+
+	const auto    pixelSize = hasAlpha ? 4 : 3;
+	auto          data      = new uint8_t[static_cast<size_t>(image.width()) * image.height() * pixelSize];
+	CImg<uint8_t> src(data, image.width(), image.height(), 1, pixelSize, true);
+	src._is_shared = false;
+
+	std::vector<uint8_t*> planes;
+	planes.reserve(pixelSize);
+	for (int i = 0; i < pixelSize; ++i)
+		planes.push_back(data + static_cast<size_t>(image.width()) * image.height() * i);
+
+	for (auto h = 0, szh = image.height(), szw = image.width(); h < szh; ++h)
+	{
+		const auto* line = image.scanLine(h);
+		for (auto w = 0; w < szw; ++w)
+			for (int i = 0; i < pixelSize; ++i)
+				*planes[i]++ = *line++;
+	}
+
+	const auto img = (src.spectrum() == 3   ? src.RGBtoYCbCr()
+	                  : src.spectrum() == 4 ? src.crop(0, 0, 0, 0, src.width() - 1, src.height() - 1, 0, 2).RGBtoYCbCr()
+	                                        : src)
+	                     .channel(0)
+	                     .get_convolve(MEAN_FILTER)
+	                     .resize(32, 32);
+
+	const auto dct = (DCT * img * DCT_T).crop(1, 1, 8, 8);
+
+	return std::accumulate(dct._data, dct._data + 64, uint64_t { 0 }, [median = dct.median()](const uint64_t init, const float value) {
+		auto result = init << 1;
+		if (value > median)
+			result |= 1;
+		return result;
+	});
+}
 
 class Fb2Parser final : public Util::SaxParser
 {
@@ -253,7 +319,8 @@ private:
 		const auto         setHash = [&](ImageTaskItem& item) {
             md5.reset();
             md5.addData(item.body);
-            item.hash = QString::fromUtf8(md5.result().toHex());
+            item.hash  = QString::fromUtf8(md5.result().toHex());
+            item.pHash = GetPHash(item.body);
             item.body.clear();
 		};
 
@@ -327,9 +394,13 @@ public:
 public:
 	void Enqueue(BookTaskItem bookTaskItem)
 	{
-		std::unique_lock lock(m_queueGuard);
-		m_queue.emplace(std::move(bookTaskItem));
-		++m_queueSize;
+		{
+			std::unique_lock lock(m_queueGuard);
+			m_queue.emplace(std::move(bookTaskItem));
+		}
+		if (++m_queueSize > 1)
+			PLOGV << "Queue size: " << m_queueSize;
+
 		m_queueCondition.notify_all();
 	}
 
@@ -341,6 +412,7 @@ public:
 	std::vector<BookTaskItem>& Wait()
 	{
 		m_workers.clear();
+		PLOGV << "sorting results";
 		std::ranges::sort(m_results, {}, [](const auto& item) {
 			return item.file;
 		});
@@ -428,6 +500,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Util::Progr
 	const auto      booksGuard = writer.Guard("books");
 	booksGuard->WriteAttribute("source", options.sourceLib);
 
+	PLOGV << "writing results";
 	for (const auto& file : processor.Wait())
 	{
 		const auto bookGuard = writer.Guard("book");
@@ -441,6 +514,8 @@ void ProcessArchive(const Options& options, const QString& filePath, Util::Progr
 			const auto guard = bookGuard->Guard(nodeName);
 			if (!item.file.isEmpty())
 				guard->WriteAttribute("id", item.file);
+			if (item.pHash)
+				guard->WriteAttribute("pHash", QString::number(item.pHash));
 			guard->WriteCharacters(item.hash);
 		};
 
@@ -505,7 +580,7 @@ int run(const Options& options)
 
 int main(int argc, char* argv[])
 {
-	const QCoreApplication app(argc, argv);
+	const QGuiApplication app(argc, argv);
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
