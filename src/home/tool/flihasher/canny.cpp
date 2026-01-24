@@ -53,10 +53,8 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 	// }
 	// printf("\n");
 
-	cout << "gFilter created" << endl;
-	toGrayScale(); //Grayscale the image
 	cout << "image converted to grayscale" << endl;
-	useFilter(grayscaled, filter); //Gaussian Filter
+	useFilter(img, filter); //Gaussian Filter
 	cout << "image filtered with Gaussian filter" << endl;
 	sobel(); //Sobel Filter
 	cout << "image filtered with sobel filter" << endl;
@@ -67,20 +65,6 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 	cout << "image filtered with double thresholding" << endl;
 
 	return thres;
-}
-
-void Canny::toGrayScale()
-{
-	grayscaled.assign(img._width, img._height); //To one channel
-	cimg_forXY(img, x, y)
-	{
-		int    r        = img(x, y, 0);
-		int    g        = img(x, y, 1);
-		int    b        = img(x, y, 2);
-		double newValue = (r * 0.2126 + g * 0.7152 + b * 0.0722);
-
-		grayscaled(x, y) = (unsigned char)(newValue);
-	}
 }
 
 vector<vector<double>> Canny::createFilter(const int row, const int column, const double sigmaIn)

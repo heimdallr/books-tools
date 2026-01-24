@@ -20,7 +20,6 @@ class Canny {
 private:
 
     CImg<unsigned char> img; //Original Image
-    CImg<unsigned char> grayscaled; // Grayscale
     CImg<unsigned char> gFiltered; // Gradient
     CImg<unsigned char> sFiltered; //Sobel Filtered
     CImg<float> angles; //Angle Map
@@ -35,8 +34,6 @@ public:
     //Constructor
     //@param const char* name : name of the image, path will be auto concatenated to "./output/name.bmp". 
     explicit Canny(CImg<unsigned char> img);
-
-    void toGrayScale();
 
     vector< vector<double> > createFilter(int row, int col, double sigma_in); //Creates a gaussian filter
 
