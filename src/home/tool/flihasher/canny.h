@@ -24,7 +24,6 @@ private:
     CImg<unsigned char> sFiltered; //Sobel Filtered
     CImg<float> angles; //Angle Map
     CImg<unsigned char> nonMaxSupped; // Non-maxima supp.
-    CImg<unsigned char> thres; //Double threshold and final
 
     int    _gfs { 3 }, _thres_lo {20}, _thres_hi{40};
     double _g_sig{1.0};
@@ -43,8 +42,6 @@ public:
 
     void nonMaxSupp(); //Non-maxima supp.
     
-    void threshold(CImg<unsigned char>, int, int); //Double threshold and finalize picture
-
     //Main Process Function with different parameter setting.
 
     //@param

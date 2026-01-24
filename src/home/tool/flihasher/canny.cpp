@@ -26,7 +26,77 @@ U round(const V v)
 	return static_cast<U>(std::min(std::llround(v), static_cast<long long>(std::numeric_limits<U>::max())));
 }
 
+CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
+{
+	if (low > 255)
+		low = 255;
+	if (high > 255)
+		high = 255;
+
+	CImg<unsigned char> thres(src._width, src._height);
+
+	for (auto i = 0U; i < src._width; ++i)
+	{
+		for (auto j = 0U; j < src._height; ++j)
+		{
+			thres(i, j) = src(i, j);
+			if (thres(i, j) > high)
+				thres(i, j) = 255;
+			else if (thres(i, j) < low)
+				thres(i, j) = 0;
+			else
+			{
+				bool anyHigh    = false;
+				bool anyBetween = false;
+				for (auto x = i - 1; x < i + 2; ++x)
+				{
+					for (auto y = j - 1; y < j + 2; ++y)
+					{
+						//Wang Note: a missing "x" in Hasan's code.
+						if (x <= 0 || y <= 0 || x > thres._width || y > thres._height) //Out of bounds
+							continue;
+
+						if (thres(x, y) > high)
+						{
+							thres(i, j) = 255;
+							anyHigh     = true;
+							break;
+						}
+
+						if (thres(x, y) <= high && thres(x, y) >= low)
+							anyBetween = true;
+					}
+					if (anyHigh)
+						break;
+				}
+				if (!anyHigh && anyBetween)
+					for (auto x = i - 2; x < i + 3; ++x)
+					{
+						for (auto y = j - 1; y < j + 3; ++y)
+						{
+							if (x < 0 || y < 0 || x > thres._width || y > thres._height) //Out of bounds
+								continue;
+
+							if (thres(x, y) > high)
+							{
+								thres(i, j) = 255;
+								anyHigh     = true;
+								break;
+							}
+						}
+						if (anyHigh)
+							break;
+					}
+				if (!anyHigh)
+					thres(i, j) = 0;
+			}
+		}
+	}
+
+	return thres;
 }
+
+} // namespace
 
 Canny::Canny(CImg<unsigned char> img_)
 	: img(std::move(img_))
@@ -53,16 +123,17 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 	// }
 	// printf("\n");
 
-	cout << "image converted to grayscale" << endl;
 	useFilter(img, filter); //Gaussian Filter
-	cout << "image filtered with Gaussian filter" << endl;
+	gFiltered.save("t:/gaussian.ppm");
+
 	sobel(); //Sobel Filter
-	cout << "image filtered with sobel filter" << endl;
+	sFiltered.save("t:/sobel.ppm");
 
 	nonMaxSupp(); //Non-Maxima Suppression
-	cout << "image filtered with non-maxima Suppression" << endl;
-	threshold(nonMaxSupped, thres_lo, thres_hi); //Double Threshold and Finalize
-	cout << "image filtered with double thresholding" << endl;
+	nonMaxSupped.save("t:/nonMaxSupped.ppm");
+
+	auto thres = threshold(nonMaxSupped, thres_lo, thres_hi);
+	thres.save("t:/thres.ppm");
 
 	return thres;
 }
@@ -217,73 +288,5 @@ void Canny::nonMaxSupp()
 			}
 		}
 		// cout << '\n';
-	}
-}
-
-void Canny::threshold(CImg<unsigned char> imgin, int low, int high)
-{
-	if (low > 255)
-		low = 255;
-	if (high > 255)
-		high = 255;
-
-	thres = CImg<unsigned char>(imgin._width, imgin._height);
-
-	for (auto i = 0U; i < imgin._width; ++i)
-	{
-		for (auto j = 0U; j < imgin._height; ++j)
-		{
-			thres(i, j) = imgin(i, j);
-			if (thres(i, j) > high)
-				thres(i, j) = 255;
-			else if (thres(i, j) < low)
-				thres(i, j) = 0;
-			else
-			{
-				bool anyHigh    = false;
-				bool anyBetween = false;
-				for (auto x = i - 1; x < i + 2; ++x)
-				{
-					for (auto y = j - 1; y < j + 2; ++y)
-					{
-						//Wang Note: a missing "x" in Hasan's code.
-						if (x <= 0 || y <= 0 || x > thres._width || y > thres._height) //Out of bounds
-							continue;
-
-						if (thres(x, y) > high)
-						{
-							thres(i, j) = 255;
-							anyHigh     = true;
-							break;
-						}
-
-						if (thres(x, y) <= high && thres(x, y) >= low)
-							anyBetween = true;
-					}
-					if (anyHigh)
-						break;
-				}
-				if (!anyHigh && anyBetween)
-					for (auto x = i - 2; x < i + 3; ++x)
-					{
-						for (auto y = j - 1; y < j + 3; ++y)
-						{
-							if (x < 0 || y < 0 || x > thres._width || y > thres._height) //Out of bounds
-								continue;
-
-							if (thres(x, y) > high)
-							{
-								thres(i, j) = 255;
-								anyHigh     = true;
-								break;
-							}
-						}
-						if (anyHigh)
-							break;
-					}
-				if (!anyHigh)
-					thres(i, j) = 0;
-			}
-		}
 	}
 }
