@@ -26,6 +26,64 @@ U round(const V v)
 	return static_cast<U>(std::min(std::llround(v), static_cast<long long>(std::numeric_limits<U>::max())));
 }
 
+vector<vector<double>> createFilter(const int row, const int column, const double sigmaIn)
+{
+	vector<vector<double>> filter;
+
+	for (int i = 0; i < row; i++)
+	{
+		vector<double> col;
+		for (int j = 0; j < column; j++)
+		{
+			col.push_back(-1);
+		}
+		filter.push_back(col);
+	}
+
+	const auto constant = 2.0 * sigmaIn * sigmaIn;
+
+	// Sum is for normalization
+	auto sum = 0.0;
+
+	for (int x = -row / 2; x <= row / 2; x++)
+	{
+		for (int y = -column / 2; y <= column / 2; y++)
+		{
+			const auto coordSum                  = (x * x + y * y);
+			filter[x + row / 2][y + column / 2]  = (exp(-(coordSum) / constant)) / (M_PI * constant);
+			sum                                 += filter[x + row / 2][y + column / 2];
+		}
+	}
+
+	// Normalize the Filter
+	for (int i = 0; i < row; i++)
+		for (int j = 0; j < column; j++)
+			filter[i][j] /= sum;
+
+	return filter;
+}
+
+CImg<unsigned char> useFilter(CImg<unsigned char> img_in, const vector<vector<double>>& filterIn)
+{
+	const auto          size = static_cast<unsigned int>(filterIn.size()) / 2;
+	CImg<unsigned char> gFiltered(img_in._width - 2 * size, img_in._height - 2 * size);
+	for (auto i = size; i < img_in._width - size; ++i)
+	{
+		for (auto j = size; j < img_in._height - size; ++j)
+		{
+			double sum = 0;
+
+			for (auto x = 0U, sz = static_cast<unsigned int>(filterIn.size()); x < sz; ++x)
+				for (auto y = 0U; y < sz; ++y)
+					sum += filterIn[x][y] * img_in(i + y - size, j + x - size);
+
+			gFiltered(i - size, j - size) = round<unsigned char>(sum);
+		}
+	}
+
+	return gFiltered;
+}
+
 CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 {
 	if (low > 255)
@@ -59,7 +117,7 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 						if (result(x, y) > high)
 						{
 							result(i, j) = 255;
-							anyHigh     = true;
+							anyHigh      = true;
 							break;
 						}
 
@@ -80,7 +138,7 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 							if (result(x, y) > high)
 							{
 								result(i, j) = 255;
-								anyHigh     = true;
+								anyHigh      = true;
 								break;
 							}
 						}
@@ -155,21 +213,10 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 
 	vector<vector<double>> filter = createFilter(gfs, gfs, g_sig);
 
-	//Print filter
-	// for (int i = 0; i<filter.size(); i++)
-	// {
-	//     for (int j = 0; j<filter[i].size(); j++)
-	//     {
-	//         cout << filter[i][j] << " ";
-	//     }
-	//     printf("\n");
-	// }
-	// printf("\n");
-
-	useFilter(img, filter); //Gaussian Filter
+	auto gFiltered = useFilter(img, filter); //Gaussian Filter
 	gFiltered.save("t:/gaussian.ppm");
 
-	sobel(); //Sobel Filter
+	const auto [sFiltered, angles] = sobel(gFiltered); //Sobel Filter
 	sFiltered.save("t:/sobel.ppm");
 
 	auto nonMaxSupped = nonMaxSupp(sFiltered, angles);
@@ -181,64 +228,7 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 	return thres;
 }
 
-vector<vector<double>> Canny::createFilter(const int row, const int column, const double sigmaIn)
-{
-	vector<vector<double>> filter;
-
-	for (int i = 0; i < row; i++)
-	{
-		vector<double> col;
-		for (int j = 0; j < column; j++)
-		{
-			col.push_back(-1);
-		}
-		filter.push_back(col);
-	}
-
-	auto       coordSum = 0;
-	const auto constant = 2.0 * sigmaIn * sigmaIn;
-
-	// Sum is for normalization
-	auto sum = 0.0;
-
-	for (int x = -row / 2; x <= row / 2; x++)
-	{
-		for (int y = -column / 2; y <= column / 2; y++)
-		{
-			coordSum                             = (x * x + y * y);
-			filter[x + row / 2][y + column / 2]  = (exp(-(coordSum) / constant)) / (M_PI * constant);
-			sum                                 += filter[x + row / 2][y + column / 2];
-		}
-	}
-
-	// Normalize the Filter
-	for (int i = 0; i < row; i++)
-		for (int j = 0; j < column; j++)
-			filter[i][j] /= sum;
-
-	return filter;
-}
-
-void Canny::useFilter(CImg<unsigned char> img_in, const vector<vector<double>>& filterIn)
-{
-	const auto size = static_cast<unsigned int>(filterIn.size()) / 2;
-	gFiltered       = CImg<unsigned char>(img_in._width - 2 * size, img_in._height - 2 * size);
-	for (auto i = size; i < img_in._width - size; ++i)
-	{
-		for (auto j = size; j < img_in._height - size; ++j)
-		{
-			double sum = 0;
-
-			for (auto x = 0U, sz = static_cast<unsigned int>(filterIn.size()); x < sz; ++x)
-				for (auto y = 0U; y < sz; ++y)
-					sum += filterIn[x][y] * img_in(i + y - size, j + x - size);
-
-			gFiltered(i - size, j - size) = round<unsigned char>(sum);
-		}
-	}
-}
-
-void Canny::sobel()
+std::pair<CImg<unsigned char>, CImg<float>> Canny::sobel(const CImg<unsigned char>& gFiltered)
 {
 	//Sobel X Filter
 	double x1[] = { -1.0, 0, 1.0 };
@@ -263,9 +253,9 @@ void Canny::sobel()
 	//Limit Size
 	const auto size = static_cast<unsigned int>(xFilter.size()) / 2;
 
-	sFiltered = CImg<unsigned char>(gFiltered._width - 2 * size, gFiltered._height - 2 * size);
+	CImg<unsigned char> sFiltered(gFiltered._width - 2 * size, gFiltered._height - 2 * size);
 
-	angles = CImg<unsigned char>(gFiltered._width - 2 * size, gFiltered._height - 2 * size); //AngleMap
+	CImg<float> angles = CImg<unsigned char>(gFiltered._width - 2 * size, gFiltered._height - 2 * size); //AngleMap
 
 	for (auto i = size; i < gFiltered._height - size; i++)
 	{
@@ -291,4 +281,6 @@ void Canny::sobel()
 				angles(j - size, i - size) = round<unsigned char>(std::atan(sumy / sumx));
 		}
 	}
+
+	return std::make_pair(std::move(sFiltered), std::move(angles));
 }

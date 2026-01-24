@@ -20,9 +20,6 @@ class Canny {
 private:
 
     CImg<unsigned char> img; //Original Image
-    CImg<unsigned char> gFiltered; // Gradient
-    CImg<unsigned char> sFiltered; //Sobel Filtered
-    CImg<float> angles; //Angle Map
 
     int    _gfs { 3 }, _thres_lo {20}, _thres_hi{40};
     double _g_sig{1.0};
@@ -33,11 +30,7 @@ public:
     //@param const char* name : name of the image, path will be auto concatenated to "./output/name.bmp". 
     explicit Canny(CImg<unsigned char> img);
 
-    vector< vector<double> > createFilter(int row, int col, double sigma_in); //Creates a gaussian filter
-
-    void useFilter(CImg<unsigned char>, const vector< vector<double>>&); //Use some filter
-
-    void sobel(); //Sobel filtering
+    std::pair<CImg<unsigned char>, CImg<float>> sobel(const CImg<unsigned char>& gFiltered); //Sobel filtering
 
     //Main Process Function with different parameter setting.
 
