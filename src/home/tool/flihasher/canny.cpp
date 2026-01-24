@@ -33,17 +33,17 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 	if (high > 255)
 		high = 255;
 
-	CImg<unsigned char> thres(src._width, src._height);
+	CImg<unsigned char> result(src._width, src._height);
 
 	for (auto i = 0U; i < src._width; ++i)
 	{
 		for (auto j = 0U; j < src._height; ++j)
 		{
-			thres(i, j) = src(i, j);
-			if (thres(i, j) > high)
-				thres(i, j) = 255;
-			else if (thres(i, j) < low)
-				thres(i, j) = 0;
+			result(i, j) = src(i, j);
+			if (result(i, j) > high)
+				result(i, j) = 255;
+			else if (result(i, j) < low)
+				result(i, j) = 0;
 			else
 			{
 				bool anyHigh    = false;
@@ -53,17 +53,17 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 					for (auto y = j - 1; y < j + 2; ++y)
 					{
 						//Wang Note: a missing "x" in Hasan's code.
-						if (x <= 0 || y <= 0 || x > thres._width || y > thres._height) //Out of bounds
+						if (x <= 0 || y <= 0 || x > result._width || y > result._height) //Out of bounds
 							continue;
 
-						if (thres(x, y) > high)
+						if (result(x, y) > high)
 						{
-							thres(i, j) = 255;
+							result(i, j) = 255;
 							anyHigh     = true;
 							break;
 						}
 
-						if (thres(x, y) <= high && thres(x, y) >= low)
+						if (result(x, y) <= high && result(x, y) >= low)
 							anyBetween = true;
 					}
 					if (anyHigh)
@@ -74,12 +74,12 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 					{
 						for (auto y = j - 1; y < j + 3; ++y)
 						{
-							if (x < 0 || y < 0 || x > thres._width || y > thres._height) //Out of bounds
+							if (x < 0 || y < 0 || x > result._width || y > result._height) //Out of bounds
 								continue;
 
-							if (thres(x, y) > high)
+							if (result(x, y) > high)
 							{
-								thres(i, j) = 255;
+								result(i, j) = 255;
 								anyHigh     = true;
 								break;
 							}
@@ -88,12 +88,55 @@ CImg<unsigned char> threshold(const CImg<unsigned char>& src, int low, int high)
 							break;
 					}
 				if (!anyHigh)
-					thres(i, j) = 0;
+					result(i, j) = 0;
 			}
 		}
 	}
 
-	return thres;
+	return result;
+}
+
+CImg<unsigned char> nonMaxSupp(const CImg<unsigned char>& sFiltered, const CImg<float>& angles)
+{
+	auto result = CImg<unsigned char>(sFiltered._width - 2, sFiltered._height - 2);
+	for (auto i = 1U; i < sFiltered._width - 1; ++i)
+	{
+		for (auto j = 1U; j < sFiltered._height - 1; ++j)
+		{
+			float Tangent = angles(i, j) * 57.296f;
+			// cout << Tangent << ' ';
+			result(i - 1, j - 1) = sFiltered(i, j);
+			//Horizontal Edge
+			if (((-22.5 < Tangent) && (Tangent <= 22.5)) || ((157.5 < Tangent) && (Tangent <= -157.5)))
+			{
+				if ((sFiltered(i, j) < sFiltered(i + 1, j)) || (sFiltered(i, j) < sFiltered(i - 1, j)))
+					result(i - 1, j - 1) = 0;
+			}
+			//Vertical Edge
+			if (((-112.5 < Tangent) && (Tangent <= -67.5)) || ((67.5 < Tangent) && (Tangent <= 112.5)))
+			{
+				if ((sFiltered(i, j) < sFiltered(i, j + 1)) || (sFiltered(i, j) < sFiltered(i, j - 1)))
+					result(i - 1, j - 1) = 0;
+			}
+
+			//-45 Degree Edge
+			if (((-67.5 < Tangent) && (Tangent <= -22.5)) || ((112.5 < Tangent) && (Tangent <= 157.5)))
+			{
+				if ((sFiltered(i, j) < sFiltered(i + 1, j + 1)) || (sFiltered(i, j) < sFiltered(i - 1, j - 1)))
+					result(i - 1, j - 1) = 0;
+			}
+
+			//45 Degree Edge
+			if (((-157.5 < Tangent) && (Tangent <= -112.5)) || ((22.5 < Tangent) && (Tangent <= 67.5)))
+			{
+				if ((sFiltered(i, j) < sFiltered(i - 1, j + 1)) || (sFiltered(i, j) < sFiltered(i + 1, j - 1)))
+					result(i - 1, j - 1) = 0;
+			}
+		}
+		// cout << '\n';
+	}
+
+	return result;
 }
 
 } // namespace
@@ -129,7 +172,7 @@ CImg<unsigned char> Canny::process(const int gfs, const double g_sig, const int 
 	sobel(); //Sobel Filter
 	sFiltered.save("t:/sobel.ppm");
 
-	nonMaxSupp(); //Non-Maxima Suppression
+	auto nonMaxSupped = nonMaxSupp(sFiltered, angles);
 	nonMaxSupped.save("t:/nonMaxSupped.ppm");
 
 	auto thres = threshold(nonMaxSupped, thres_lo, thres_hi);
@@ -247,46 +290,5 @@ void Canny::sobel()
 			else
 				angles(j - size, i - size) = round<unsigned char>(std::atan(sumy / sumx));
 		}
-	}
-}
-
-void Canny::nonMaxSupp()
-{
-	nonMaxSupped = CImg<unsigned char>(sFiltered._width - 2, sFiltered._height - 2);
-	for (auto i = 1U; i < sFiltered._width - 1; ++i)
-	{
-		for (auto j = 1U; j < sFiltered._height - 1; ++j)
-		{
-			float Tangent = angles(i, j) * 57.296f;
-			// cout << Tangent << ' ';
-			nonMaxSupped(i - 1, j - 1) = sFiltered(i, j);
-			//Horizontal Edge
-			if (((-22.5 < Tangent) && (Tangent <= 22.5)) || ((157.5 < Tangent) && (Tangent <= -157.5)))
-			{
-				if ((sFiltered(i, j) < sFiltered(i + 1, j)) || (sFiltered(i, j) < sFiltered(i - 1, j)))
-					nonMaxSupped(i - 1, j - 1) = 0;
-			}
-			//Vertical Edge
-			if (((-112.5 < Tangent) && (Tangent <= -67.5)) || ((67.5 < Tangent) && (Tangent <= 112.5)))
-			{
-				if ((sFiltered(i, j) < sFiltered(i, j + 1)) || (sFiltered(i, j) < sFiltered(i, j - 1)))
-					nonMaxSupped(i - 1, j - 1) = 0;
-			}
-
-			//-45 Degree Edge
-			if (((-67.5 < Tangent) && (Tangent <= -22.5)) || ((112.5 < Tangent) && (Tangent <= 157.5)))
-			{
-				if ((sFiltered(i, j) < sFiltered(i + 1, j + 1)) || (sFiltered(i, j) < sFiltered(i - 1, j - 1)))
-					nonMaxSupped(i - 1, j - 1) = 0;
-			}
-
-			//45 Degree Edge
-			if (((-157.5 < Tangent) && (Tangent <= -112.5)) || ((22.5 < Tangent) && (Tangent <= 67.5)))
-			{
-				if ((sFiltered(i, j) < sFiltered(i - 1, j + 1)) || (sFiltered(i, j) < sFiltered(i + 1, j - 1)))
-					nonMaxSupped(i - 1, j - 1) = 0;
-			}
-		}
-		// cout << '\n';
 	}
 }

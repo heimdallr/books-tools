@@ -23,7 +23,6 @@ private:
     CImg<unsigned char> gFiltered; // Gradient
     CImg<unsigned char> sFiltered; //Sobel Filtered
     CImg<float> angles; //Angle Map
-    CImg<unsigned char> nonMaxSupped; // Non-maxima supp.
 
     int    _gfs { 3 }, _thres_lo {20}, _thres_hi{40};
     double _g_sig{1.0};
@@ -40,8 +39,6 @@ public:
 
     void sobel(); //Sobel filtering
 
-    void nonMaxSupp(); //Non-maxima supp.
-    
     //Main Process Function with different parameter setting.
 
     //@param
