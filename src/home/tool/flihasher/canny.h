@@ -7,20 +7,16 @@
 //  Software is released under GNU-GPL 2.0
 //
 
+#pragma once
 
-#ifndef _CANNY_
-#define _CANNY_
-#include <string>
 #include <vector>
-
-#define cimg_use_jpeg
 
 #include "CImg.h"
 
 using namespace cimg_library;
 using namespace std;
 
-class canny {
+class Canny {
 private:
 
     CImg<unsigned char> img; //Original Image
@@ -31,25 +27,20 @@ private:
     CImg<unsigned char> nonMaxSupped; // Non-maxima supp.
     CImg<unsigned char> thres; //Double threshold and final
 
-    CImgDisplay img_disp;
-    CImgDisplay gray_disp;
-    CImgDisplay fil_img_disp;
-
-    char _name[256];
-    int _gfs, _thres_lo, _thres_hi;
-    double _g_sig;
+    int    _gfs { 3 }, _thres_lo {20}, _thres_hi{40};
+    double _g_sig{1.0};
 
 public:
 
     //Constructor
     //@param const char* name : name of the image, path will be auto concatenated to "./output/name.bmp". 
-    canny(const char* name);
+    explicit Canny(CImg<unsigned char> img);
 
     void toGrayScale();
 
     vector< vector<double> > createFilter(int row, int col, double sigma_in); //Creates a gaussian filter
 
-    void useFilter(CImg<unsigned char>, vector< vector<double> >); //Use some filter
+    void useFilter(CImg<unsigned char>, const vector< vector<double>>&); //Use some filter
 
     void sobel(); //Sobel filtering
 
@@ -67,13 +58,5 @@ public:
 
     //@return
     //CImg<unsigned char> final result of processed image.
-    CImg<unsigned char> process(int gfs, double g_sig, int thres_lo, int thres_hi);
-
-    //Boolean to control if needed display or output only
-    //True for display and save
-    //False for save only
-    void displayandsave(bool on);
-
+	CImg<unsigned char> process(int gfs = 3, double g_sig = 1, int thres_lo = 20, int thres_hi = 40);
 };
-
-#endif
