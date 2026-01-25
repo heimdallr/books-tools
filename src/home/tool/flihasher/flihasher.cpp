@@ -341,6 +341,9 @@ private:
 			if (!bookTaskItem.cover.body.isEmpty())
 				setHash(bookTaskItem.cover);
 			std::ranges::for_each(bookTaskItem.images, setHash);
+			std::ranges::sort(bookTaskItem.images, std::greater {}, [](const auto& item) {
+				return -item.file.toInt();
+			});
 
 			const auto& result = m_results.emplace_back(std::move(bookTaskItem));
 
