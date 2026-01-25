@@ -29,6 +29,7 @@
 #include "util/xml/XmlWriter.h"
 
 #include "Constant.h"
+#include "canny.h"
 #include "log.h"
 #include "zip.h"
 
@@ -126,19 +127,21 @@ uint64_t GetPHash(const QByteArray& body)
 				*planes[i]++ = *line++;
 	}
 
-	const auto img = (src.spectrum() == 3   ? src.RGBtoYCbCr()
-	                  : src.spectrum() == 4 ? src.crop(0, 0, 0, 0, src.width() - 1, src.height() - 1, 0, 2).RGBtoYCbCr()
-	                                        : src)
-	                     .channel(0)
-	                     .get_convolve(MEAN_FILTER)
-	                     .resize(32, 32);
+	auto img = (src.spectrum() == 3 ? src.RGBtoYCbCr() : src.spectrum() == 4 ? src.crop(0, 0, 0, 0, src.width() - 1, src.height() - 1, 0, 2).RGBtoYCbCr() : src).channel(0);
 
-	const auto dct = (DCT * img * DCT_T).crop(1, 1, 8, 8);
+	Canny      canny;
+	const auto cropRect = canny.Process(img);
+	if (cropRect.width() > src.width() / 2 && cropRect.height() > src.height() / 2)
+		img.crop(cropRect.left, cropRect.top, cropRect.right - 1, cropRect.bottom - 1);
+
+	const auto resized = img.get_convolve(MEAN_FILTER).resize(32, 32);
+	const auto dct     = (DCT * resized * DCT_T).crop(1, 1, 8, 8);
 
 	return std::accumulate(dct._data, dct._data + 64, uint64_t { 0 }, [median = dct.median()](const uint64_t init, const float value) {
 		auto result = init << 1;
 		if (value > median)
 			result |= 1;
+
 		return result;
 	});
 }
@@ -177,12 +180,8 @@ class Fb2Parser final : public Util::SaxParser
 				return std::make_pair(item.second, item.first);
 			});
 
-			for (int n = 1; const auto& word : counter | std::views::values)
-			{
+			for (const auto& word : counter | std::views::values | std::views::take(10))
 				md5.addData(word.toUtf8());
-				if (++n > 10)
-					break;
-			}
 
 			return QString::fromUtf8(md5.result().toHex());
 		}
@@ -251,7 +250,7 @@ private: // Util::SaxParser
 				word.removeIf([](const QChar ch) {
 					return ch.category() != QChar::Letter_Lowercase;
 				});
-				if (word.length() > 5)
+				if (word.length() > 7)
 				{
 					for (auto* section = m_currentSection; section; section = section->parent)
 						++section->hist[word];
