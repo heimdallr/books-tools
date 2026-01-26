@@ -29,6 +29,7 @@
 #include "util/xml/XmlWriter.h"
 
 #include "Constant.h"
+#include "canny.h"
 #include "log.h"
 #include "zip.h"
 
@@ -106,39 +107,42 @@ uint64_t GetPHash(const QByteArray& body)
 
 	auto       image    = pixmap.toImage();
 	const auto hasAlpha = image.pixelFormat().alphaUsage() == QPixelFormat::UsesAlpha;
-	image.convertTo(hasAlpha ? QImage::Format_RGBA8888 : QImage::Format_RGB888);
+	image.convertTo(hasAlpha ? QImage::Format_RGBA8888 : QImage::Format_Grayscale8);
 
-	const auto    pixelSize = hasAlpha ? 4 : 3;
-	auto          data      = new uint8_t[static_cast<size_t>(image.width()) * image.height() * pixelSize];
-	CImg<uint8_t> src(data, image.width(), image.height(), 1, pixelSize, true);
-	src._is_shared = false;
+	auto          data = new uint8_t[static_cast<size_t>(image.width()) * image.height()];
+	CImg<uint8_t> img(data, image.width(), image.height(), 1, 1, true);
+	img._is_shared = false;
 
-	std::vector<uint8_t*> planes;
-	planes.reserve(pixelSize);
-	for (int i = 0; i < pixelSize; ++i)
-		planes.push_back(data + static_cast<size_t>(image.width()) * image.height() * i);
-
-	for (auto h = 0, szh = image.height(), szw = image.width(); h < szh; ++h)
+	if (hasAlpha)
 	{
-		const auto* line = image.scanLine(h);
-		for (auto w = 0; w < szw; ++w)
-			for (int i = 0; i < pixelSize; ++i)
-				*planes[i]++ = *line++;
+		auto* dst = img.data();
+		for (auto h = 0, szh = image.height(), szw = image.width(); h < szh; ++h)
+		{
+			const auto* src = image.scanLine(h);
+			for (auto w = 0; w < szw; ++w, ++dst, src += 4)
+				*dst = static_cast<uint8_t>(std::lround((0.299 * src[0] + 0.587 * src[1] + 0.114 * src[2]) * src[3] / 255.0 + (255.0 - src[3])));
+		}
+	}
+	else
+	{
+		auto* dst = img.data();
+		for (auto h = 0, szh = image.height(), szw = image.width(); h < szh; ++h, dst += szw)
+			memcpy(dst, image.scanLine(h), szw);
 	}
 
-	const auto img = (src.spectrum() == 3   ? src.RGBtoYCbCr()
-	                  : src.spectrum() == 4 ? src.crop(0, 0, 0, 0, src.width() - 1, src.height() - 1, 0, 2).RGBtoYCbCr()
-	                                        : src)
-	                     .channel(0)
-	                     .get_convolve(MEAN_FILTER)
-	                     .resize(32, 32);
+	Canny      canny;
+	const auto cropRect = canny.Process(img);
+	if (cropRect.width() > img.width() / 2 && cropRect.height() > img.height() / 2)
+		img.crop(cropRect.left, cropRect.top, cropRect.right - 1, cropRect.bottom - 1);
 
-	const auto dct = (DCT * img * DCT_T).crop(1, 1, 8, 8);
+	const auto resized = img.get_convolve(MEAN_FILTER).resize(32, 32);
+	const auto dct     = (DCT * resized * DCT_T).crop(1, 1, 8, 8);
 
 	return std::accumulate(dct._data, dct._data + 64, uint64_t { 0 }, [median = dct.median()](const uint64_t init, const float value) {
 		auto result = init << 1;
 		if (value > median)
 			result |= 1;
+
 		return result;
 	});
 }
@@ -177,12 +181,8 @@ class Fb2Parser final : public Util::SaxParser
 				return std::make_pair(item.second, item.first);
 			});
 
-			for (int n = 1; const auto& word : counter | std::views::values)
-			{
+			for (const auto& word : counter | std::views::values | std::views::take(10))
 				md5.addData(word.toUtf8());
-				if (++n > 10)
-					break;
-			}
 
 			return QString::fromUtf8(md5.result().toHex());
 		}
@@ -251,7 +251,7 @@ private: // Util::SaxParser
 				word.removeIf([](const QChar ch) {
 					return ch.category() != QChar::Letter_Lowercase;
 				});
-				if (word.length() > 5)
+				if (word.length() > 7)
 				{
 					for (auto* section = m_currentSection; section; section = section->parent)
 						++section->hist[word];
@@ -341,6 +341,9 @@ private:
 			if (!bookTaskItem.cover.body.isEmpty())
 				setHash(bookTaskItem.cover);
 			std::ranges::for_each(bookTaskItem.images, setHash);
+			std::ranges::sort(bookTaskItem.images, std::greater {}, [](const auto& item) {
+				return -item.file.toInt();
+			});
 
 			const auto& result = m_results.emplace_back(std::move(bookTaskItem));
 
