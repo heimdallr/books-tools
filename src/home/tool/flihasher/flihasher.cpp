@@ -152,7 +152,6 @@ class Fb2Parser final : public Util::SaxParser
 	static constexpr auto BODY     = "FictionBook/body";
 	static constexpr auto TITLE    = "FictionBook/description/title-info/book-title";
 	static constexpr auto SECTION  = "section";
-	static constexpr auto SUBTITLE = "title";
 
 	struct Section
 	{
@@ -244,7 +243,7 @@ private: // Util::SaxParser
 		if (path == TITLE)
 			return (m_title = FliLib::SimplifyTitle(valueCopy)), true;
 
-		if (path.startsWith(BODY, Qt::CaseInsensitive) && !path.contains(SUBTITLE))
+		if (path.startsWith(BODY, Qt::CaseInsensitive))
 		{
 			for (auto&& word : valueCopy.split(' ', Qt::SkipEmptyParts))
 			{
