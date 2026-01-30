@@ -9,14 +9,14 @@ class Canny
 public:
 	struct Rect
 	{
-		int top { 0 }, left { 0 }, bottom { 0 }, right { 0 };
+		int16_t top { 0 }, left { 0 }, bottom { 0 }, right { 0 };
 
-		int width() const noexcept
+		int16_t width() const noexcept
 		{
 			return right - left;
 		}
 
-		int height() const noexcept
+		int16_t height() const noexcept
 		{
 			return bottom - top;
 		}

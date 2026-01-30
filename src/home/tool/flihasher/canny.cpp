@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cassert>
-#include <iostream>
 #include <numbers>
 #include <vector>
 
@@ -133,14 +132,14 @@ CImg<unsigned char> ApplyThreshold(const CImg<unsigned char>& src, int low, int 
 						if (x < 0 || y < 0 || x >= static_cast<int>(result._width) || y >= static_cast<int>(result._height)) //Out of bounds
 							continue;
 
-						if (result(x, y) > high)
+						if (src(x, y) > high)
 						{
 							result(i, j) = 255;
 							anyHigh      = true;
 							break;
 						}
 
-						if (result(x, y) <= high && result(x, y) >= low)
+						if (src(x, y) <= high && src(x, y) >= low)
 							anyBetween = true;
 					}
 					if (anyHigh)
@@ -154,7 +153,7 @@ CImg<unsigned char> ApplyThreshold(const CImg<unsigned char>& src, int low, int 
 							if (x < 0 || y < 0 || x >= static_cast<int>(result._width) || y >= static_cast<int>(result._height)) //Out of bounds
 								continue;
 
-							if (result(x, y) > high)
+							if (src(x, y) > high)
 							{
 								result(i, j) = 255;
 								anyHigh      = true;
@@ -235,7 +234,7 @@ Canny::Rect Canny::Process(const CImg<unsigned char>& img) const
 	const auto nonMaxSupped        = nonMaxSupp(sFiltered, angles);
 	const auto threshold           = ApplyThreshold(nonMaxSupped, m_thresholdLow, m_thresholdHigh);
 
-	Rect rect { .top = 0, .left = 0, .bottom = static_cast<int>(threshold._height), .right = static_cast<int>(threshold._width) };
+	Rect rect { .top = 0, .left = 0, .bottom = static_cast<int16_t>(threshold._height), .right = static_cast<int16_t>(threshold._width) };
 	for (const auto* data = threshold.data(); rect.top < rect.bottom; ++rect.top, data += threshold._width)
 		if (memchr(data, 255, threshold._width))
 			break;
