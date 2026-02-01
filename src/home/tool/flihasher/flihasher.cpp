@@ -346,7 +346,6 @@ private:
 				continue;
 
 			auto& bookTaskItem = *bookTaskItemOpt;
-			PLOGV << bookTaskItem.file;
 
 			QBuffer buffer(&bookTaskItem.body);
 			buffer.open(QIODevice::ReadOnly);
