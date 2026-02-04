@@ -162,20 +162,7 @@ public:
 		if (!file.open(QIODevice::ReadOnly))
 			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
 
-		for (const auto& inpx : m_fileInfo.dir().entryList({ "*.inpx" }, QDir::Files))
-		{
-			Zip        zip(m_fileInfo.dir().absoluteFilePath(inpx));
-			const auto zipFile = zip.Read(m_fileInfo.completeBaseName() + ".inp");
-			auto&      stream  = zipFile->GetStream();
-			for (auto byteArray = stream.readLine(); !byteArray.isEmpty(); byteArray = stream.readLine())
-			{
-				auto book = Book::FromString(QString::fromUtf8(byteArray));
-				m_titles.try_emplace(book.GetFileName(), SimplifyTitle(PrepareTitle(book.title)));
-			}
-		}
-
 		m_bookFiles = Zip(archive.filePath).GetFileNameList() | std::ranges::to<std::unordered_set<QString>>();
-
 		HashParser::Parse(file, *this);
 	}
 
@@ -207,10 +194,6 @@ private:
 		if (!m_bookFiles.contains(file))
 			return;
 
-		const auto it = m_titles.find(file);
-		if (it != m_titles.end() && !it->second.isEmpty())
-			title = std::move(it->second);
-
 		auto split    = title.split(' ', Qt::SkipEmptyParts);
 		auto hashText = id;
 
@@ -232,12 +215,11 @@ private:
 	}
 
 private:
-	const QFileInfo                      m_fileInfo;
-	UniqueFileStorage&                   m_uniqueFileStorage;
-	InpDataProvider&                     m_inpDataProvider;
-	Util::Progress&                      m_progress;
-	std::unordered_map<QString, QString> m_titles;
-	std::unordered_set<QString>          m_bookFiles;
+	const QFileInfo             m_fileInfo;
+	UniqueFileStorage&          m_uniqueFileStorage;
+	InpDataProvider&            m_inpDataProvider;
+	Util::Progress&             m_progress;
+	std::unordered_set<QString> m_bookFiles;
 };
 
 void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replacement& replacement)
