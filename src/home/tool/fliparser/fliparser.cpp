@@ -183,11 +183,13 @@ private: // HashParser::IObserver
 
 				for (; it != end; ++it)
 				{
-					found.append(QJsonObject {
-						{   Inpx::PART,       std::ssize(idFound) },
-						{ Inpx::FOLDER,        it->second->folder },
-						{   Inpx::FILE, it->second->GetFileName() },
-					});
+					found.append(
+						QJsonObject {
+							{   Inpx::PART,       std::ssize(idFound) },
+							{ Inpx::FOLDER,        it->second->folder },
+							{   Inpx::FILE, it->second->GetFileName() },
+                    }
+					);
 
 					idFound.emplace(childId);
 					child->children.clear();
@@ -263,21 +265,23 @@ Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, c
 	if (series.empty())
 		series.emplace_back();
 
-	return inpDataProvider.AddBook(std::make_unique<Book>(Book {
-		.author   = value["author"].toString(),
-		.genre    = value["genre"].toString(),
-		.title    = value["title"].toString(),
-		.series   = std::move(series),
-		.file     = fileInfo.baseName(),
-		.size     = QString::number(size),
-		.libId    = fileInfo.baseName(),
-		.deleted  = true,
-		.ext      = fileInfo.suffix(),
-		.date     = value["date"].toString(),
-		.lang     = value["lang"].toString(),
-		.keywords = value["keywords"].toString(),
-		.year     = value["year"].toString(),
-	}));
+	return inpDataProvider.AddBook(
+		std::make_unique<Book>(Book {
+			.author   = value["author"].toString(),
+			.genre    = value["genre"].toString(),
+			.title    = value["title"].toString(),
+			.series   = std::move(series),
+			.file     = fileInfo.baseName(),
+			.size     = QString::number(size),
+			.libId    = fileInfo.baseName(),
+			.deleted  = true,
+			.ext      = fileInfo.suffix(),
+			.date     = value["date"].toString(),
+			.lang     = value["lang"].toString(),
+			.keywords = value["keywords"].toString(),
+			.year     = value["year"].toString(),
+		})
+	);
 }
 
 Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime)
@@ -399,12 +403,14 @@ QByteArray CreateReviewAdditional(const InpDataProvider& inpDataProvider)
 								return item->rate > std::numeric_limits<double>::epsilon();
 							}))
 	{
-		jsonArray.append(QJsonObject {
-			{ Inpx::FOLDER,                 book->folder },
-			{   Inpx::FILE, book->file + '.' + book->ext },
-			{    Inpx::SUM,                   book->rate },
-			{  Inpx::COUNT,              book->rateCount },
-		});
+		jsonArray.append(
+			QJsonObject {
+				{ Inpx::FOLDER,                 book->folder },
+				{   Inpx::FILE, book->file + '.' + book->ext },
+				{    Inpx::SUM,                   book->rate },
+				{  Inpx::COUNT,              book->rateCount },
+        }
+		);
 	}
 
 	if (jsonArray.isEmpty())
@@ -486,11 +492,13 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				{
 					text.prepend(' ');
 					text.append(' ');
-					array.append(QJsonObject {
-						{ Inpx::NAME,         id.second.simplified() },
-						{ Inpx::TIME,                       id.first },
-						{ Inpx::TEXT, ReplaceTags(text).simplified() },
-					});
+					array.append(
+						QJsonObject {
+							{ Inpx::NAME,         id.second.simplified() },
+							{ Inpx::TIME,                       id.first },
+							{ Inpx::TEXT, ReplaceTags(text).simplified() },
+                    }
+					);
 					++counter;
 				}
 				zipFiles->AddFile(QString("%1#%2").arg(value.first.first, value.first.second), QJsonDocument(array).toJson());
@@ -722,11 +730,13 @@ int main(int argc, char* argv[])
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
-	parser.addOptions({
-		{				   { "o", OUTPUT }, "Output folder (required)",                              FOLDER },
-		{							  DUMP,  "Dump database wildcards", "Semicolon separated wildcard list" },
-		{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template",                                PATH },
-	});
+	parser.addOptions(
+		{
+			{				   { "o", OUTPUT }, "Output folder (required)",                              FOLDER },
+			{							  DUMP,  "Dump database wildcards", "Semicolon separated wildcard list" },
+			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template",                                PATH },
+    }
+	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);

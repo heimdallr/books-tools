@@ -4,8 +4,10 @@
 
 namespace HomeCompa::DB
 {
+
 class IDatabase;
 class IQuery;
+
 }
 
 namespace HomeCompa::FliLib

@@ -10,13 +10,16 @@
 
 namespace HomeCompa::Util
 {
+
 class XmlWriter;
+
 }
 
 class QByteArray;
 
 namespace HomeCompa::FliLib
 {
+
 class IDump;
 struct Book;
 

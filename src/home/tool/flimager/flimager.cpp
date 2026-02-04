@@ -296,16 +296,18 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(IMAGE_ARCHIVE_WILDCARD_OPTION_NAME, "Input image archive files (required)");
-	parser.addOptions({
-		{ { "o", FOLDER }, "Output folder (required)", FOLDER },
-		{ { "f", FORMAT }, "Output images format [JXL | JPEG | PNG]", QString("%1 [%2]").arg(FORMAT, "JXL") },
-		{ { "q", QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
-		{ MAX_WIDTH_OPTION_NAME, "Maximum images width", SIZE },
-		{ MAX_HEIGHT_OPTION_NAME, "Maximum images height", SIZE },
-		{ { "s", MAX_SIZE_OPTION_NAME }, "Maximum image size", SIZE },
-		{ { "g", GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
-		{ { "t", MAX_THREAD_COUNT_OPTION_NAME }, "Maximum number of CPU threads", QString(THREADS).arg(settings.maxThreadCount) },
-	});
+	parser.addOptions(
+		{
+			{ { "o", FOLDER }, "Output folder (required)", FOLDER },
+			{ { "f", FORMAT }, "Output images format [JXL | JPEG | PNG]", QString("%1 [%2]").arg(FORMAT, "JXL") },
+			{ { "q", QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
+			{ MAX_WIDTH_OPTION_NAME, "Maximum images width", SIZE },
+			{ MAX_HEIGHT_OPTION_NAME, "Maximum images height", SIZE },
+			{ { "s", MAX_SIZE_OPTION_NAME }, "Maximum image size", SIZE },
+			{ { "g", GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
+			{ { "t", MAX_THREAD_COUNT_OPTION_NAME }, "Maximum number of CPU threads", QString(THREADS).arg(settings.maxThreadCount) },
+    }
+	);
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);

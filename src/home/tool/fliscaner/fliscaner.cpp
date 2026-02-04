@@ -33,6 +33,7 @@ using namespace HomeCompa;
 
 namespace
 {
+
 constexpr auto APP_ID        = "fliscaner";
 constexpr auto OUTPUT_FOLDER = "output-folder";
 constexpr auto TIMEOUT       = "timeout";
@@ -311,13 +312,15 @@ int main(int argc, char* argv[])
 	parser.setApplicationDescription(QString("%1 downloads files from Flibusta").arg(APP_ID));
 	parser.addHelpOption();
 	parser.addVersionOption();
-	parser.addOptions({
-		{ { "o", OUTPUT_FOLDER },                                "Output folder",                         DST_PATH },
-		{        { "c", CONFIG },							 "Config file path", "config.json from app resources" },
-		{				TIMEOUT,          "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
-		{			   ATTEMPTS, "Maximum number of download attempts per file",    QString::number(MAX_ATTEMPTS) },
-		{				  COUNT,    "Number of files downloaded simultaneously",   QString::number(DEFAULT_COUNT) },
-	});
+	parser.addOptions(
+		{
+			{ { "o", OUTPUT_FOLDER },                                "Output folder",                         DST_PATH },
+			{        { "c", CONFIG },                             "Config file path", "config.json from app resources" },
+			{				TIMEOUT,          "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
+			{			   ATTEMPTS, "Maximum number of download attempts per file",    QString::number(MAX_ATTEMPTS) },
+			{				  COUNT,    "Number of files downloaded simultaneously",   QString::number(DEFAULT_COUNT) },
+    }
+	);
 	parser.addPositionalArgument("sql", "Download dump files");
 	parser.addPositionalArgument("zip", "Download book archives");
 

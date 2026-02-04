@@ -322,11 +322,13 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
-	parser.addOptions({
-		{ { "o", FOLDER }, "Output folder (required)", FOLDER },
-		{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
-		{ HASH, "Hash output folder", QString("%1 [output_folder/%2]").arg(FOLDER, HASH) },
-	});
+	parser.addOptions(
+		{
+			{ { "o", FOLDER }, "Output folder (required)", FOLDER },
+			{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
+			{ HASH, "Hash output folder", QString("%1 [output_folder/%2]").arg(FOLDER, HASH) },
+    }
+	);
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);

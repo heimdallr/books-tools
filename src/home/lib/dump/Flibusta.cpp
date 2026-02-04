@@ -25,6 +25,7 @@ namespace HomeCompa::FliLib::Dump
 
 namespace
 {
+
 constexpr auto g_libaannotations = R"(CREATE TABLE libaannotations (
   AvtorId INTEGER,
   nid INTEGER,

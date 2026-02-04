@@ -283,10 +283,10 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
                 values.front() = QString("%1 [%2]%3").arg(match.captured(1), match.captured(2), match.captured(3)).simplified();
 
         std::ranges::transform(values.front(), values.front().begin(), [](const QChar ch) {
-			return ch >= QChar { 0x2010 } && ch <= QChar {0x2015} ? QChar { '-' } : ch;
+            return ch >= QChar { 0x2010 } && ch <= QChar { 0x2015 } ? QChar { '-' } : ch;
         });
 
-		values.front().replace(" - ", dash);
+        values.front().replace(" - ", dash);
 
         return false;
 	};
