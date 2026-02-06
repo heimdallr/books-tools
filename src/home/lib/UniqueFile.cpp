@@ -293,7 +293,7 @@ constexpr auto POP_COUNT_THRESHOLD = 9;
 	if (!((lhs.images.empty() || rhs.images.empty()) && (lhs.cover.hash.isEmpty() || rhs.cover.hash.isEmpty())))
 		return result;
 
-	if (std::ranges::includes(lhs.title, rhs.title) || std::ranges::includes(rhs.title, lhs.title))
+	if (Util::Intersect(lhs.title, rhs.title))
 		return result;
 
 	PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(lhs.uid.folder, lhs.uid.file, lhs.GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
