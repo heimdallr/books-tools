@@ -277,12 +277,6 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
 
-void MergeArchives(const QDir& outputDir, const Archives& archives, const Replacement& replacement)
-{
-	for (const auto& archive : archives)
-		ProcessArchive(outputDir, archive, replacement);
-}
-
 void ProcessHash(const QDir& hashDir, const Archive& archive, const Replacement& replacement)
 {
 	PLOGI << "parsing " << archive.hashPath;
@@ -302,10 +296,13 @@ void ProcessHash(const QDir& hashDir, const Archive& archive, const Replacement&
 	[[maybe_unused]] const HashCopier parser(input, output, replacement);
 }
 
-void MergeHash(const QDir& hashDir, const Archives& archives, const Replacement& replacement)
+void MergeArchives(const QDir& outputDir, const QDir& hashDir, const Archives& archives, const Replacement& replacement)
 {
 	for (const auto& archive : archives)
+	{
+		ProcessArchive(outputDir, archive, replacement);
 		ProcessHash(hashDir, archive, replacement);
+	}
 }
 
 void GetReplacement(const size_t totalFileCount, const Archives& archives, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider)
@@ -365,8 +362,7 @@ void run(const Settings& settings)
 	uniqueFileStorage.SetDuplicateObserver(std::make_unique<DuplicateObserver>(replacement));
 	GetReplacement(totalFileCount, archives, uniqueFileStorage, *inpDataProvider);
 
-	MergeArchives(settings.outputDir, archives, replacement);
-	MergeHash(settings.hashDir, archives, replacement);
+	MergeArchives(settings.outputDir, settings.hashDir, archives, replacement);
 }
 
 } // namespace
