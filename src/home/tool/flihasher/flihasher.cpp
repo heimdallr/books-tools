@@ -13,9 +13,10 @@
 #include <QPixmap>
 #include <QStandardPaths>
 
-#include "fnd/ScopedCall.h"
-
 #include <plog/Appenders/ConsoleAppender.h>
+
+#include "fnd/IsOneOf.h"
+#include "fnd/ScopedCall.h"
 
 #include "lib/book.h"
 #include "lib/dump/Factory.h"
@@ -81,6 +82,8 @@ struct ParseResult
 	QString     title;
 	QString     hashText;
 	QStringList hashSections;
+
+	std::vector<std::pair<size_t, QString>> hashValues;
 };
 
 struct ImageTaskItem
@@ -143,7 +146,7 @@ uint64_t GetPHash(const ImageTaskItem& item)
 	const auto dct     = (DCT * resized * DCT_T).crop(1, 1, 8, 8);
 
 #ifndef NDEBUG
-	QString str;
+	QString          str;
 	const ScopedCall strGuard([&] {
 		PLOGV << item.file << ": " << str;
 	});
@@ -168,8 +171,28 @@ class Fb2Parser final : public Util::SaxParser
 	static constexpr auto TITLE   = "FictionBook/description/title-info/book-title";
 	static constexpr auto SECTION = "section";
 
+	struct HistComparer
+	{
+		using ItemType = std::pair<size_t, QString>;
+
+		bool operator()(const ItemType& lhs, const ItemType& rhs) const
+		{
+			return ToComparable(lhs) > ToComparable(rhs);
+		}
+
+	private:
+		static ItemType ToComparable(const ItemType& item)
+		{
+			auto result   = item;
+			result.first |= (1llu << (32 + std::min(static_cast<int>(item.second.length()), 8)));
+			return result;
+		}
+	};
+
 	struct Section
 	{
+		using HashValues = std::vector<std::pair<size_t, QString>>;
+
 		Section* parent { nullptr };
 		int      depth { 0 };
 		size_t   size { 0 };
@@ -178,27 +201,29 @@ class Fb2Parser final : public Util::SaxParser
 		QString                               hash;
 		std::vector<std::unique_ptr<Section>> children;
 
-		void CalculateHash()
+		HashValues CalculateHash()
 		{
-			hash = GetHashImpl();
+			auto               hashValues = GetHashValues();
+			QCryptographicHash md5 { QCryptographicHash::Md5 };
+			for (const auto& word : hashValues | std::views::values)
+				md5.addData(word.toUtf8());
+
+			hash = QString::fromUtf8(md5.result().toHex());
 			size = hist.size();
 			hist.clear();
+
+			return hashValues;
 		}
 
 	private:
-		QString GetHashImpl() const
+		std::vector<std::pair<size_t, QString>> GetHashValues() const
 		{
-			QCryptographicHash md5 { QCryptographicHash::Md5 };
-
-			std::set<std::pair<size_t, QString>, std::greater<>> counter;
+			std::set<std::pair<size_t, QString>, HistComparer> counter(HistComparer {});
 			std::ranges::transform(hist, std::inserter(counter, counter.begin()), [](const auto& item) {
 				return std::make_pair(item.second, item.first);
 			});
 
-			for (const auto& word : counter | std::views::values | std::views::take(10))
-				md5.addData(word.toUtf8());
-
-			return QString::fromUtf8(md5.result().toHex());
+			return counter | std::views::take(10) | std::ranges::to<std::vector<std::pair<size_t, QString>>>();
 		}
 	};
 
@@ -220,10 +245,14 @@ public:
                 r(*child, r);
 		};
 
-		m_section.CalculateHash();
+		auto hashValues = m_section.CalculateHash();
 		enumerate(m_section, enumerate);
 
-		return { .id = QString::fromUtf8(m_md5.result().toHex()), .title = std::move(m_title), .hashText = std::move(m_section.hash), .hashSections = std::move(sections) };
+		return { .id           = QString::fromUtf8(m_md5.result().toHex()),
+			     .title        = std::move(m_title),
+			     .hashText     = std::move(m_section.hash),
+			     .hashSections = std::move(sections),
+			     .hashValues   = std::move(hashValues) };
 	}
 
 private: // Util::SaxParser
@@ -263,13 +292,14 @@ private: // Util::SaxParser
 			for (auto&& word : valueCopy.split(' ', Qt::SkipEmptyParts))
 			{
 				word.removeIf([](const QChar ch) {
-					return ch.category() != QChar::Letter_Lowercase;
+					const auto category = ch.category();
+					return category < QChar::Letter_Lowercase || category > QChar::Letter_Other;
 				});
-				if (word.length() > 7)
-				{
-					for (auto* section = m_currentSection; section; section = section->parent)
-						++section->hist[word];
-				}
+				if (word.isEmpty())
+					continue;
+
+				for (auto* section = m_currentSection; section; section = section->parent)
+					++section->hist[word];
 			}
 		}
 
@@ -542,6 +572,13 @@ void ProcessArchive(const Options& options, const QString& filePath, Util::Progr
 			writeImage(Global::IMAGE, item);
 
 		FliLib::SerializeHashSections(file.parseResult.hashSections, writer);
+
+		const auto histogram = bookGuard->Guard("histogram");
+		for (const auto& [count, word] : file.parseResult.hashValues)
+		{
+			auto histogramItem = histogram->Guard("item");
+			histogramItem->WriteAttribute("count", QString::number(count)).WriteAttribute("word", word);
+		}
 	}
 }
 
