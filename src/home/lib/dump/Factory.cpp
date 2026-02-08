@@ -291,10 +291,16 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
         return false;
 	};
 
-	ReplaceImpl(db, dump.GetSeriesTable(), replacementObj, processBrackets);
-	ReplaceImpl(db, dump.GetAuthorTable(), replacementObj, [](auto&) {
+	const auto removeColon = [](std::vector<QString>& author) {
+		for (QString& item : author)
+			erase_if(item, [](const QChar ch) {
+				return ch == ':';
+			});
 		return false;
-	});
+	};
+
+	ReplaceImpl(db, dump.GetSeriesTable(), replacementObj, processBrackets);
+	ReplaceImpl(db, dump.GetAuthorTable(), replacementObj, removeColon);
 }
 
 } // namespace

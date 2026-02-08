@@ -132,8 +132,25 @@ public:
 		virtual bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const = 0;
 	};
 
+	class ImageComparer // NOLINT(cppcoreguidelines-special-member-functions)
+	{
+	public:
+		enum class ImagesCompareResult
+		{
+			Equal,
+			Inner,
+			Outer,
+			Varied,
+		};
+
+	public:
+		virtual ~ImageComparer() = default;
+
+		[[nodiscard]] virtual ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const = 0;
+	};
+
 public:
-	explicit UniqueFileStorage(QString dstDir, std::shared_ptr<InpDataProvider> inpDataProvider = std::make_shared<InpDataProvider>());
+	explicit UniqueFileStorage(QString dstDir, int hammingThreshold = 10, std::shared_ptr<InpDataProvider> inpDataProvider = std::make_shared<InpDataProvider>());
 
 public:
 	std::pair<ImageItem, std::set<ImageItem>> GetImages(UniqueFile& file);
@@ -157,6 +174,7 @@ private:
 
 private:
 	const QString                                m_hashDir;
+	const std::unique_ptr<const ImageComparer>   m_imageComparer;
 	std::mutex                                   m_guard;
 	std::shared_ptr<InpDataProvider>             m_inpDataProvider;
 	std::unique_ptr<IDuplicateObserver>          m_duplicateObserver;

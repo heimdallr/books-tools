@@ -209,95 +209,119 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 	}
 };
 
-enum class ImagesCompareResult
+using ImagesCompareResult = UniqueFileStorage::ImageComparer::ImagesCompareResult;
+
+class ImageComparerSub final : public UniqueFileStorage::ImageComparer
 {
-	Equal,
-	Inner,
-	Outer,
-	Varied,
+private: // UniqueFileStorage::ImageComparer
+	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
+	{
+		if (!Util::Intersect(lhs.title, rhs.title))
+			return ImagesCompareResult::Varied;
+
+		const auto lhsImageCount = lhs.images.size() + !lhs.cover.hash.isEmpty();
+		const auto rhsImageCount = rhs.images.size() + !rhs.cover.hash.isEmpty();
+		return lhsImageCount < rhsImageCount ? ImagesCompareResult::Inner : lhsImageCount > rhsImageCount ? ImagesCompareResult::Outer : ImagesCompareResult::Equal;
+	}
 };
 
-constexpr auto POP_COUNT_THRESHOLD = 9;
-
-[[nodiscard]] ImagesCompareResult CompareImages(const UniqueFile& lhs, const UniqueFile& rhs)
+class ImageComparerHamming final : public UniqueFileStorage::ImageComparer
 {
-	auto result = ImagesCompareResult::Equal;
-	if (lhs.cover.hash != rhs.cover.hash)
+public:
+	explicit ImageComparerHamming(const int threshold)
+		: m_threshold { threshold }
 	{
-		if (lhs.cover.hash.isEmpty())
-			result = ImagesCompareResult::Inner;
-		else if (rhs.cover.hash.isEmpty())
-			result = ImagesCompareResult::Outer;
-		else if (lhs.cover.pHash == 0 || rhs.cover.pHash == 0 || std::popcount(lhs.cover.pHash ^ rhs.cover.pHash) > POP_COUNT_THRESHOLD)
-			return ImagesCompareResult::Varied;
 	}
 
-	std::vector<uint64_t>             lpHashes;
-	std::unordered_multiset<uint64_t> rpHashes;
-	auto                              lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
-	while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
+private: // UniqueFileStorage::ImageComparer
+	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
 	{
-		if (lIt->hash < rIt->hash)
+		auto result = ImagesCompareResult::Equal;
+		if (lhs.cover.hash != rhs.cover.hash)
 		{
-			lpHashes.emplace_back(lIt->pHash);
-			++lIt;
-			continue;
+			if (lhs.cover.hash.isEmpty())
+				result = ImagesCompareResult::Inner;
+			else if (rhs.cover.hash.isEmpty())
+				result = ImagesCompareResult::Outer;
+			else if (lhs.cover.pHash == 0 || rhs.cover.pHash == 0 || std::popcount(lhs.cover.pHash ^ rhs.cover.pHash) > m_threshold)
+				return ImagesCompareResult::Varied;
 		}
 
-		if (lIt->hash > rIt->hash)
+		std::vector<uint64_t>             lpHashes;
+		std::unordered_multiset<uint64_t> rpHashes;
+		auto                              lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
+		while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
 		{
-			rpHashes.emplace(rIt->pHash);
-			++rIt;
-			continue;
-		}
-		++lIt;
-		++rIt;
-	}
-
-	if (!(lpHashes.empty() || rpHashes.empty()))
-	{
-		for (; lIt != lhs.images.cend(); ++lIt)
-			lpHashes.emplace_back(lIt->pHash);
-		for (; rIt != rhs.images.cend(); ++rIt)
-			rpHashes.emplace(rIt->pHash);
-		erase_if(lpHashes, [&](const uint64_t lItem) {
-			if (lItem == 0)
-				return false;
-			if (const auto it = std::ranges::find_if(
-					rpHashes,
-					[&](const uint64_t rItem) {
-						return std::popcount(lItem ^ rItem) <= POP_COUNT_THRESHOLD;
-					}
-				);
-			    it != rpHashes.end())
+			if (lIt->hash < rIt->hash)
 			{
-				rpHashes.erase(it);
-				return true;
+				lpHashes.emplace_back(lIt->pHash);
+				++lIt;
+				continue;
 			}
-			return false;
-		});
+
+			if (lIt->hash > rIt->hash)
+			{
+				rpHashes.emplace(rIt->pHash);
+				++rIt;
+				continue;
+			}
+			++lIt;
+			++rIt;
+		}
+
+		if (!(lpHashes.empty() || rpHashes.empty()))
+		{
+			for (; lIt != lhs.images.cend(); ++lIt)
+				lpHashes.emplace_back(lIt->pHash);
+			for (; rIt != rhs.images.cend(); ++rIt)
+				rpHashes.emplace(rIt->pHash);
+			erase_if(lpHashes, [&](const uint64_t lItem) {
+				if (lItem == 0)
+					return false;
+				if (const auto it = std::ranges::find_if(
+						rpHashes,
+						[&](const uint64_t rItem) {
+							return std::popcount(lItem ^ rItem) <= m_threshold;
+						}
+					);
+				    it != rpHashes.end())
+				{
+					rpHashes.erase(it);
+					return true;
+				}
+				return false;
+			});
+		}
+
+		if (!lpHashes.empty())
+			result = result == ImagesCompareResult::Inner ? ImagesCompareResult::Varied : ImagesCompareResult::Outer;
+
+		if (result == ImagesCompareResult::Varied)
+			return result;
+
+		if (!rpHashes.empty())
+			result = result == ImagesCompareResult::Outer ? ImagesCompareResult::Varied : ImagesCompareResult::Inner;
+
+		if (result == ImagesCompareResult::Varied)
+			return result;
+
+		if (!((lhs.images.empty() || rhs.images.empty()) && (lhs.cover.hash.isEmpty() || rhs.cover.hash.isEmpty())))
+			return result;
+
+		if (Util::Intersect(lhs.title, rhs.title))
+			return result;
+
+		PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(lhs.uid.folder, lhs.uid.file, lhs.GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
+		return ImagesCompareResult::Varied;
 	}
 
-	if (!lpHashes.empty())
-		result = result == ImagesCompareResult::Inner ? ImagesCompareResult::Varied : ImagesCompareResult::Outer;
+private:
+	const int m_threshold;
+};
 
-	if (result == ImagesCompareResult::Varied)
-		return result;
-
-	if (!rpHashes.empty())
-		result = result == ImagesCompareResult::Outer ? ImagesCompareResult::Varied : ImagesCompareResult::Inner;
-
-	if (result == ImagesCompareResult::Varied)
-		return result;
-
-	if (!((lhs.images.empty() || rhs.images.empty()) && (lhs.cover.hash.isEmpty() || rhs.cover.hash.isEmpty())))
-		return result;
-
-	if (Util::Intersect(lhs.title, rhs.title))
-		return result;
-
-	PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(lhs.uid.folder, lhs.uid.file, lhs.GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
-	return ImagesCompareResult::Varied;
+std::unique_ptr<UniqueFileStorage::ImageComparer> GetImageCompared(const int hammingThreshold)
+{
+	return hammingThreshold >= 64 ? std::unique_ptr<UniqueFileStorage::ImageComparer> { std::make_unique<ImageComparerSub>() } : std::make_unique<ImageComparerHamming>(hammingThreshold);
 }
 
 QString createSi()
@@ -402,8 +426,9 @@ Book* InpDataProvider::SetFile(const UniqueFile::Uid& uid, QString id)
 	return nullptr;
 }
 
-UniqueFileStorage::UniqueFileStorage(QString dstDir, std::shared_ptr<InpDataProvider> inpDataProvider)
+UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold, std::shared_ptr<InpDataProvider> inpDataProvider)
 	: m_hashDir { std::move(dstDir) }
+	, m_imageComparer { GetImageCompared(hammingThreshold) }
 	, m_inpDataProvider { std::move(inpDataProvider) }
 	, m_duplicateObserver { std::make_unique<DuplicateObserverStub>() }
 	, m_conflictResolver { std::make_unique<UniqueFileConflictResolver>() }
@@ -461,7 +486,7 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 	for (auto [it, end] = m_old.equal_range(hash); it != end; ++it)
 	{
-		const auto imagesCompareResult = CompareImages(it->second, file);
+		const auto imagesCompareResult = m_imageComparer->Compare(it->second, file);
 		if (imagesCompareResult == ImagesCompareResult::Varied)
 			continue;
 
@@ -479,7 +504,7 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 	for (auto [it, end] = m_new.equal_range(hash); it != end; ++it)
 	{
-		const auto imagesCompareResult = CompareImages(it->second.first, file);
+		const auto imagesCompareResult = m_imageComparer->Compare(it->second.first, file);
 		if (imagesCompareResult == ImagesCompareResult::Varied)
 			continue;
 
