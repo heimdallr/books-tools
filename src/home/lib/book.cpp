@@ -130,15 +130,20 @@ QString& SimplifyTitle(QString& value)
 
 QString& PrepareTitle(QString& value)
 {
-	static constexpr std::pair<char16_t, char16_t> replacement[] {
+	static constexpr std::pair<char16_t, char16_t> replacementChar[] {
 		{ 0x0451, 0x0435 },
 		{ 0x0439, 0x0438 },
 		{ 0x044A, 0x044C },
 	};
+	const std::pair<QString, QString> replacementString[] {
+		{ QString("%1%2").arg(QChar { 0x044B }, QChar { 0x043E }), QString("%1%2").arg(QChar { 0x044C }, QChar { 0x044E }) },
+	};
+
 	value = value.toLower();
+
 	std::ranges::transform(value, std::begin(value), [&](const QChar& ch) {
-		const auto it = std::ranges::find(replacement, ch.unicode(), &std::pair<char16_t, char16_t>::first);
-		if (it != std::cend(replacement))
+		const auto it = std::ranges::find(replacementChar, ch.unicode(), &std::pair<char16_t, char16_t>::first);
+		if (it != std::cend(replacementChar))
 			return QChar { it->second };
 
 		const auto category = ch.category();
@@ -148,6 +153,10 @@ QString& PrepareTitle(QString& value)
 
 		return ch;
 	});
+
+	for (const auto& [from, to] : replacementString)
+		value.replace(from, to);
+
 	return value;
 }
 
