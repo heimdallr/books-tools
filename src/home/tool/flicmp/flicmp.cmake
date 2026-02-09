@@ -5,6 +5,7 @@ AddTarget(flicmp	 app_console
 	LINK_LIBRARIES
 		Boost::headers
 		Qt${QT_MAJOR_VERSION}::Core
+		Qt${QT_MAJOR_VERSION}::Gui
 	LINK_TARGETS
 		lib
 		logging
