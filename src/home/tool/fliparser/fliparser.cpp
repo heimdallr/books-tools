@@ -90,13 +90,14 @@ private: // HashParser::IObserver
 		m_inpDataProvider.SetSourceLib(sourceLib);
 	}
 
-	void OnBookParsed(
+	bool OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 			HashParser::HashImageItem /*cover*/,
-		std::vector<HashParser::HashImageItem> /*images*/,
-		Section::Ptr
+		HashParser::HashImageItems /*images*/,
+		Section::Ptr,
+		TextHistogram
 	) override
 	{
 		UniqueFile::Uid uid { folder, file };
@@ -104,6 +105,8 @@ private: // HashParser::IObserver
 			m_replacement.try_emplace(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
 
 		m_inpDataProvider.SetFile(uid, std::move(id));
+
+		return true;
 	}
 
 private:
@@ -150,17 +153,18 @@ private: // HashParser::IObserver
 	{
 	}
 
-	void OnBookParsed(
+	bool OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 			HashParser::HashImageItem /*cover*/,
-		std::vector<HashParser::HashImageItem> /*images*/,
-		Section::Ptr section
+		HashParser::HashImageItems /*images*/,
+		Section::Ptr section,
+		TextHistogram
 	) override
 	{
 		if (!originFolder.isEmpty())
-			return;
+			return true;
 
 		const auto enumerate = [this](const Book* book, const Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
 			for (const auto& [childId, child] : parent.children)
@@ -201,7 +205,7 @@ private: // HashParser::IObserver
 
 		const auto* book = m_inpDataProvider.GetBook({ folder, file });
 		if (!book)
-			return;
+			return true;
 
 		QJsonArray                  found;
 		std::unordered_set<QString> idNotFound;
@@ -226,6 +230,8 @@ private: // HashParser::IObserver
 
 			m_compilations.append(std::move(compilation));
 		}
+
+		return true;
 	}
 
 private:

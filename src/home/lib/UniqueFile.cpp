@@ -26,12 +26,13 @@ namespace
 
 class HashParserImpl final : public Util::SaxParser
 {
-	static constexpr auto BOOKS   = "books";
-	static constexpr auto BOOK    = "books/book";
-	static constexpr auto COVER   = "books/book/cover";
-	static constexpr auto IMAGE   = "books/book/image";
-	static constexpr auto ORIGIN  = "books/book/origin";
-	static constexpr auto SECTION = "section";
+	static constexpr auto BOOKS     = "books";
+	static constexpr auto BOOK      = "books/book";
+	static constexpr auto COVER     = "books/book/cover";
+	static constexpr auto IMAGE     = "books/book/image";
+	static constexpr auto ORIGIN    = "books/book/origin";
+	static constexpr auto HISTOGRAM = "books/book/histogram/item";
+	static constexpr auto SECTION   = "section";
 
 public:
 	HashParserImpl(QIODevice& input, HashParser::IObserver& observer)
@@ -76,6 +77,10 @@ private: // Util::SaxParser
 		{
 			m_images.emplace_back(attributes.GetAttribute("id"), QString(), attributes.GetAttribute("pHash"));
 		}
+		else if (path == HISTOGRAM)
+		{
+			m_textHistogram.emplace_back(attributes.GetAttribute("count").toULongLong(), attributes.GetAttribute("word"));
+		}
 
 		return true;
 	}
@@ -85,14 +90,16 @@ private: // Util::SaxParser
 		if (path == BOOK)
 		{
 			assert(!m_id.isEmpty());
-			m_observer.OnBookParsed(
+			if (!m_observer.OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) std::move(m_##NAME),
-				HASH_PARSER_CALLBACK_ITEMS_X_MACRO
+					HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-					std::move(m_cover),
-				std::move(m_images),
-				std::move(m_section)
-			);
+						std::move(m_cover),
+					std::move(m_images),
+					std::move(m_section),
+					std::move(m_textHistogram)
+				))
+				return false;
 
 #define HASH_PARSER_CALLBACK_ITEM(NAME) m_##NAME = {};
 			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
@@ -101,6 +108,7 @@ private: // Util::SaxParser
 			m_cover          = {};
 			m_images         = {};
 			m_section        = {};
+			m_textHistogram  = {};
 			m_currentSection = nullptr;
 		}
 		else if (name == SECTION)
@@ -130,6 +138,7 @@ private:
 	std::vector<HashParser::HashImageItem> m_images;
 	Section::Ptr                           m_section;
 	Section*                               m_currentSection { nullptr };
+	TextHistogram                          m_textHistogram;
 };
 
 class ISerializer // NOLINT(cppcoreguidelines-special-member-functions)
@@ -612,17 +621,18 @@ void UniqueFileStorage::OnParseStarted(const QString& sourceLib)
 	m_inpDataProvider->SetSourceLib(sourceLib);
 }
 
-void UniqueFileStorage::OnBookParsed(
+bool UniqueFileStorage::OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
 	HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-		HashParser::HashImageItem          cover,
-	std::vector<HashParser::HashImageItem> images,
-	Section::Ptr
+		HashParser::HashImageItem cover,
+	HashParser::HashImageItems    images,
+	Section::Ptr,
+	TextHistogram
 )
 {
 	if (!originFolder.isEmpty())
-		return;
+		return true;
 
 	decltype(UniqueFile::images) imageItems;
 	std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](auto&& item) {
@@ -646,6 +656,8 @@ void UniqueFileStorage::OnBookParsed(
 	};
 	uniqueFile.order = QFileInfo(uniqueFile.uid.file).baseName().toInt();
 	m_old.emplace(std::move(id), std::move(uniqueFile));
+
+	return true;
 }
 
 void HashParser::Parse(QIODevice& input, IObserver& observer)

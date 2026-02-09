@@ -4,6 +4,8 @@ AddTarget(lib	shared_lib
 		"${CMAKE_CURRENT_LIST_DIR}"
 	LINK_LIBRARIES
 		Qt${QT_MAJOR_VERSION}::Core
+		Qt${QT_MAJOR_VERSION}::Gui
+		cimg::cimg
 	LINK_TARGETS
 		dbfactory
 		logging

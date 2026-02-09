@@ -7,6 +7,7 @@
 
 #include "ImageItem.h"
 #include "book.h"
+#include "flihash.h"
 #include "util.h"
 
 #include "export/lib.h"
@@ -54,18 +55,21 @@ struct HashParser
 		QString pHash;
 	};
 
+	using HashImageItems = std::vector<HashImageItem>;
+
 	class IObserver // NOLINT(cppcoreguidelines-special-member-functions)
 	{
 	public:
 		virtual ~IObserver()                                  = default;
 		virtual void OnParseStarted(const QString& sourceLib) = 0;
-		virtual void OnBookParsed(
+		virtual bool OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
 			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-				HashImageItem          cover,
-			std::vector<HashImageItem> images,
-			Section::Ptr               section
+				HashImageItem cover,
+			HashImageItems    images,
+			Section::Ptr      section,
+			TextHistogram     textHistogram
 		) = 0;
 	};
 
@@ -163,13 +167,14 @@ public:
 
 private:
 	void OnParseStarted(const QString& sourceLib) override;
-	void OnBookParsed(
+	bool OnBookParsed(
 #define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-			HashParser::HashImageItem          cover,
-		std::vector<HashParser::HashImageItem> images,
-		Section::Ptr                           section
+			HashParser::HashImageItem cover,
+		HashParser::HashImageItems    images,
+		Section::Ptr                  section,
+		TextHistogram                 textHistogram
 	) override;
 
 private:

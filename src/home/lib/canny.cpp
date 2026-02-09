@@ -7,6 +7,8 @@
 
 using namespace cimg_library;
 
+using namespace HomeCompa::FliLib;
+
 namespace
 {
 
