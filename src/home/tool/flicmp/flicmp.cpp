@@ -23,7 +23,8 @@ namespace
 
 constexpr auto APP_ID = "flicmp";
 
-using ImageHashes = std::unordered_multimap<uint64_t, std::reference_wrapper<const ImageHashItem>>;
+using ImageHash   = std::pair<uint64_t, QString>;
+using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 
 void Compare(QStringList& result, const HashParseResult& lhs, const HashParseResult& rhs)
 {
@@ -53,41 +54,33 @@ void Compare(QStringList& result, const ImageHashItem& lhs, const ImageHashItem&
 	result << QString("covers are different: %1 vs %2, Hamming distance: %3").arg(lhs.pHash, 16, 16, QChar { '0' }).arg(rhs.pHash, 16, 16, QChar { '0' }).arg(hammingDistance);
 }
 
-void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs)
+void Compare(std::multimap<int, QString, std::greater<>>& fileItems, const ImageHashes& lhs, const ImageHashes& rhs)
 {
-	std::multimap<int, std::pair<std::reference_wrapper<const ImageHashItem>, std::reference_wrapper<const ImageHashItem>>> distances;
+	std::multimap<int, std::pair<ImageHash, ImageHash>> distances;
 	for (const auto& l : lhs)
 		for (const auto& r : rhs)
-			distances.emplace(std::popcount(l.first ^ r.first), std::make_pair(std::reference_wrapper { l.second }, std::reference_wrapper { r.second }));
+			distances.emplace(std::popcount(l.first ^ r.first), std::make_pair(l, r));
 
-	const auto toIdList = [](ImageHashes& hashes) {
-		return hashes | std::views::values | std::views::transform([](const auto& item) {
-				   return item.get().file;
-			   })
-		     | std::ranges::to<std::unordered_set<QString>>();
+	const auto toIdList = [](const ImageHashes& hashes) {
+		return hashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
 	};
 	auto lIds = toIdList(lhs), rIds = toIdList(rhs);
 
-	std::multimap<int, QString, std::greater<>> fileItems;
-	for (const auto& [lRef, rRef] : distances | std::views::values)
+	for (const auto& [l, r] : distances | std::views::values)
 	{
-		const auto& l = lRef.get();
-		const auto& r = rRef.get();
-		assert(l.hash != r.hash);
-
-		if (!lIds.contains(l.file) || !rIds.contains(r.file))
+		if (!lIds.contains(l.second) || !rIds.contains(r.second))
 			continue;
 
-		lIds.erase(l.file);
-		rIds.erase(r.file);
+		lIds.erase(l.second);
+		rIds.erase(r.second);
 
 		fileItems.emplace(
-			-l.file.toInt(),
+			-l.second.toInt(),
 			QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3")
-				.arg(l.file, r.file)
-				.arg(std::popcount(l.pHash ^ r.pHash))
-				.arg(l.pHash, 16, 16, QChar { '0' })
-				.arg(r.pHash, 16, 16, QChar { '0' })
+				.arg(l.second, r.second)
+				.arg(std::popcount(l.first ^ r.first))
+				.arg(l.first, 16, 16, QChar { '0' })
+				.arg(r.first, 16, 16, QChar { '0' })
 		);
 	}
 
@@ -97,11 +90,11 @@ void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs)
 
 	std::ranges::transform(lIds, std::inserter(fileItems, fileItems.end()), std::bind_front(notFound, false));
 	std::ranges::transform(rIds, std::inserter(fileItems, fileItems.end()), std::bind_front(notFound, true));
-	std::ranges::move(std::move(fileItems) | std::views::values, std::back_inserter(result));
 }
 
 void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItems& rhs)
 {
+	std::multimap<int, QString, std::greater<>> fileItems;
 	ImageHashes lpHashes, rpHashes;
 
 	auto lIt = lhs.cbegin(), rIt = rhs.cbegin();
@@ -109,30 +102,32 @@ void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItem
 	{
 		if (lIt->hash < rIt->hash)
 		{
-			lpHashes.emplace(lIt->pHash, *lIt);
+			lpHashes.emplace(lIt->pHash, lIt->file);
 			++lIt;
 			continue;
 		}
 
 		if (lIt->hash > rIt->hash)
 		{
-			rpHashes.emplace(rIt->pHash, *rIt);
+			rpHashes.emplace(rIt->pHash, rIt->file);
 			++rIt;
 			continue;
 		}
+		fileItems.emplace(-lIt->file.toInt(), QString("%1 and %2 are equal: %3").arg(lIt->file, rIt->file).arg(lIt->hash));
 		++lIt;
 		++rIt;
 	}
 
 	for (; lIt != lhs.cend(); ++lIt)
-		lpHashes.emplace(lIt->pHash, *lIt);
+		lpHashes.emplace(lIt->pHash, lIt->file);
 	for (; rIt != rhs.cend(); ++rIt)
-		rpHashes.emplace(rIt->pHash, *rIt);
+		rpHashes.emplace(rIt->pHash, rIt->file);
 
 	if (lpHashes.empty() && rpHashes.empty())
 		return (void)(result << "images are equal");
 
-	Compare(result, lpHashes, rpHashes);
+	Compare(fileItems, lpHashes, rpHashes);
+	std::ranges::move(std::move(fileItems) | std::views::values, std::back_inserter(result));
 }
 
 void Compare(const BookHashItem& lhs, const BookHashItem& rhs)
