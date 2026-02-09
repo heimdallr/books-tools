@@ -178,9 +178,10 @@ private:
 #define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
-			HashParser::HashImageItem          cover,
-		std::vector<HashParser::HashImageItem> images,
-		Section::Ptr
+			HashParser::HashImageItem cover,
+		HashParser::HashImageItems    images,
+		Section::Ptr,
+		TextHistogram
 	) override
 	{
 		if (!originFolder.isEmpty())

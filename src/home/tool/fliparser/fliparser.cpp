@@ -95,8 +95,9 @@ private: // HashParser::IObserver
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 			HashParser::HashImageItem /*cover*/,
-		std::vector<HashParser::HashImageItem> /*images*/,
-		Section::Ptr
+		HashParser::HashImageItems /*images*/,
+		Section::Ptr,
+		TextHistogram
 	) override
 	{
 		UniqueFile::Uid uid { folder, file };
@@ -157,8 +158,9 @@ private: // HashParser::IObserver
 		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 			HashParser::HashImageItem /*cover*/,
-		std::vector<HashParser::HashImageItem> /*images*/,
-		Section::Ptr section
+		HashParser::HashImageItems /*images*/,
+		Section::Ptr section,
+		TextHistogram
 	) override
 	{
 		if (!originFolder.isEmpty())

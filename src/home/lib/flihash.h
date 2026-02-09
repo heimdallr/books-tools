@@ -12,14 +12,15 @@
 namespace HomeCompa::FliLib
 {
 
+using TextHistogram = std::vector<std::pair<size_t, QString>>;
+
 struct HashParseResult
 {
-	QString     id;
-	QString     title;
-	QString     hashText;
-	QStringList hashSections;
-
-	std::vector<std::pair<size_t, QString>> hashValues;
+	QString       id;
+	QString       title;
+	QString       hashText;
+	QStringList   hashSections;
+	TextHistogram hashValues;
 };
 
 struct ImageHashItem

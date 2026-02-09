@@ -54,8 +54,7 @@ void Compare(QStringList& result, const ImageHashItem& lhs, const ImageHashItem&
 
 void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs, const bool reverse = false)
 {
-	using FileItem = std::pair<QString, uint64_t>;
-	std::multimap<int, std::pair<FileItem, FileItem>, std::greater<>> fileItems;
+	std::multimap<int, QString, std::greater<>> fileItems;
 	for (auto lIt = lhs.begin(); lIt != lhs.end();)
 	{
 		auto rIt = std::ranges::min_element(rhs, {}, [pHash = lIt->first](const auto& item) {
@@ -64,7 +63,7 @@ void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs, const bool
 
 		if (rIt == rhs.end())
 		{
-			result << QString("pair not found for %1 %2").arg(reverse ? "right" : "left", lIt->second.get().file);
+			fileItems.emplace(-lIt->second.get().file.toInt(), QString("pair not found for %1 %2").arg(reverse ? "right" : "left", lIt->second.get().file));
 			++lIt;
 			continue;
 		}
@@ -76,15 +75,18 @@ void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs, const bool
 		const auto& lImage = l.get();
 		const auto& rImage = r.get();
 
-		fileItems.emplace(-lImage.file.toInt(), std::make_pair(std::make_pair(lImage.file, lImage.pHash), std::make_pair(rImage.file, rImage.pHash)));
+		fileItems.emplace(
+			-lImage.file.toInt(),
+			QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3")
+				.arg(lImage.file, rImage.file)
+				.arg(std::popcount(lImage.pHash ^ rImage.pHash))
+				.arg(lImage.pHash, 16, 16, QChar { '0' })
+				.arg(rImage.pHash, 16, 16, QChar { '0' })
+		);
 		lIt = lhs.erase(lIt);
 		rhs.erase(rIt);
 	}
-	std::ranges::transform(fileItems | std::views::values, std::back_inserter(result), [](const auto& item) {
-		const auto& [lName, lHash] = item.first;
-		const auto& [rName, rHash] = item.second;
-		return QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3").arg(lName, rName).arg(std::popcount(lHash ^ rHash)).arg(lHash, 16, 16, QChar { '0' }).arg(rHash, 16, 16, QChar { '0' });
-	});
+	std::ranges::move(std::move(fileItems) | std::views::values, std::back_inserter(result));
 }
 
 void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItems& rhs)
@@ -111,13 +113,13 @@ void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItem
 		++rIt;
 	}
 
-	if (lpHashes.empty() && rpHashes.empty())
-		return (void)(result << "images are equal");
-
 	for (; lIt != lhs.cend(); ++lIt)
 		lpHashes.emplace(lIt->pHash, *lIt);
 	for (; rIt != rhs.cend(); ++rIt)
 		rpHashes.emplace(rIt->pHash, *rIt);
+
+	if (lpHashes.empty() && rpHashes.empty())
+		return (void)(result << "images are equal");
 
 	Compare(result, lpHashes, rpHashes);
 	Compare(result, rpHashes, lpHashes, true);

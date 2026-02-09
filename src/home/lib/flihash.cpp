@@ -21,12 +21,17 @@ using namespace HomeCompa;
 namespace
 {
 
-BookHashItem GetHash7z(const QString& path, const QString& file)
+BookHashItem GetHash_7z(const QString& path, const QString& file)
 {
 	QCryptographicHash md5 { QCryptographicHash::Md5 };
 	auto               bookHashItem = BookHashItemProvider(path).Get(file);
 	ParseFb2Hash(bookHashItem, md5);
 	return bookHashItem;
+}
+
+BookHashItem GetHash_xml(const QString& path, const QString& file)
+{
+	return ParseXmlHash(path, file);
 }
 
 std::unique_ptr<Zip> GetZip(const QFileInfo& fileInfo, const char* type)
@@ -100,12 +105,13 @@ namespace HomeCompa::FliLib
 BookHashItem GetHash(const QString& path, const QString& file)
 {
 	static constexpr std::pair<const char*, BookHashItem (*)(const QString&, const QString&)> parsers[] {
-#define ITEM(NAME) { #NAME, &GetHash##NAME }
+#define ITEM(NAME) { #NAME, &GetHash_##NAME }
 		ITEM(7z),
+		ITEM(xml),
 #undef ITEM
 	};
 
-	return FindSecond(parsers, QFileInfo(path).suffix().toStdString().data(), PszComparer {})(path, file);
+	return FindSecond(parsers, QFileInfo(path).suffix().toLower().toStdString().data(), PszComparer {})(path, file);
 }
 
 }
