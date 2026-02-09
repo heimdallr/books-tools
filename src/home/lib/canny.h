@@ -4,6 +4,9 @@
 
 #include "CImg.h"
 
+namespace HomeCompa::FliLib
+{
+
 class Canny
 {
 public:
@@ -31,3 +34,5 @@ private:
 
 	const std::vector<std::vector<double>> m_gaussianFilter;
 };
+
+} // namespace HomeCompa::FliLib
