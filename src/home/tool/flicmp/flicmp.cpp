@@ -1,4 +1,5 @@
 ﻿#include <ranges>
+#include <unordered_set>
 
 #include <QGuiApplication>
 #include <QStandardPaths>
@@ -52,40 +53,50 @@ void Compare(QStringList& result, const ImageHashItem& lhs, const ImageHashItem&
 	result << QString("covers are different: %1 vs %2, Hamming distance: %3").arg(lhs.pHash, 16, 16, QChar { '0' }).arg(rhs.pHash, 16, 16, QChar { '0' }).arg(hammingDistance);
 }
 
-void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs, const bool reverse = false)
+void Compare(QStringList& result, ImageHashes& lhs, ImageHashes& rhs)
 {
+	std::multimap<int, std::pair<std::reference_wrapper<const ImageHashItem>, std::reference_wrapper<const ImageHashItem>>> distances;
+	for (const auto& l : lhs)
+		for (const auto& r : rhs)
+			distances.emplace(std::popcount(l.first ^ r.first), std::make_pair(std::reference_wrapper { l.second }, std::reference_wrapper { r.second }));
+
+	const auto toIdList = [](ImageHashes& hashes) {
+		return hashes | std::views::values | std::views::transform([](const auto& item) {
+				   return item.get().file;
+			   })
+		     | std::ranges::to<std::unordered_set<QString>>();
+	};
+	auto lIds = toIdList(lhs), rIds = toIdList(rhs);
+
 	std::multimap<int, QString, std::greater<>> fileItems;
-	for (auto lIt = lhs.begin(); lIt != lhs.end();)
+	for (const auto& [lRef, rRef] : distances | std::views::values)
 	{
-		auto rIt = std::ranges::min_element(rhs, {}, [pHash = lIt->first](const auto& item) {
-			return std::popcount(pHash ^ item.first);
-		});
+		const auto& l = lRef.get();
+		const auto& r = rRef.get();
+		assert(l.hash != r.hash);
 
-		if (rIt == rhs.end())
-		{
-			fileItems.emplace(-lIt->second.get().file.toInt(), QString("pair not found for %1 %2").arg(reverse ? "right" : "left", lIt->second.get().file));
-			++lIt;
+		if (!lIds.contains(l.file) || !rIds.contains(r.file))
 			continue;
-		}
 
-		std::reference_wrapper<const ImageHashItem> l = lIt->second, r = rIt->second;
-		if (reverse)
-			std::swap(l, r);
-
-		const auto& lImage = l.get();
-		const auto& rImage = r.get();
+		lIds.erase(l.file);
+		rIds.erase(r.file);
 
 		fileItems.emplace(
-			-lImage.file.toInt(),
+			-l.file.toInt(),
 			QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3")
-				.arg(lImage.file, rImage.file)
-				.arg(std::popcount(lImage.pHash ^ rImage.pHash))
-				.arg(lImage.pHash, 16, 16, QChar { '0' })
-				.arg(rImage.pHash, 16, 16, QChar { '0' })
+				.arg(l.file, r.file)
+				.arg(std::popcount(l.pHash ^ r.pHash))
+				.arg(l.pHash, 16, 16, QChar { '0' })
+				.arg(r.pHash, 16, 16, QChar { '0' })
 		);
-		lIt = lhs.erase(lIt);
-		rhs.erase(rIt);
 	}
+
+	const auto notFound = [](const bool reverse, const QString& id) {
+		return std::make_pair(-id.toInt(), QString("pair not found for %1 %2").arg(reverse ? "right" : "left", id));
+	};
+
+	std::ranges::transform(lIds, std::inserter(fileItems, fileItems.end()), std::bind_front(notFound, false));
+	std::ranges::transform(rIds, std::inserter(fileItems, fileItems.end()), std::bind_front(notFound, true));
 	std::ranges::move(std::move(fileItems) | std::views::values, std::back_inserter(result));
 }
 
@@ -122,7 +133,6 @@ void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItem
 		return (void)(result << "images are equal");
 
 	Compare(result, lpHashes, rpHashes);
-	Compare(result, rpHashes, lpHashes, true);
 }
 
 void Compare(const BookHashItem& lhs, const BookHashItem& rhs)
