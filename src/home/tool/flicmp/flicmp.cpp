@@ -56,32 +56,33 @@ void Compare(QStringList& result, const ImageHashItem& lhs, const ImageHashItem&
 
 void Compare(std::multimap<int, QString, std::greater<>>& fileItems, const ImageHashes& lhs, const ImageHashes& rhs)
 {
-	std::multimap<int, std::pair<ImageHash, ImageHash>> distances;
-	for (const auto& l : lhs)
-		for (const auto& r : rhs)
-			distances.emplace(std::popcount(l.first ^ r.first), std::make_pair(l, r));
+	auto lIds = lhs | std::views::values | std::ranges::to<std::unordered_set<QString>>();
+	auto rIds = rhs | std::views::values | std::ranges::to<std::unordered_set<QString>>();
 
-	const auto toIdList = [](const ImageHashes& hashes) {
-		return hashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
-	};
-	auto lIds = toIdList(lhs), rIds = toIdList(rhs);
-
-	for (const auto& [l, r] : distances | std::views::values)
+	if (!(lhs.empty() || rhs.empty()))
 	{
-		if (!lIds.contains(l.second) || !rIds.contains(r.second))
-			continue;
+		std::multimap<int, std::pair<ImageHash, ImageHash>> distances;
+		for (const auto& l : lhs)
+			for (const auto& r : rhs)
+				distances.emplace(std::popcount(l.first ^ r.first), std::make_pair(l, r));
 
-		lIds.erase(l.second);
-		rIds.erase(r.second);
+		for (const auto& [l, r] : distances | std::views::values)
+		{
+			if (!lIds.contains(l.second) || !rIds.contains(r.second))
+				continue;
 
-		fileItems.emplace(
-			-l.second.toInt(),
-			QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3")
-				.arg(l.second, r.second)
-				.arg(std::popcount(l.first ^ r.first))
-				.arg(l.first, 16, 16, QChar { '0' })
-				.arg(r.first, 16, 16, QChar { '0' })
-		);
+			lIds.erase(l.second);
+			rIds.erase(r.second);
+
+			fileItems.emplace(
+				-l.second.toInt(),
+				QString("images are different: %1: %4 vs %2: %5, Hamming distance: %3")
+					.arg(l.second, r.second)
+					.arg(std::popcount(l.first ^ r.first))
+					.arg(l.first, 16, 16, QChar { '0' })
+					.arg(r.first, 16, 16, QChar { '0' })
+			);
+		}
 	}
 
 	const auto notFound = [](const bool reverse, const QString& id) {
@@ -95,7 +96,7 @@ void Compare(std::multimap<int, QString, std::greater<>>& fileItems, const Image
 void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItems& rhs)
 {
 	std::multimap<int, QString, std::greater<>> fileItems;
-	ImageHashes lpHashes, rpHashes;
+	ImageHashes                                 lpHashes, rpHashes;
 
 	auto lIt = lhs.cbegin(), rIt = rhs.cbegin();
 	while (lIt != lhs.cend() && rIt != rhs.cend())
@@ -118,10 +119,11 @@ void Compare(QStringList& result, const ImageHashItems& lhs, const ImageHashItem
 		++rIt;
 	}
 
-	for (; lIt != lhs.cend(); ++lIt)
-		lpHashes.emplace(lIt->pHash, lIt->file);
-	for (; rIt != rhs.cend(); ++rIt)
-		rpHashes.emplace(rIt->pHash, rIt->file);
+	const auto transform = [](const auto& item) {
+		return std::make_pair(item.pHash, item.file);
+	};
+	std::transform(lIt, lhs.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
+	std::transform(rIt, rhs.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
 
 	if (lpHashes.empty() && rpHashes.empty())
 		return (void)(result << "images are equal");

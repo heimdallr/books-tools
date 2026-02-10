@@ -259,14 +259,6 @@ private: // UniqueFileStorage::ImageComparer
 		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 		using ImageHash   = std::pair<uint64_t, QString>;
 
-		const auto toIdList = [](const UniqueFile& f) {
-			return f.images | std::views::transform([](const auto& item) {
-					   return item.fileName;
-				   })
-			     | std::ranges::to<std::unordered_set<QString>>();
-		};
-		auto lIds = toIdList(lhs), rIds = toIdList(rhs);
-
 		ImageHashes lpHashes, rpHashes;
 
 		auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
@@ -286,19 +278,21 @@ private: // UniqueFileStorage::ImageComparer
 				continue;
 			}
 
-			lIds.erase(lIt->fileName);
-			rIds.erase(rIt->fileName);
 			++lIt;
 			++rIt;
 		}
 
+		const auto transform = [](const auto& item) {
+			return std::make_pair(item.pHash, item.fileName);
+		};
+		std::transform(lIt, lhs.images.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
+		std::transform(rIt, rhs.images.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
+
+		auto lIds = lpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
+		auto rIds = rpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
+
 		if (!(lpHashes.empty() || rpHashes.empty()))
 		{
-			for (; lIt != lhs.images.cend(); ++lIt)
-				lpHashes.emplace(lIt->pHash, lIt->fileName);
-			for (; rIt != rhs.images.cend(); ++rIt)
-				rpHashes.emplace(rIt->pHash, rIt->fileName);
-
 			std::multimap<std::pair<int, int>, std::pair<ImageHash, ImageHash>> distances;
 			for (const auto& l : lpHashes)
 				for (const auto& r : rpHashes)
