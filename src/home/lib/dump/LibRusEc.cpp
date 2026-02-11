@@ -190,8 +190,8 @@ private: // IDatabase
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
 		const auto query = m_db->CreateQuery(R"(
-with Books(  BookId,   Title,   FileSize,   LibID,    Deleted,   FileType,   Time,   Lang,   Keywords, Year,              LibRateSum , LibRateCount) as (
-    select b.bid, b.Title, b.FileSize, b.bid, b.Deleted, b.FileType, b.Time, b.Lang, b.keywords, nullif(b.Year, 0), sum(r.Rate), count(r.Rate)
+with Books(BookId,   Title,   FileSize, LibID,   Deleted,                                FileType,   Time,   Lang,   Keywords,              Year, LibRateSum , LibRateCount) as (
+    select  b.bid, b.Title, b.FileSize, b.bid, b.Deleted, coalesce(nullif(b.FileType, ''), 'fb2'), b.Time, b.Lang, b.keywords, nullif(b.Year, 0), sum(r.Rate), count(r.Rate)
         from libbook b
         left join librate r on r.bid = b.bid
         group by b.bid
