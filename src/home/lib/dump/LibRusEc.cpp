@@ -213,10 +213,11 @@ select
         join libgenre l on l.gid = g.gid and l.bid = b.BookID 
         order by g.gid
     ) Genre,
-    b.Title, s.seqname, case when s.sid is null then null else ls.sn end, null, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, 0, -ls.sort
+    b.Title, coalesce(ss.seqname, s.seqname), case when ls.sid is null then null else ls.sn end, null, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, 0, -ls.sort
 from Books b
 left join libseq ls on ls.bid = b.BookID
 left join libseqs s on s.sid = ls.sid
+left join libseqs ss on ss.sid = s.good
 )");
 
 		PLOGV << "records selection started";
