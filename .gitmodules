@@ -13,3 +13,6 @@
 [submodule "src/ext/sqlite/sqlite3pp"]
 	path = src/ext/sqlite/sqlite3pp
 	url = git@github.com:heimdallr/sqlite3pp.git
+[submodule "src/ext/Hypodermic"]
+	path = src/ext/Hypodermic
+	url = git@github.com:heimdallr/Hypodermic.git
