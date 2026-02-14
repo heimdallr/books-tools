@@ -1,5 +1,7 @@
 #include "model.h"
 
+#include <QBrush>
+
 #include <ranges>
 
 #include <QCoreApplication>
@@ -38,6 +40,11 @@ constexpr auto ITEMS          = "x";
 constexpr QChar STRING_SEPARATOR = '\n';
 
 constexpr auto NEW_ITEM = QT_TRANSLATE_NOOP("flifaqer", "New question");
+
+QString Tr(const char* str)
+{
+	return QCoreApplication::translate(APP_ID, str);
+}
 
 QJsonObject ParseJson(QIODevice& stream, QJsonDocument& doc)
 {
@@ -208,7 +215,7 @@ void ParseItems(const QString& language, const QJsonArray& jsonArray, const std:
 		auto&      child = row < static_cast<int>(parent->children.size()) ? parent->children[row] : parent->children.emplace_back(std::make_shared<Item>(parent.get(), row));
 		child->question.Set(language, obj.value(QUESTION).toString());
 		child->answer.Set(language, ToString(obj.value(ANSWER)));
-		child->childrenFirst = obj.value(QUESTION).toBool();
+		child->childrenFirst = obj.value(CHILDREN_FIRST).toBool();
 		ParseItems(language, obj.value(ITEMS).toArray(), child);
 	}
 }
@@ -422,6 +429,16 @@ private:
 
 			case Qt::CheckStateRole:
 				return item->childrenFirst ? Qt::Checked : Qt::Unchecked;
+
+			case Qt::ForegroundRole:
+				return std::ranges::any_of(
+						   m_files | std::views::keys,
+						   [&](const QString& language) {
+							   return item->answer(language).isEmpty() || item->question(language) == Tr(NEW_ITEM);
+						   }
+					   )
+				         ? QBrush(Qt::red)
+				         : QVariant {};
 
 			case Role::ReferenceQuestion:
 				return item->question(m_referenceLanguage);
