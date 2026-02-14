@@ -274,19 +274,11 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 
 	const auto replacementObj = doc.object();
 
-	const auto dash = QString(" %1 ").arg(QChar { 0x2013 });
-
 	const QRegularExpression expressions[] { QRegularExpression { R"(^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]\s*(.*?)$)" } };
 	const auto               processBrackets = [&](std::vector<QString>& values) {
         for (const auto& expr : expressions)
             if (const auto match = expr.match(values.front()); match.hasMatch())
                 values.front() = QString("%1 [%2]%3").arg(match.captured(1), match.captured(2), match.captured(3)).simplified();
-
-        std::ranges::transform(values.front(), values.front().begin(), [](const QChar ch) {
-            return ch >= QChar { 0x2010 } && ch <= QChar { 0x2015 } ? QChar { '-' } : ch;
-        });
-
-        values.front().replace(" - ", dash);
 
         return false;
 	};
