@@ -57,6 +57,8 @@ constexpr auto MAX_SERIES                   = "max-series-per-book";
 
 constexpr auto APP_ID = "fliparser";
 
+const auto DASH = QString(" %1 ").arg(QChar { 0x2013 });
+
 using BookItem    = std::pair<QString, QString>;
 using Replacement = std::unordered_map<BookItem, BookItem, Util::PairHash<QString, QString>>;
 
@@ -375,6 +377,13 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 			book->folder    = zipFileInfo.fileName();
 
 			auto& series = book->series;
+			for (auto& s : series)
+			{
+				std::ranges::transform(s.title, s.title.begin(), [](const QChar ch) {
+					return ch >= QChar { 0x2010 } && ch <= QChar { 0x2015 } ? QChar { '-' } : ch == QChar { 0x0451 } ? QChar { 0x0435 } : ch;
+				});
+				s.title.replace(" - ", DASH);
+			}
 			std::ranges::sort(series, std::greater {}, seriesUniquePredicate);
 			if (const auto [begin, end] = std::ranges::unique(series, {}, seriesUniquePredicate); begin != end)
 				series.erase(begin, end);
