@@ -62,10 +62,13 @@ int main(int argc, char* argv[])
 		const auto mainWindow = container->resolve<QMainWindow>();
 		mainWindow->show();
 
-		const auto result = QApplication::exec();
+		if (const auto code = QApplication::exec(); code != Global::RESTART_APP)
+		{
+			PLOGI << "App finished with " << code;
+			return code;
+		}
 
-		PLOGI << "App finished with " << result;
-		return result;
+		PLOGI << "App restarted";
 	}
 	catch (const std::exception& ex)
 	{
