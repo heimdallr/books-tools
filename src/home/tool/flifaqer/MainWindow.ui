@@ -257,6 +257,22 @@
     <string>asd</string>
    </property>
   </action>
+  <action name="actionExpandAll">
+   <property name="text">
+    <string>Expand all</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionCollapsAll">
+   <property name="text">
+    <string>Collaps all</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <resources/>
@@ -290,6 +306,38 @@
     <hint type="destinationlabel">
      <x>578</x>
      <y>119</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionExpandAll</sender>
+   <signal>triggered()</signal>
+   <receiver>navigatorView</receiver>
+   <slot>expandAll()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>578</x>
+     <y>251</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>actionCollapsAll</sender>
+   <signal>triggered()</signal>
+   <receiver>navigatorView</receiver>
+   <slot>collapseAll()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>-1</x>
+     <y>-1</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>578</x>
+     <y>251</y>
     </hint>
    </hints>
   </connection>

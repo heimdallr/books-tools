@@ -178,6 +178,9 @@ private:
 					m_model->removeRow(index.row(), index.parent());
 				}
 		)->setEnabled(index.isValid());
+		menu.addSeparator();
+		menu.addAction(m_ui.actionExpandAll);
+		menu.addAction(m_ui.actionCollapsAll);
 		menu.exec(QCursor::pos());
 	}
 
