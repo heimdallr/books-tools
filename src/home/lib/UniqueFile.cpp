@@ -198,6 +198,9 @@ private: // UniqueFileStorage::ImageComparer
 		if (result == ImagesCompareResult::Varied)
 			return result;
 
+		if (result == ImagesCompareResult::Equal && lhs.cover.hash != rhs.cover.hash)
+			result = !lhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : !rhs.cover.hash.isEmpty() ? ImagesCompareResult::Inner : result;
+
 		if (!(lhsImages.empty() || rhsImages.empty()))
 			return result;
 
