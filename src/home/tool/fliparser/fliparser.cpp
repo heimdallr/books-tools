@@ -384,17 +384,10 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				title.replace(" -- ", DASH);
 			};
 
-			book->author.replace(" - ", DASH);
-			book->author.replace(" -- ", DASH);
+			dashIt(book->author);
 
 			auto& series = book->series;
-			for (auto& s : series)
-			{
-				std::ranges::transform(s.title, s.title.begin(), [](const QChar ch) {
-					return ch >= QChar { 0x2010 } && ch <= QChar { 0x2015 } ? QChar { '-' } : ch == QChar { 0x0451 } ? QChar { 0x0435 } : ch;
-				});
-				s.title.replace(" - ", DASH);
-			}
+			std::ranges::for_each(series, dashIt, &Series::title);
 
 			std::ranges::sort(series, std::greater {}, seriesUniquePredicate);
 			if (const auto [begin, end] = std::ranges::unique(series, {}, seriesUniquePredicate); begin != end)
