@@ -36,6 +36,8 @@ constexpr auto REMOVE             = QT_TRANSLATE_NOOP("flifaqer", "Remove");
 constexpr auto SELECT_PROFILE     = QT_TRANSLATE_NOOP("flifaqer", "Select profile");
 constexpr auto SELECT_FILES       = QT_TRANSLATE_NOOP("flifaqer", "Select files");
 constexpr auto SELECT_JSON_FILTER = QT_TRANSLATE_NOOP("flifaqer", "Json files (*.json);;All files (*.*)");
+constexpr auto VALIDATION_RESULT  = QT_TRANSLATE_NOOP("flifaqer", "Validation result");
+constexpr auto OK                 = QT_TRANSLATE_NOOP("flifaqer", "Everything's cool!");
 
 }
 
@@ -109,6 +111,9 @@ public:
 		});
 		connect(m_ui.actionExport, &QAction::triggered, [this] {
 			OnActionExportTriggered();
+		});
+		connect(m_ui.actionValidate, &QAction::triggered, [this] {
+			OnActionValidateTriggered();
 		});
 
 		connect(m_ui.actionSetProfile, &QAction::triggered, [this] {
@@ -254,6 +259,12 @@ private:
 		m_ui.language->addItem(language, language);
 		m_reference->AddLanguage(language);
 		m_translation->AddLanguage(language);
+	}
+
+	void OnActionValidateTriggered()
+	{
+		m_model->setData({}, {}, Role::Validate) ? QMessageBox::information(&m_self, Tr(VALIDATION_RESULT), Tr(OK))
+												 : QMessageBox::warning(&m_self, Tr(VALIDATION_RESULT), m_model->data({}, Role::Validate).toString());
 	}
 
 private:

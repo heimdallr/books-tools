@@ -125,6 +125,7 @@
     <addaction name="actionAddFiles"/>
     <addaction name="actionSave"/>
     <addaction name="actionExport"/>
+    <addaction name="actionValidate"/>
     <addaction name="separator"/>
     <addaction name="actionExit"/>
    </widget>
@@ -268,6 +269,14 @@
   <action name="actionCollapsAll">
    <property name="text">
     <string>Collaps all</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionValidate">
+   <property name="text">
+    <string>&amp;Validate</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>

@@ -21,6 +21,7 @@ struct Role
 		Macro,
 		Save,
 		Export,
+		Validate,
 	};
 };
 

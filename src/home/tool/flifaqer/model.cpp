@@ -3,9 +3,11 @@
 #include <QBrush>
 
 #include <ranges>
+#include <unordered_set>
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -443,6 +445,9 @@ private:
 				        | std::ranges::to<QStringList>())
 				    .join(STRING_SEPARATOR);
 
+			case Role::Validate:
+				return m_validationResult;
+
 			default:
 				break;
 		}
@@ -540,6 +545,9 @@ private:
 
 			case Role::Export:
 				return Export(value.toString());
+
+			case Role::Validate:
+				return Validate();
 
 			default:
 				break;
@@ -663,12 +671,77 @@ private:
 		ExportImpl(profile, language, *m_root, m_replacements, stream);
 	}
 
+	bool Validate()
+	{
+		m_validationResult.clear();
+
+		bool emptyQuestion = false;
+		bool emptyAnswer   = false;
+
+		std::unordered_set<QString> imgRequired;
+
+		QRegularExpression imgRx(R"(^\[img (\S+?) (\S+?) \S+?\]$)");
+
+		const auto checkImages = [&](const QDir& dir, const QString& answer) -> QString {
+			QStringList list;
+			for (const auto& str : answer.split(STRING_SEPARATOR, Qt::SkipEmptyParts))
+			{
+				if (const auto match = imgRx.match(str); match.hasMatch())
+				{
+					auto imgPath = dir.filePath(QString("img/%1/%2.jpg").arg(match.captured(1), match.captured(2)));
+					if (!QFile::exists(imgPath))
+						list << imgPath;
+					imgRequired.emplace(imgPath);
+				}
+			}
+			return list.join("\n");
+		};
+
+		const auto enumerate = [&](const Item& parent, const auto& r) -> void {
+			for (const auto& child : parent.children)
+			{
+				for (const auto& [language, file] : m_files)
+				{
+					const auto dir = QFileInfo(file).dir();
+
+					const auto answer   = child->answer(language);
+					const auto question = child->question(language);
+
+					emptyAnswer   = emptyAnswer || answer.isEmpty();
+					emptyQuestion = emptyQuestion || question.isEmpty() || question == Tr(NEW_ITEM);
+
+					if (const auto lostImages = checkImages(dir, answer); !lostImages.isEmpty())
+						m_validationResult.append(QString("%1: %2 -> images lost:\n%3\n").arg(language, question, lostImages));
+				}
+
+				r(*child, r);
+			}
+		};
+
+		enumerate(*m_root, enumerate);
+
+		for (const auto& file : m_files | std::views::values)
+		{
+			QDirIterator it(QFileInfo(file).dir().filePath("img"), QStringList() << "*", QDir::Files, QDirIterator::Subdirectories);
+			while (it.hasNext())
+			{
+				const auto img = it.next();
+				if (!imgRequired.contains(img))
+					m_validationResult.append(QString("unexpected file: %1\n").arg(img));
+			}
+		}
+
+		return m_validationResult.isEmpty();
+	}
+
 private:
 	Files                       m_files;
 	const std::shared_ptr<Item> m_root { std::make_shared<Item>() };
 	Replacements                m_replacements;
 
 	QString m_language, m_referenceLanguage, m_translationLanguage;
+
+	QString m_validationResult;
 };
 
 } // namespace
