@@ -21,6 +21,7 @@
 #include "lib/UniqueFile.h"
 #include "lib/archive.h"
 #include "lib/book.h"
+#include "lib/dump/Factory.h"
 #include "lib/dump/IDump.h"
 #include "lib/util.h"
 #include "logging/LogAppender.h"
@@ -54,6 +55,7 @@ constexpr auto OUTPUT                       = "output";
 constexpr auto FOLDER                       = "folder";
 constexpr auto PATH                         = "path";
 constexpr auto MAX_SERIES                   = "max-series-per-book";
+constexpr auto LIBRARY                      = "library";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -66,6 +68,7 @@ struct Settings
 {
 	std::filesystem::path outputFolder;
 	std::filesystem::path collectionInfoTemplateFile;
+	QString               sourceLib;
 	ptrdiff_t             maxSeriesPerBook { std::numeric_limits<ptrdiff_t>::max() };
 };
 
@@ -135,7 +138,9 @@ public:
 		if (m_sectionToBook.empty())
 			return;
 
-		for (const auto& archive : archives)
+		for (const auto& archive : archives | std::views::filter([](const auto& item) {
+									   return !item.hashPath.isEmpty();
+								   }))
 		{
 			QFile file(archive.hashPath);
 			if (!file.open(QIODevice::ReadOnly))
@@ -579,6 +584,8 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 		return false;
 	});
 
+	const auto inpxedBooks = inpDataProvider.Books() | std::ranges::to<std::unordered_set<const Book*>>();
+
 	Util::Progress progress(months.size(), "select reviews");
 	for (const auto& [year, month] : months)
 	{
@@ -591,21 +598,20 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				{
 					if (const auto rIt = replacement.find({ book->folder, book->GetFileName() }); rIt != replacement.end())
 					{
-						if (!((book = inpDataProvider.GetBook({ rIt->second.first, rIt->second.second }))))
+						if (const auto& [replacementFolder, replacementFile] = rIt->second; !((book = inpDataProvider.GetBook({ replacementFolder, replacementFile }))))
 						{
-							auto replacementLibId = rIt->second.second;
+							auto replacementLibId = replacementFile;
 							if (const auto pos = replacementLibId.lastIndexOf('.'); pos > 0)
 								replacementLibId = replacementLibId.first(pos);
 							book = inpDataProvider.GetBook(sourceLib, replacementLibId);
 						}
+						continue;
 					}
-					else
-						break;
-				}
-				if (!book)
-					return;
 
-				if (inpDataProvider.GetBook({ book->folder, book->GetFileName() }))
+					break;
+				}
+
+				if (book && inpxedBooks.contains(book))
 					data.emplace_back(book->folder, book->GetFileName(), std::move(name), std::move(time), std::move(text));
 			});
 
@@ -687,7 +693,10 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	const CompilationHandler compilationHandler(archives, inpDataProvider);
 	auto                     data = compilationHandler.GetResult();
 	if (data.isEmpty())
+	{
+		PLOGI << "no compilation info";
 		return;
+	}
 
 	PLOGI << "archive compilation info";
 	const auto contentsFile = outputFolder / Inpx::COMPILATIONS;
@@ -714,7 +723,9 @@ Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 	Replacement    replacement;
 	Util::Progress progress(archives.size(), "parsing");
 
-	for (auto& archive : archives)
+	for (auto& archive : archives | std::views::filter([](const auto& item) {
+							 return !item.hashPath.isEmpty();
+						 }))
 	{
 		const FileHashParser parser(archive, inpDataProvider, replacement);
 		progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
@@ -774,6 +785,8 @@ int main(int argc, char* argv[])
 
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
 
+	const auto availableLibraries = Dump::GetAvailableLibraries();
+
 	Settings settings {};
 
 	QCommandLineParser parser;
@@ -783,10 +796,11 @@ int main(int argc, char* argv[])
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
 	parser.addOptions(
 		{
-			{				   { "o", OUTPUT }, "Output folder (required)",                                         FOLDER },
-			{							  DUMP,  "Dump database wildcards",            "Semicolon separated wildcard list" },
-			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template",                                           PATH },
-			{						MAX_SERIES,  "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
+			{ { "o", OUTPUT }, "Output folder (required)", FOLDER },
+			{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
+			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template", PATH },
+			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
+			{ MAX_SERIES, "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
     }
 	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -805,6 +819,13 @@ int main(int argc, char* argv[])
 
 		settings.outputFolder               = parser.value(OUTPUT).toStdWString();
 		settings.collectionInfoTemplateFile = parser.value(COLLECTION_INFO_TEMPLATE).toStdWString();
+
+		settings.sourceLib = parser.value(LIBRARY);
+		if (settings.sourceLib.isEmpty())
+			settings.sourceLib = availableLibraries.front();
+		if (!availableLibraries.contains(settings.sourceLib, Qt::CaseInsensitive))
+			throw std::invalid_argument(std::format("{} must be {}", LIBRARY, availableLibraries.join(" | ")));
+
 		if (parser.isSet(MAX_SERIES))
 			settings.maxSeriesPerBook = parser.value(MAX_SERIES).toLongLong();
 
@@ -813,6 +834,13 @@ int main(int argc, char* argv[])
 
 		const auto inpDataProvider = std::make_shared<InpDataProvider>(parser.value(DUMP));
 		const auto replacement     = ReadHash(*inpDataProvider, archives);
+
+		if (archives.front().hashPath.isNull())
+		{
+			inpDataProvider->SetSourceLib(settings.sourceLib);
+			for (auto& archive : archives)
+				archive.sourceLib = settings.sourceLib;
+		}
 
 		MergeBookData(*inpDataProvider, replacement);
 		CreateInpx(settings, archives, *inpDataProvider);
