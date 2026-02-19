@@ -285,9 +285,12 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 
 	const auto removeColon = [](std::vector<QString>& author) {
 		for (QString& item : author)
+		{
 			erase_if(item, [](const QChar ch) {
 				return ch == ':';
 			});
+			item.replace(',', ';');
+		}
 		return false;
 	};
 

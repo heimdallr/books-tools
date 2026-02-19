@@ -7,8 +7,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
-#include "util/files.h"
 #include "util/StrUtil.h"
+#include "util/files.h"
 
 #include "log.h"
 #include "util.h"
@@ -26,13 +26,22 @@ Archives GetArchives(const QStringList& wildCards)
 	for (const auto& argument : wildCards)
 	{
 		auto splitted = argument.split(';');
-		if (splitted.size() != 2)
-			throw std::invalid_argument(std::format("{} must be archives_wildcard;hash_folder", argument));
 
-		const auto wildCard = std::move(splitted.front());
-		const QDir hashFolder(splitted.back());
-		if (!hashFolder.exists())
-			throw std::invalid_argument(std::format("hash folder {} not found", splitted.back()));
+		const auto wildCard   = std::move(splitted.front());
+		const QDir hashFolder = [&]() -> QDir {
+			if (splitted.size() < 2)
+				return {};
+
+			QDir result(splitted.back());
+			if (!hashFolder.exists())
+				throw std::invalid_argument(std::format("hash folder {} not found", splitted.back()));
+
+			return result;
+		}();
+
+		const auto getHashPath = [&](const QString& name) {
+			return splitted.size() < 2 ? QString {} : hashFolder.filePath(name + ".xml");
+		};
 
 		std::ranges::transform(
 			Util::ResolveWildcard(wildCard) | std::views::transform([&](const QString& item) {
@@ -44,12 +53,10 @@ Archives GetArchives(const QStringList& wildCards)
 					uniqueFiles.emplace(fileName);
 				return result;
 			}) | std::views::transform([&](const QFileInfo& item) {
-				auto hashPath = hashFolder.filePath(item.completeBaseName()) + ".xml";
-				if (!QFile::exists(hashPath))
+				auto hashPath = getHashPath(item.completeBaseName());
+				if (!(hashPath.isEmpty() || QFile::exists(hashPath)))
 					throw std::invalid_argument(std::format("{} not found", hashPath));
 				return Archive { item.absoluteFilePath(), std::move(hashPath) };
-			}) | std::views::filter([](const Archive& item) {
-				return QFile::exists(item.hashPath);
 			}),
 			std::inserter(sorted, sorted.end()),
 			[&](Archive archive) {
@@ -59,7 +66,11 @@ Archives GetArchives(const QStringList& wildCards)
 		);
 	}
 
-	return std::move(sorted) | std::views::values | std::views::reverse | std::ranges::to<Archives>();
+	auto result = std::move(sorted) | std::views::values | std::views::reverse | std::ranges::to<Archives>();
+	if (result.empty())
+		throw std::invalid_argument("no archives found");
+
+	return result;
 }
 
 size_t Total(const Archives& archives)

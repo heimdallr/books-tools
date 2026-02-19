@@ -261,8 +261,18 @@ InpDataProvider::~InpDataProvider() = default;
 
 Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 {
-	const auto it = m_data.find(QString("%1#%2").arg(uid.folder, uid.file));
-	return it != m_data.end() ? it->second.get() : nullptr;
+	if (const auto it = m_data.find(QString("%1#%2").arg(uid.folder, uid.file)); it != m_data.end())
+		return it->second.get();
+
+	if (!std::ranges::empty(m_cache | std::views::filter([this](const auto& item) {
+								return &item.inpData != m_currentInpData && !item.inpData.empty();
+							})))
+		return nullptr;
+
+	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
+		return it->second.get();
+
+	return nullptr;
 }
 
 Book* InpDataProvider::GetBook(const QString& sourceLib, const QString& libId) const
