@@ -56,6 +56,9 @@ constexpr auto FOLDER                       = "folder";
 constexpr auto PATH                         = "path";
 constexpr auto MAX_SERIES                   = "max-series-per-book";
 constexpr auto LIBRARY                      = "library";
+constexpr auto SKIP_CONTENTS                = "skip-contents";
+constexpr auto SKIP_REVIEWS                 = "skip-reviews";
+constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -801,6 +804,9 @@ int main(int argc, char* argv[])
 			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template", PATH },
 			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
 			{ MAX_SERIES, "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
+			{ SKIP_CONTENTS, "Skip contents" },
+			{ SKIP_REVIEWS, "Skip size readers reviews" },
+			{ SKIP_COMPILATIONS, "Skip compilations info" },
     }
 	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -844,9 +850,15 @@ int main(int argc, char* argv[])
 
 		MergeBookData(*inpDataProvider, replacement);
 		CreateInpx(settings, archives, *inpDataProvider);
-		CreateBookList(settings.outputFolder, *inpDataProvider);
-		CreateReview(settings.outputFolder, *inpDataProvider, replacement);
-		ProcessCompilations(settings.outputFolder, archives, *inpDataProvider);
+
+		if (!parser.isSet(SKIP_CONTENTS))
+			CreateBookList(settings.outputFolder, *inpDataProvider);
+
+		if (!parser.isSet(SKIP_REVIEWS))
+			CreateReview(settings.outputFolder, *inpDataProvider, replacement);
+
+		if (!parser.isSet(SKIP_COMPILATIONS))
+			ProcessCompilations(settings.outputFolder, archives, *inpDataProvider);
 
 		return 0;
 	}
