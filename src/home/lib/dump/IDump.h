@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fnd/EnumBitmask.h"
 #include "fnd/algorithm.h"
 
 namespace HomeCompa::DB
@@ -23,6 +24,12 @@ public:
 		std::vector<const char*> names;
 	};
 
+	enum class AdditionalType
+	{
+		None       = 0,
+		AuthorInfo = 1 << 0,
+	};
+
 public:
 	virtual ~IDump() = default;
 
@@ -30,10 +37,11 @@ public:
 
 	virtual const QString& GetName() const noexcept = 0;
 
-	virtual void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const                       = 0;
-	virtual void CreateTables(const std::function<void(std::string_view)>& functor) const                         = 0;
-	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const                        = 0;
-	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir) const = 0;
+	virtual void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const = 0;
+	virtual void CreateTables(const std::function<void(std::string_view)>& functor) const   = 0;
+	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const  = 0;
+
+	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, AdditionalType additionalType) const = 0;
 
 	virtual const DictionaryTableDescription& GetAuthorTable() const noexcept = 0;
 	virtual const DictionaryTableDescription& GetSeriesTable() const noexcept = 0;
@@ -43,3 +51,5 @@ public:
 };
 
 } // namespace HomeCompa::FliLib
+
+ENABLE_BITMASK_OPERATORS(HomeCompa::FliLib::IDump::AdditionalType);

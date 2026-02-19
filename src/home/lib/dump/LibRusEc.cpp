@@ -250,7 +250,7 @@ left join libseqs ss on ss.sid = s.good
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(const std::filesystem::path& /*dstDir*/, const std::filesystem::path& /*sqlDir*/) const override
+	void CreateAdditional(const std::filesystem::path& /*dstDir*/, const std::filesystem::path& /*sqlDir*/, const AdditionalType /*additionalType*/) const override
 	{
 	}
 

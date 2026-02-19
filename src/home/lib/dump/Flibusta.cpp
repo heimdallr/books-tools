@@ -433,9 +433,10 @@ left join libfilename f on f.BookId=b.BookID
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir) const override
+	void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, const AdditionalType additionalType) const override
 	{
-		CreateAuthorAnnotations(sqlDir, dstDir);
+		if (!!(additionalType & AdditionalType::AuthorInfo))
+			CreateAuthorAnnotations(sqlDir, dstDir);
 	}
 
 private:

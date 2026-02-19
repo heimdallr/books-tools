@@ -22,26 +22,28 @@ namespace
 
 constexpr auto APP_ID = "flidumper";
 
-constexpr auto SQL     = "sql";
-constexpr auto OUTPUT  = "output";
-constexpr auto FOLDER  = "folder";
-constexpr auto PATH    = "path";
-constexpr auto LIBRARY = "library";
-constexpr auto REPLACE = "replace";
+constexpr auto SQL               = "sql";
+constexpr auto OUTPUT            = "output";
+constexpr auto FOLDER            = "folder";
+constexpr auto PATH              = "path";
+constexpr auto LIBRARY           = "library";
+constexpr auto REPLACE           = "replace";
+constexpr auto SKIP_AUTHORS_INFO = "skip-authors-info";
 
 struct Settings
 {
-	std::filesystem::path sqlDir;
-	std::filesystem::path dbPath;
-	std::filesystem::path replacementPath;
-	QString               library;
-	QString               logPath { QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID) };
+	std::filesystem::path         sqlDir;
+	std::filesystem::path         dbPath;
+	std::filesystem::path         replacementPath;
+	QString                       library;
+	QString                       logPath { QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID) };
+	FliLib::IDump::AdditionalType additionalType { ~FliLib::IDump::AdditionalType::None };
 };
 
 void run(const Settings& settings)
 {
 	const auto dump = FliLib::Dump::Create(settings.sqlDir, settings.dbPath, settings.library, settings.replacementPath);
-	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path());
+	dump->CreateAdditional(settings.sqlDir, settings.dbPath.parent_path(), settings.additionalType);
 }
 
 Settings parseCommandLine(const QCoreApplication& app)
@@ -54,10 +56,11 @@ Settings parseCommandLine(const QCoreApplication& app)
 	parser.addVersionOption();
 	parser.addOptions(
 		{
-			{     { "s", SQL }, "Folder with sql files (required)",                             FOLDER },
-			{  { "o", OUTPUT },  "Output database path (required)",                               PATH },
-			{ { "r", REPLACE },            "Replacement file path",                               PATH },
-			{          LIBRARY,						  "Library", "(Flibusta | LibRusEc) [Flibusta]" },
+			{ { "s", SQL }, "Folder with sql files (required)", FOLDER },
+			{ { "o", OUTPUT }, "Output database path (required)", PATH },
+			{ { "r", REPLACE }, "Replacement file path", PATH },
+			{ LIBRARY, "Library", "(Flibusta | LibRusEc) [Flibusta]" },
+			{ SKIP_AUTHORS_INFO, "Skip authors info" },
     }
 	);
 	const auto logOption = Log::LoggingInitializer::AddLogFileOption(parser, settings.logPath);
@@ -67,6 +70,9 @@ Settings parseCommandLine(const QCoreApplication& app)
 	settings.dbPath          = parser.value(OUTPUT).toStdWString();
 	settings.replacementPath = parser.value(REPLACE).toStdWString();
 	settings.library         = parser.value(LIBRARY);
+
+	if (parser.isSet(SKIP_AUTHORS_INFO))
+		settings.additionalType &= ~FliLib::IDump::AdditionalType::AuthorInfo;
 
 	if (settings.sqlDir.empty() || settings.dbPath.empty())
 		parser.showHelp(1);
