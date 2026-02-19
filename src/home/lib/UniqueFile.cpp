@@ -201,7 +201,7 @@ private: // UniqueFileStorage::ImageComparer
 		if (result == ImagesCompareResult::Equal && lhs.cover.hash != rhs.cover.hash)
 			result = !lhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : !rhs.cover.hash.isEmpty() ? ImagesCompareResult::Inner : result;
 
-		if (!(lhsImages.empty() || rhsImages.empty()))
+		if (!(lhsImages.empty() || rhsImages.empty()) || lhs.hash == rhs.hash)
 			return result;
 
 		if (Util::Intersect(lhs.title, rhs.title))
