@@ -6,7 +6,6 @@
 #include <unordered_set>
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
@@ -98,7 +97,7 @@ struct Profile
 
 		Profile profile;
 
-#define ITEM(DST, SRC, NAME) DST.NAME = ToString(SRC.value(#NAME))
+#define ITEM(DST, SRC, NAME) DST.NAME = ToString((SRC).value(#NAME))
 
 		ITEM(profile, obj, outputFileName);
 		ITEM(profile, obj, outputFileExtension);
@@ -612,7 +611,7 @@ private:
 		for (const auto& [key, value] : m_replacements)
 			macro.insert(key, value(language));
 
-		QJsonObject obj {
+		const QJsonObject obj {
 			{ LANGUAGE, language },
 			{ MACRO, std::move(macro) },
 			{ ITEMS, SaveImpl(language, *m_root) },
@@ -622,7 +621,7 @@ private:
 		if (!stream.open(QIODevice::WriteOnly))
 			throw std::runtime_error(std::format("cannot write to {}", file));
 
-		stream.write(QJsonDocument(std::move(obj)).toJson());
+		stream.write(QJsonDocument(obj).toJson());
 	}
 
 	[[nodiscard]] bool Export(const QString& profilePath) const
