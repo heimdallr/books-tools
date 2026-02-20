@@ -33,7 +33,7 @@ Archives GetArchives(const QStringList& wildCards)
 				return {};
 
 			QDir result(splitted.back());
-			if (!hashFolder.exists())
+			if (!result.exists())
 				throw std::invalid_argument(std::format("hash folder {} not found", splitted.back()));
 
 			return result;
