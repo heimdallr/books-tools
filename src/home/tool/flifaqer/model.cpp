@@ -737,31 +737,24 @@ private:
 	{
 		m_validationResult.clear();
 
-		bool emptyQuestion = false;
-		bool emptyAnswer   = false;
-
 		std::unordered_set<QString> imgRequired;
-
-		QRegularExpression imgRx(R"(^\[img (\S+?) (\S+?) \S+?\]$)");
-
-		const auto checkImages = [&](const QDir& dir, const QString& answer) -> QString {
-			QStringList list;
-			for (const auto& str : answer.split(STRING_SEPARATOR, Qt::SkipEmptyParts))
-			{
-				if (const auto match = imgRx.match(str); match.hasMatch())
-				{
-					auto imgPath = dir.filePath(QString("img/%1/%2.jpg").arg(match.captured(1), match.captured(2)));
-					if (!QFile::exists(imgPath))
-						list << imgPath;
-					imgRequired.emplace(imgPath);
-				}
-			}
-			return list.join("\n");
-		};
+		const QRegularExpression    imgRx(R"(\[img (\S+?) (\S+?) \S+?\])");
 
 		const auto enumerate = [&](const Item& parent, const auto& r) -> void {
 			for (const auto& child : parent.children)
 			{
+				const auto imageList = child->answer(Constant::TEMPLATE).split(STRING_SEPARATOR, Qt::SkipEmptyParts) | std::ranges::to<std::vector<QString>>()
+				                     | std::views::transform([&](const QString& item) {
+										   return imgRx.match(item);
+									   })
+				                     | std::views::filter([](const QRegularExpressionMatch& item) {
+										   return item.hasMatch();
+									   })
+				                     | std::views::transform([](const auto& item) {
+										   return QString("img/%1/%2.jpg").arg(item.captured(1), item.captured(2));
+									   })
+				                     | std::ranges::to<std::vector<QString>>();
+
 				for (const auto& [language, file] : m_files)
 				{
 					const auto dir = QFileInfo(file).dir();
@@ -769,11 +762,17 @@ private:
 					const auto answer   = child->answer(language);
 					const auto question = child->question(language);
 
-					emptyAnswer   = emptyAnswer || answer.isEmpty();
-					emptyQuestion = emptyQuestion || question.isEmpty() || question == Tr(NEW_ITEM);
+					if (question.isEmpty() || question == Tr(NEW_ITEM))
+						m_validationResult.append(QString("%1: -> empty question found\n").arg(language));
 
-					if (const auto lostImages = checkImages(dir, answer); !lostImages.isEmpty())
-						m_validationResult.append(QString("%1: %2 -> images lost:\n%3\n").arg(language, question, lostImages));
+					if (answer.isEmpty())
+						m_validationResult.append(QString("%1: %2 -> empty answer\n").arg(language, question));
+
+					for (const auto& image : imageList)
+					{
+						auto imgPath = dir.filePath(image);
+						QFile::exists(imgPath) ? (void)imgRequired.emplace(std::move(imgPath)) : (void)m_validationResult.append(QString("%1: %2 -> images lost:\n%3\n").arg(language, question, image));
+					}
 				}
 
 				r(*child, r);
