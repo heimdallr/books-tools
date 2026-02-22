@@ -1,7 +1,5 @@
 #include "model.h"
 
-#include <QBrush>
-
 #include <ranges>
 #include <unordered_set>
 
@@ -12,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMessageBox>
 
 #include "fnd/ScopedCall.h"
 #include "fnd/algorithm.h"
@@ -239,7 +238,7 @@ struct Item
 //		stream << QString(R"(<p id="%1"%2>)").arg(match.captured(1), match.captured(2).isEmpty() ? "" : QString(R"( class="%1")").arg(match.captured(2)));
 //}
 
-void ExportAnswer(const Profile& profile, const QString& language, const Item& item, QTextStream& stream)
+[[nodiscard]] QString ExportAnswer(const Profile& profile, const QString& language, const Item& item)
 {
 	auto answer = item.answer(Constant::TEMPLATE);
 	for (const auto& [expression, replacement] : profile.tags)
@@ -247,32 +246,43 @@ void ExportAnswer(const Profile& profile, const QString& language, const Item& i
 
 	for (const auto& string : item.answer(language).split(STRING_SEPARATOR))
 		answer = answer.arg(string);
-	stream << answer;
-	//	for (auto&& answer : item.answer(language).split(STRING_SEPARATOR))
-	//		ExportAnswer(profile, answer, stream);
+	return answer;
 }
 
-void ExportImpl(const Profile& profile, const QString& language, const Item& parent, QTextStream& stream, const bool onTop = false, const size_t level = 0)
+[[nodiscard]] QString ExportImpl(const Profile& profile, const QString& language, const Item& parent, bool onTop = false, size_t level = 0, bool recursive = true);
+
+[[nodiscard]] QString GetText(const Profile& profile, const QString& language, const Item& item, const size_t level = 0, const bool recursive = false)
 {
+	QString    result;
+	const auto it = std::ranges::find(profile.question, item.question(Constant::TEMPLATE), [](const auto& question) {
+		return question.first;
+	});
+	//		assert(it != profile.question.end());
+	if (it == profile.question.end())
+		return {};
+
+	auto [questionBefore, questionAfter] = it->second;
+	result.append(questionBefore.replace("#QUESTION#", item.question(language)));
+	if (recursive)
+		result.append(ExportImpl(profile, language, item, true, level + 1, true));
+	result.append(ExportAnswer(profile, language, item));
+	if (recursive)
+		result.append(ExportImpl(profile, language, item, false, level + 1, true));
+	result.append(questionAfter.replace("#QUESTION#", item.question(language)));
+
+	return result;
+}
+
+[[nodiscard]] QString ExportImpl(const Profile& profile, const QString& language, const Item& parent, const bool onTop, const size_t level, const bool recursive)
+{
+	QString result;
 	assert(!profile.question.empty());
 	for (const auto& child : parent.children | std::views::filter([&](const auto& item) {
 								 return item->onTop == onTop;
 							 }))
-	{
-		const auto it = std::ranges::find(profile.question, child->question(Constant::TEMPLATE), [](const auto& item) {
-			return item.first;
-		});
-		//		assert(it != profile.question.end());
-		if (it == profile.question.end())
-			continue;
+		result.append(GetText(profile, language, *child, level, recursive));
 
-		auto [questionBefore, questionAfter] = it->second;
-		stream << questionBefore.replace("#QUESTION#", child->question(language));
-		ExportImpl(profile, language, *child, stream, true, level + 1);
-		ExportAnswer(profile, language, *child, stream);
-		ExportImpl(profile, language, *child, stream, false, level + 1);
-		stream << questionAfter.replace("#QUESTION#", child->question(language));
-	}
+	return result;
 }
 
 void ExportImpl(Profile profile, const QString& language, const Item& root, const Replacements& replacements, QIODevice& stream)
@@ -283,10 +293,9 @@ void ExportImpl(Profile profile, const QString& language, const Item& root, cons
 		profile.tail.replace(key, value(language));
 	}
 
-	QTextStream textStream(&stream);
-	textStream << profile.head << STRING_SEPARATOR;
-	ExportImpl(profile, language, root, textStream);
-	textStream << profile.tail << STRING_SEPARATOR;
+	QString text = profile.head;
+	text.append(ExportImpl(profile, language, root)).append(profile.tail);
+	stream.write(text.toUtf8());
 }
 
 using File  = std::pair<QString, QString>;
@@ -526,11 +535,17 @@ private:
 			case Role::ReferenceAnswer:
 				return item->answer(m_referenceLanguage);
 
+			case Role::ReferenceText:
+				return GetText(m_profile, m_referenceLanguage, *item);
+
 			case Role::TranslationQuestion:
 				return item->question(m_translationLanguage);
 
 			case Role::TranslationAnswer:
 				return item->answer(m_translationLanguage);
+
+			case Role::TranslationText:
+				return GetText(m_profile, m_translationLanguage, *item);
 
 			default:
 				break;
@@ -613,38 +628,37 @@ private:
 				return Util::Set(item->onTop, value.value<Qt::CheckState>() == Qt::Checked);
 
 			case Role::TemplateQuestion:
-				return item->question.Set(Constant::TEMPLATE, value.toString());
+				return Set(item->question, Constant::TEMPLATE, index, value, { Role::ReferenceText, Role::TranslationText });
 
 			case Role::TemplateAnswer:
-				return item->answer.Set(Constant::TEMPLATE, value.toString());
+				return Set(item->answer, Constant::TEMPLATE, index, value, { Role::ReferenceText, Role::TranslationText });
 
 			case Role::ReferenceQuestion:
-				if (item->question.Set(m_referenceLanguage, value.toString()))
-				{
-					emit dataChanged(index, index, { Qt::DisplayRole });
-					return true;
-				}
-				return false;
+				return Set(item->question, m_referenceLanguage, index, value, { Qt::DisplayRole, Role::ReferenceText });
 
 			case Role::ReferenceAnswer:
-				return item->answer.Set(m_referenceLanguage, value.toString());
+				return Set(item->answer, m_referenceLanguage, index, value, { Role::ReferenceText });
 
 			case Role::TranslationQuestion:
-				if (item->question.Set(m_translationLanguage, value.toString()))
-				{
-					emit dataChanged(index, index, { Qt::DisplayRole });
-					return true;
-				}
-				return false;
+				return Set(item->question, m_translationLanguage, index, value, { Qt::DisplayRole, Role::TranslationText });
 
 			case Role::TranslationAnswer:
-				return item->answer.Set(m_translationLanguage, value.toString());
+				return Set(item->answer, m_translationLanguage, index, value, { Role::TranslationText });
 
 			default:
 				break;
 		}
 
 		return QAbstractItemModel::setData(index, value, role);
+	}
+
+	bool Set(String& string, const QString& language, const QModelIndex& index, const QVariant& value, const QList<int>& roles)
+	{
+		if (!string.Set(language, value.toString()))
+			return false;
+
+		emit dataChanged(index, index, roles);
+		return true;
 	}
 
 	[[nodiscard]] bool AddTemplate(QString path)

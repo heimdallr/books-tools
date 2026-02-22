@@ -5,6 +5,7 @@
 #include "fnd/NonCopyMovable.h"
 #include "fnd/memory.h"
 
+#include "TextViewWidget.h"
 #include "util/ISettings.h"
 
 #include "TranslationWidget.h"
@@ -26,6 +27,8 @@ public:
 		std::shared_ptr<TranslationWidget>  templateWidget,
 		std::shared_ptr<TranslationWidget>  referenceWidget,
 		std::shared_ptr<TranslationWidget>  translationWidget,
+		std::shared_ptr<TextViewWidget>     referenceTextView,
+		std::shared_ptr<TextViewWidget>     translationTextView,
 		QWidget*                            parent = nullptr
 	);
 	~MainWindow() override;

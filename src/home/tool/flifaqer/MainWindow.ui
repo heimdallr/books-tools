@@ -93,38 +93,8 @@
        <property name="orientation">
         <enum>Qt::Orientation::Vertical</enum>
        </property>
-       <widget class="QWidget" name="reference" native="true">
-        <layout class="QVBoxLayout" name="referenceLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="translation" native="true">
-        <layout class="QVBoxLayout" name="translationLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-        </layout>
-       </widget>
+       <widget class="QStackedWidget" name="referenceView"/>
+       <widget class="QStackedWidget" name="translationView"/>
       </widget>
      </widget>
     </item>
@@ -173,6 +143,8 @@
      </widget>
      <addaction name="menuFont"/>
      <addaction name="menuTheme"/>
+     <addaction name="actionToggleReferenceView"/>
+     <addaction name="actionToggleTranslationView"/>
     </widget>
     <widget class="QMenu" name="menuExport">
      <property name="title">
@@ -299,6 +271,28 @@
   <action name="actionSetTemplate">
    <property name="text">
     <string>Set &amp;Template</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionToggleReferenceView">
+   <property name="text">
+    <string>Toggle Reference View</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionToggleTranslationView">
+   <property name="text">
+    <string>Toggle Translation View</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+T</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>

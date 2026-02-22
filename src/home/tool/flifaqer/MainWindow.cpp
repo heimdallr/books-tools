@@ -57,7 +57,9 @@ public:
 		std::shared_ptr<QAbstractItemModel> model,
 		std::shared_ptr<TranslationWidget>  templateWidget,
 		std::shared_ptr<TranslationWidget>  referenceWidget,
-		std::shared_ptr<TranslationWidget>  translationWidget
+		std::shared_ptr<TranslationWidget>  translationWidget,
+		std::shared_ptr<TextViewWidget>     referenceTextView,
+		std::shared_ptr<TextViewWidget>     translationTextView
 	)
 		: GeometryRestorable(*this, settings, MAIN_WINDOW)
 		, GeometryRestorableObserver(self)
@@ -67,12 +69,23 @@ public:
 		, m_templateWidget { std::move(templateWidget) }
 		, m_referenceWidget { std::move(referenceWidget) }
 		, m_translationWidget { std::move(translationWidget) }
+		, m_referenceTextView { std::move(referenceTextView) }
+		, m_translationTextView { std::move(translationTextView) }
 	{
 		m_ui.setupUi(&m_self);
 		m_ui.navigatorView->setModel(m_model.get());
 		m_ui.templateLayout->addWidget(m_templateWidget.get());
-		m_ui.referenceLayout->addWidget(m_referenceWidget.get());
-		m_ui.translationLayout->addWidget(m_translationWidget.get());
+
+		const auto setView = [this](QStackedWidget* stackedWidget, const QAction* action, auto*... xs) {
+			(stackedWidget->addWidget(xs), ...);
+			stackedWidget->setCurrentIndex(m_settings->Get(stackedWidget->objectName(), 0));
+			connect(action, &QAction::triggered, [this, stackedWidget] {
+				stackedWidget->setCurrentIndex((stackedWidget->currentIndex() + 1) % stackedWidget->count());
+				m_settings->Set(stackedWidget->objectName(), stackedWidget->currentIndex());
+			});
+		};
+		setView(m_ui.referenceView, m_ui.actionToggleReferenceView, m_referenceWidget.get(), m_translationTextView.get());
+		setView(m_ui.translationView, m_ui.actionToggleTranslationView, m_translationWidget.get(), m_referenceTextView.get());
 
 		for (const auto& language : m_model->data({}, Role::LanguageList).toStringList())
 			AddLanguage(language);
@@ -83,6 +96,8 @@ public:
 		m_templateWidget->SetMode(TranslationWidget::Mode::Template);
 		m_referenceWidget->SetMode(TranslationWidget::Mode::Reference);
 		m_translationWidget->SetMode(TranslationWidget::Mode::Translation);
+		m_referenceTextView->SetRole(Role::ReferenceText);
+		m_translationTextView->SetRole(Role::TranslationText);
 
 		if (const auto index = m_ui.language->findData(m_settings->Get(LANGUAGE, QString())); index >= 0)
 			m_ui.language->setCurrentIndex(index);
@@ -112,12 +127,16 @@ public:
 			m_templateWidget->SetCurrentIndex(index);
 			m_referenceWidget->SetCurrentIndex(index);
 			m_translationWidget->SetCurrentIndex(index);
+			m_referenceTextView->SetCurrentIndex(index);
+			m_translationTextView->SetCurrentIndex(index);
 		});
 		connect(m_referenceWidget.get(), &TranslationWidget::LanguageChanged, [this] {
 			m_referenceWidget->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+			m_referenceTextView->SetCurrentIndex(m_ui.navigatorView->currentIndex());
 		});
 		connect(m_translationWidget.get(), &TranslationWidget::LanguageChanged, [this] {
 			m_translationWidget->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+			m_translationTextView->SetCurrentIndex(m_ui.navigatorView->currentIndex());
 		});
 
 		connect(m_ui.actionAddFiles, &QAction::triggered, [this] {
@@ -320,6 +339,8 @@ private:
 	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_templateWidget;
 	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_referenceWidget;
 	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_translationWidget;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_referenceTextView;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_translationTextView;
 
 	Util::FunctorExecutionForwarder m_forwarder;
 	const Log::LogAppender          m_logAppender { this };
@@ -333,10 +354,12 @@ MainWindow::MainWindow(
 	std::shared_ptr<TranslationWidget>  templateWidget,
 	std::shared_ptr<TranslationWidget>  referenceWidget,
 	std::shared_ptr<TranslationWidget>  translationWidget,
+	std::shared_ptr<TextViewWidget>     referenceTextView,
+	std::shared_ptr<TextViewWidget>     translationTextView,
 	QWidget*                            parent
 )
 	: QMainWindow(parent)
-	, m_impl(*this, std::move(settings), std::move(model), std::move(templateWidget), std::move(referenceWidget), std::move(translationWidget))
+	, m_impl(*this, std::move(settings), std::move(model), std::move(templateWidget), std::move(referenceWidget), std::move(translationWidget), std::move(referenceTextView), std::move(translationTextView))
 {
 }
 
