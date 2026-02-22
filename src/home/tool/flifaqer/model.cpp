@@ -755,24 +755,34 @@ private:
 									   })
 				                     | std::ranges::to<std::vector<QString>>();
 
+				std::unordered_set<int> count;
+
 				for (const auto& [language, file] : m_files)
 				{
 					const auto dir = QFileInfo(file).dir();
 
-					const auto answer   = child->answer(language);
 					const auto question = child->question(language);
 
 					if (question.isEmpty() || question == Tr(NEW_ITEM))
 						m_validationResult.append(QString("%1: -> empty question found\n").arg(language));
 
+					const auto answer = child->answer(language);
 					if (answer.isEmpty())
 						m_validationResult.append(QString("%1: %2 -> empty answer\n").arg(language, question));
+
+					count.emplace(answer.split(STRING_SEPARATOR).count());
 
 					for (const auto& image : imageList)
 					{
 						auto imgPath = dir.filePath(image);
 						QFile::exists(imgPath) ? (void)imgRequired.emplace(std::move(imgPath)) : (void)m_validationResult.append(QString("%1: %2 -> images lost:\n%3\n").arg(language, question, image));
 					}
+				}
+
+				if (count.size() > 1)
+				{
+					const auto& language = m_files.front().first;
+					m_validationResult.append(QString("%1: -> different answers string count\n").arg(child->question(language)));
 				}
 
 				r(*child, r);
