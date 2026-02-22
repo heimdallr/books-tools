@@ -20,6 +20,7 @@ class TranslationWidget final : public QWidget
 public:
 	enum class Mode
 	{
+		Template,
 		Reference,
 		Translation,
 	};

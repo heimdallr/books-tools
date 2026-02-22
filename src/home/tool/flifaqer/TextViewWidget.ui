@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>TranslationWidget</class>
- <widget class="QWidget" name="TranslationWidget">
+ <class>TextViewWidget</class>
+ <widget class="QWidget" name="TextViewWidget">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -11,9 +11,9 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>TranslationWidget</string>
+   <string>TextViewWidget</string>
   </property>
-  <layout class="QVBoxLayout">
+  <layout class="QVBoxLayout" name="verticalLayout">
    <property name="leftMargin">
     <number>0</number>
    </property>
@@ -27,15 +27,9 @@
     <number>0</number>
    </property>
    <item>
-    <widget class="QComboBox" name="language"/>
-   </item>
-   <item>
-    <widget class="QLineEdit" name="question"/>
-   </item>
-   <item>
-    <widget class="QPlainTextEdit" name="answer">
-     <property name="lineWrapMode">
-      <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+    <widget class="QTextEdit" name="textEdit">
+     <property name="readOnly">
+      <bool>true</bool>
      </property>
     </widget>
    </item>

@@ -3,6 +3,7 @@
 namespace HomeCompa::FliFaq::Constant
 {
 
+inline constexpr auto TEMPLATE    = "template";
 inline constexpr auto INPUT_FILES = "files";
 inline constexpr auto THEME       = "theme";
 

@@ -30,13 +30,12 @@ namespace
 constexpr auto MAIN_WINDOW = "MainWindow";
 
 constexpr auto LANGUAGE = "language";
-constexpr auto PROFILE  = "profile";
 
 constexpr auto FONT_SIZE_KEY = "ui/Font/pointSizeF";
 
 constexpr auto ADD                = QT_TRANSLATE_NOOP("flifaqer", "Add");
 constexpr auto REMOVE             = QT_TRANSLATE_NOOP("flifaqer", "Remove");
-constexpr auto SELECT_PROFILE     = QT_TRANSLATE_NOOP("flifaqer", "Select profile");
+constexpr auto SELECT_TEMPLATE    = QT_TRANSLATE_NOOP("flifaqer", "Select template");
 constexpr auto SELECT_FILES       = QT_TRANSLATE_NOOP("flifaqer", "Select files");
 constexpr auto SELECT_JSON_FILTER = QT_TRANSLATE_NOOP("flifaqer", "Json files (*.json);;All files (*.*)");
 constexpr auto VALIDATION_RESULT  = QT_TRANSLATE_NOOP("flifaqer", "Validation result");
@@ -52,25 +51,53 @@ class MainWindow::Impl final
 	NON_COPY_MOVABLE(Impl)
 
 public:
-	Impl(MainWindow& self, std::shared_ptr<ISettings> settings, std::shared_ptr<QAbstractItemModel> model, std::shared_ptr<TranslationWidget> reference, std::shared_ptr<TranslationWidget> translation)
+	Impl(
+		MainWindow&                         self,
+		std::shared_ptr<ISettings>          settings,
+		std::shared_ptr<QAbstractItemModel> model,
+		std::shared_ptr<TranslationWidget>  templateWidget,
+		std::shared_ptr<TranslationWidget>  referenceWidget,
+		std::shared_ptr<TranslationWidget>  translationWidget,
+		std::shared_ptr<TextViewWidget>     referenceTextView,
+		std::shared_ptr<TextViewWidget>     translationTextView
+	)
 		: GeometryRestorable(*this, settings, MAIN_WINDOW)
 		, GeometryRestorableObserver(self)
 		, m_self { self }
 		, m_settings { std::move(settings) }
 		, m_model { std::move(model) }
-		, m_reference { std::move(reference) }
-		, m_translation { std::move(translation) }
+		, m_templateWidget { std::move(templateWidget) }
+		, m_referenceWidget { std::move(referenceWidget) }
+		, m_translationWidget { std::move(translationWidget) }
+		, m_referenceTextView { std::move(referenceTextView) }
+		, m_translationTextView { std::move(translationTextView) }
 	{
 		m_ui.setupUi(&m_self);
 		m_ui.navigatorView->setModel(m_model.get());
-		m_ui.referenceLayout->addWidget(m_reference.get());
-		m_ui.translationLayout->addWidget(m_translation.get());
+		m_ui.templateLayout->addWidget(m_templateWidget.get());
+
+		const auto setView = [this](QStackedWidget* stackedWidget, const QAction* action, auto*... xs) {
+			(stackedWidget->addWidget(xs), ...);
+			stackedWidget->setCurrentIndex(m_settings->Get(stackedWidget->objectName(), 0));
+			connect(action, &QAction::triggered, [this, stackedWidget] {
+				stackedWidget->setCurrentIndex((stackedWidget->currentIndex() + 1) % stackedWidget->count());
+				m_settings->Set(stackedWidget->objectName(), stackedWidget->currentIndex());
+			});
+		};
+		setView(m_ui.referenceView, m_ui.actionToggleReferenceView, m_referenceWidget.get(), m_translationTextView.get());
+		setView(m_ui.translationView, m_ui.actionToggleTranslationView, m_translationWidget.get(), m_referenceTextView.get());
 
 		for (const auto& language : m_model->data({}, Role::LanguageList).toStringList())
 			AddLanguage(language);
 
-		m_reference->SetMode(TranslationWidget::Mode::Reference);
-		m_translation->SetMode(TranslationWidget::Mode::Translation);
+		if (const auto file = m_settings->Get(Constant::TEMPLATE).toString(); !file.isEmpty())
+			AddTemplate(file);
+
+		m_templateWidget->SetMode(TranslationWidget::Mode::Template);
+		m_referenceWidget->SetMode(TranslationWidget::Mode::Reference);
+		m_translationWidget->SetMode(TranslationWidget::Mode::Translation);
+		m_referenceTextView->SetRole(Role::ReferenceText);
+		m_translationTextView->SetRole(Role::TranslationText);
 
 		if (const auto index = m_ui.language->findData(m_settings->Get(LANGUAGE, QString())); index >= 0)
 			m_ui.language->setCurrentIndex(index);
@@ -97,14 +124,19 @@ public:
 		});
 
 		connect(m_ui.navigatorView->selectionModel(), &QItemSelectionModel::currentChanged, [this](const QModelIndex& index) {
-			m_reference->SetCurrentIndex(index);
-			m_translation->SetCurrentIndex(index);
+			m_templateWidget->SetCurrentIndex(index);
+			m_referenceWidget->SetCurrentIndex(index);
+			m_translationWidget->SetCurrentIndex(index);
+			m_referenceTextView->SetCurrentIndex(index);
+			m_translationTextView->SetCurrentIndex(index);
 		});
-		connect(m_reference.get(), &TranslationWidget::LanguageChanged, [this] {
-			m_reference->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+		connect(m_referenceWidget.get(), &TranslationWidget::LanguageChanged, [this] {
+			m_referenceWidget->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+			m_referenceTextView->SetCurrentIndex(m_ui.navigatorView->currentIndex());
 		});
-		connect(m_translation.get(), &TranslationWidget::LanguageChanged, [this] {
-			m_translation->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+		connect(m_translationWidget.get(), &TranslationWidget::LanguageChanged, [this] {
+			m_translationWidget->SetCurrentIndex(m_ui.navigatorView->currentIndex());
+			m_translationTextView->SetCurrentIndex(m_ui.navigatorView->currentIndex());
 		});
 
 		connect(m_ui.actionAddFiles, &QAction::triggered, [this] {
@@ -120,8 +152,8 @@ public:
 			OnActionValidateTriggered();
 		});
 
-		connect(m_ui.actionSetProfile, &QAction::triggered, [this] {
-			OnActionSetProfileTriggered();
+		connect(m_ui.actionSetTemplate, &QAction::triggered, [this] {
+			OnActionSetTemplateTriggered();
 		});
 
 		const auto incrementFontSize = [&](const int value) {
@@ -231,7 +263,7 @@ private:
 		}
 
 		if (!translationLanguage.isEmpty())
-			m_translation->SetLanguage(translationLanguage);
+			m_translationWidget->SetLanguage(translationLanguage);
 	}
 
 	void OnActionSaveTriggered()
@@ -241,25 +273,24 @@ private:
 
 	void OnActionExportTriggered()
 	{
-		auto profile = m_settings->Get(PROFILE).toString();
-		if (profile.isEmpty())
-		{
-			profile = OnActionSetProfileTriggered();
-			if (profile.isEmpty())
-				return;
-		}
-
-		m_model->setData({}, profile, Role::Export);
+		m_model->setData({}, {}, Role::Export);
 	}
 
-	QString OnActionSetProfileTriggered()
+	void OnActionSetTemplateTriggered()
 	{
-		auto profile = QFileDialog::getOpenFileName(&m_self, Tr(SELECT_PROFILE), {}, Tr(SELECT_JSON_FILTER));
-		if (profile.isEmpty())
-			return {};
+		const auto file = QFileDialog::getOpenFileName(&m_self, Tr(SELECT_TEMPLATE), {}, Tr(SELECT_JSON_FILTER));
+		if (file.isEmpty())
+			return;
 
-		m_settings->Set(PROFILE, profile);
-		return profile;
+		m_settings->Set(Constant::TEMPLATE, file);
+		AddTemplate(file);
+	}
+
+	void AddTemplate(const auto& file)
+	{
+		m_model->setData({}, file, Role::AddTemplate);
+		for (const auto& type : m_model->data({}, Role::QuestionTypeList).toStringList())
+			m_templateWidget->AddLanguage(type);
 	}
 
 	void AddLanguage(const QString& language)
@@ -268,8 +299,8 @@ private:
 			return;
 
 		m_ui.language->addItem(language, language);
-		m_reference->AddLanguage(language);
-		m_translation->AddLanguage(language);
+		m_referenceWidget->AddLanguage(language);
+		m_translationWidget->AddLanguage(language);
 	}
 
 	void OnActionValidateTriggered()
@@ -305,8 +336,11 @@ private:
 
 	PropagateConstPtr<ISettings, std::shared_ptr>          m_settings;
 	PropagateConstPtr<QAbstractItemModel, std::shared_ptr> m_model;
-	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_reference;
-	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_translation;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_templateWidget;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_referenceWidget;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_translationWidget;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_referenceTextView;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_translationTextView;
 
 	Util::FunctorExecutionForwarder m_forwarder;
 	const Log::LogAppender          m_logAppender { this };
@@ -317,12 +351,15 @@ private:
 MainWindow::MainWindow(
 	std::shared_ptr<ISettings>          settings,
 	std::shared_ptr<QAbstractItemModel> model,
-	std::shared_ptr<TranslationWidget>  reference,
-	std::shared_ptr<TranslationWidget>  translation,
+	std::shared_ptr<TranslationWidget>  templateWidget,
+	std::shared_ptr<TranslationWidget>  referenceWidget,
+	std::shared_ptr<TranslationWidget>  translationWidget,
+	std::shared_ptr<TextViewWidget>     referenceTextView,
+	std::shared_ptr<TextViewWidget>     translationTextView,
 	QWidget*                            parent
 )
 	: QMainWindow(parent)
-	, m_impl(*this, std::move(settings), std::move(model), std::move(reference), std::move(translation))
+	, m_impl(*this, std::move(settings), std::move(model), std::move(templateWidget), std::move(referenceWidget), std::move(translationWidget), std::move(referenceTextView), std::move(translationTextView))
 {
 }
 
