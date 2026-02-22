@@ -291,6 +291,7 @@ private:
 		m_model->setData({}, file, Role::AddTemplate);
 		for (const auto& type : m_model->data({}, Role::QuestionTypeList).toStringList())
 			m_templateWidget->AddLanguage(type);
+		m_templateWidget->SetCurrentIndex(m_ui.navigatorView->currentIndex());
 	}
 
 	void AddLanguage(const QString& language)
