@@ -2,6 +2,10 @@
 
 #include "TranslationWidget.h"
 
+#include <ranges>
+
+#include <QScrollBar>
+
 #include "fnd/FindPair.h"
 
 #include "role.h"
@@ -76,9 +80,14 @@ public:
 		});
 
 		QObject::connect(m_ui.answer, &QPlainTextEdit::textChanged, [this] {
-			if (m_currentIndex.isValid())
-				m_model.setData(m_currentIndex, m_ui.answer->toPlainText(), m_modeSettings.answerRole);
+			if (!m_currentIndex.isValid())
+				return m_ui.numbers->setPlainText({});
+
+			m_model.setData(m_currentIndex, m_ui.answer->toPlainText(), m_modeSettings.answerRole);
+			UpdateNumbers();
 		});
+
+		QWidget::connect(m_ui.answer->verticalScrollBar(), &QScrollBar::valueChanged, m_ui.numbers->verticalScrollBar(), &QScrollBar::setValue);
 
 		if (m_ui.language->count() > 0)
 			OnLanguageChanged();
@@ -91,6 +100,7 @@ private: // TranslationWidgetImpl
 		const QSignalBlocker questionSignalBlocker(m_ui.question), answerSignalBlocker(m_ui.answer);
 		m_ui.question->setText(m_model.data(index, m_modeSettings.questionRole).toString());
 		m_ui.answer->setPlainText(m_model.data(index, m_modeSettings.answerRole).toString());
+		UpdateNumbers();
 	}
 
 private:
@@ -98,6 +108,23 @@ private:
 	{
 		m_model.setData({}, m_ui.language->currentData(), m_modeSettings.languageRole);
 		emit m_self.LanguageChanged();
+	}
+
+	void UpdateNumbers() const
+	{
+		const QFontMetrics fontMetrics(m_self.font());
+		int                maxTextWidth = 0;
+		const auto text = m_ui.answer->toPlainText();
+		m_ui.numbers->setPlainText((std::views::iota(1, text.split('\n').size() + 1) | std::views::transform([&](const int n) {
+										auto str = QString::number(n);
+										maxTextWidth = std::max(maxTextWidth, fontMetrics.boundingRect(str + "9").width());
+										return str;
+									})
+		                            | std::ranges::to<QStringList>())
+		                               .join('\n'));
+		m_ui.numbers->verticalScrollBar()->setValue(m_ui.answer->verticalScrollBar()->value());
+		m_ui.numbers->setMinimumWidth(maxTextWidth);
+		m_ui.numbers->setMaximumWidth(maxTextWidth);
 	}
 };
 
@@ -113,6 +140,8 @@ public:
 		: TranslationWidgetImpl(self, settings, model, ui, modeSettings)
 	{
 		m_ui.question->setVisible(false);
+		m_ui.numbers->setVisible(false);
+
 		QObject::connect(m_ui.language, &QComboBox::currentIndexChanged, [this] {
 			OnLanguageChanged();
 		});
