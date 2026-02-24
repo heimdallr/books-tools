@@ -36,6 +36,7 @@ public:
 		{
 			Row = Qt::UserRole + 1,
 			Text,
+			CharCount,
 		};
 	};
 
@@ -50,7 +51,21 @@ private: // QAbstractItemModel
 		if (index.isValid())
 		{
 			assert(index.row() >= 0 && index.row() < rowCount());
-			return role == Qt::DisplayRole ? m_data[index.row()] : QVariant {};
+
+			switch (role)
+			{
+				case Qt::DisplayRole:
+					return m_data[index.row()];
+
+				case Role::CharCount:
+					return std::accumulate(m_data.cbegin(), std::next(m_data.cbegin(), index.row()), qsizetype { 0 }, [](const qsizetype init, const QString& item) {
+						return init + item.size() + 1;
+					});
+
+				default:
+					break;
+			}
+			return QVariant {};
 		}
 
 		switch (role)
@@ -132,6 +147,25 @@ public:
 		QObject::connect(m_ui.answer, &TableView::mouseDoubleClicked, [this] {
 			m_ui.answerEdit->setPlainText(GetModel().data({}, Model::Role::Text).toString());
 			m_ui.stackedWidget->setCurrentWidget(m_ui.pageAnswerEdit);
+
+			auto       cursor   = m_ui.answerEdit->textCursor();
+			auto       position = GetModel().data(m_ui.answer->currentIndex(), Model::Role::CharCount).toInt();
+			const auto width    = m_ui.answer->mapFromGlobal(QCursor::pos()).x();
+
+			const QFontMetrics fontMetrics(m_ui.answer->font());
+			const auto         str = GetModel().data(m_ui.answer->currentIndex(), Qt::DisplayRole).toString();
+			QString            buf;
+			buf.reserve(str.size());
+			for (const auto ch : str)
+			{
+				buf.append(ch);
+				if (fontMetrics.boundingRect(buf).width() > width)
+					break;
+				++position;
+			}
+
+			cursor.setPosition(position);
+			m_ui.answerEdit->setTextCursor(cursor);
 		});
 
 		QObject::connect(m_ui.stackedWidget, &QStackedWidget::currentChanged, [this] {
@@ -338,7 +372,7 @@ public:
 
 	bool EventFilter(QObject* /*watched*/, const QEvent* event) const
 	{
-		if (event->type() == QEvent::FocusOut)
+		if (event->type() == QEvent::FocusOut || (event->type() == QEvent::KeyRelease && static_cast<const QKeyEvent*>(event)->key() == Qt::Key_Escape))
 			m_ui.stackedWidget->setCurrentWidget(m_ui.pageAnswer);
 
 		return false;
