@@ -183,8 +183,6 @@ public:
 public:
 	virtual void SetCurrentIndex(const QModelIndex& index) = 0;
 
-	virtual void OnDataChanged() = 0;
-
 	virtual void SetRow(int)
 	{
 	}
@@ -255,12 +253,6 @@ private: // TranslationWidgetImpl
 		Reset();
 	}
 
-	void OnDataChanged() override
-	{
-		if (m_currentIndex.isValid())
-			m_model.setData(m_currentIndex, GetModel().data({}, Model::Role::Text), m_modeSettings.answerRole);
-	}
-
 private:
 	void OnLanguageChanged() const
 	{
@@ -296,15 +288,6 @@ private: // TranslationWidgetImpl
 		if (const auto n = m_ui.language->findData(m_model.data(index, m_modeSettings.questionRole)); n >= 0)
 			m_ui.language->setCurrentIndex(n);
 		Reset();
-	}
-
-	void OnDataChanged() override
-	{
-		if (!m_currentIndex.isValid())
-			return;
-
-		OnLanguageChanged();
-		m_model.setData(m_currentIndex, GetModel().data({}, Model::Role::Text), m_modeSettings.answerRole);
 	}
 
 	void SetRow(const int row) override
