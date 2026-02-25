@@ -178,6 +178,7 @@ public:
 		m_currentIndex = index;
 		const QSignalBlocker questionSignalBlocker(m_ui.question), answerSignalBlocker(m_ui.answer);
 		m_ui.question->setText(m_model.data(index, m_modeSettings.questionRole).toString());
+		m_ui.question->setCursorPosition(0);
 		Reset();
 	}
 
