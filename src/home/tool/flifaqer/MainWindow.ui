@@ -25,76 +25,79 @@
      <number>0</number>
     </property>
     <item>
-     <widget class="QPlainTextEdit" name="replacements">
-      <property name="sizePolicy">
-       <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
-       </sizepolicy>
-      </property>
-      <property name="visible">
-       <bool>false</bool>
-      </property>
-      <property name="lineWrapMode">
-       <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
-      </property>
-      <property name="placeholderText">
-       <string>#KEY#=Replacement text</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QSplitter" name="splitterV">
+     <widget class="QSplitter" name="splitterM">
       <property name="orientation">
-       <enum>Qt::Orientation::Horizontal</enum>
+       <enum>Qt::Orientation::Vertical</enum>
       </property>
-      <widget class="QWidget" name="verticalLayoutWidget">
-       <layout class="QVBoxLayout" name="_3">
-        <item>
-         <widget class="QComboBox" name="language"/>
-        </item>
-        <item>
-         <widget class="QSplitter" name="splitterT">
-          <property name="orientation">
-           <enum>Qt::Orientation::Vertical</enum>
-          </property>
-          <widget class="QTreeView" name="navigatorView">
-           <property name="contextMenuPolicy">
-            <enum>Qt::ContextMenuPolicy::CustomContextMenu</enum>
-           </property>
-           <property name="uniformRowHeights">
-            <bool>true</bool>
-           </property>
-           <attribute name="headerVisible">
-            <bool>false</bool>
-           </attribute>
-          </widget>
-          <widget class="QWidget" name="templateWidget" native="true">
-           <layout class="QVBoxLayout" name="templateLayout">
-            <property name="leftMargin">
-             <number>0</number>
-            </property>
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="rightMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-           </layout>
-          </widget>
-         </widget>
-        </item>
-       </layout>
-      </widget>
-      <widget class="QSplitter" name="splitterH">
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
+      <widget class="QPlainTextEdit" name="replacements">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
        </property>
-       <widget class="QStackedWidget" name="referenceView"/>
-       <widget class="QStackedWidget" name="translationView"/>
+       <property name="visible">
+        <bool>false</bool>
+       </property>
+       <property name="lineWrapMode">
+        <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+       </property>
+       <property name="placeholderText">
+        <string>#KEY#=Replacement text</string>
+       </property>
+      </widget>
+      <widget class="QSplitter" name="splitterV">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <widget class="QWidget" name="verticalLayoutWidget">
+        <layout class="QVBoxLayout" name="_3">
+         <item>
+          <widget class="QComboBox" name="language"/>
+         </item>
+         <item>
+          <widget class="QSplitter" name="splitterT">
+           <property name="orientation">
+            <enum>Qt::Orientation::Vertical</enum>
+           </property>
+           <widget class="QTreeView" name="navigatorView">
+            <property name="contextMenuPolicy">
+             <enum>Qt::ContextMenuPolicy::CustomContextMenu</enum>
+            </property>
+            <property name="uniformRowHeights">
+             <bool>true</bool>
+            </property>
+            <attribute name="headerVisible">
+             <bool>false</bool>
+            </attribute>
+           </widget>
+           <widget class="QWidget" name="templateWidget" native="true">
+            <layout class="QVBoxLayout" name="templateLayout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+            </layout>
+           </widget>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QSplitter" name="splitterH">
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+        <widget class="QStackedWidget" name="referenceView"/>
+        <widget class="QStackedWidget" name="translationView"/>
+       </widget>
       </widget>
      </widget>
     </item>
