@@ -113,12 +113,15 @@
     <property name="title">
      <string>&amp;File</string>
     </property>
+    <addaction name="actionCreateNewFile"/>
     <addaction name="actionAddFiles"/>
     <addaction name="actionSave"/>
+    <addaction name="actionCreateNewTemplate"/>
     <addaction name="actionSetTemplate"/>
-    <addaction name="actionExport"/>
     <addaction name="actionValidate"/>
+    <addaction name="actionExport"/>
     <addaction name="separator"/>
+    <addaction name="actionCloseAllFiles"/>
     <addaction name="actionExit"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
@@ -271,7 +274,7 @@
   </action>
   <action name="actionSetTemplate">
    <property name="text">
-    <string>Set &amp;Template</string>
+    <string>Select &amp;template...</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>
@@ -302,6 +305,33 @@
   <action name="actionAboutFlifaqer">
    <property name="text">
     <string>&amp;About fliFAQer...</string>
+   </property>
+  </action>
+  <action name="actionCreateNewTemplate">
+   <property name="text">
+    <string>&amp;Create new template...</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionCreateNewFile">
+   <property name="text">
+    <string>Create &amp;new file...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionCloseAllFiles">
+   <property name="text">
+    <string>Close all files</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
    </property>
   </action>
  </widget>

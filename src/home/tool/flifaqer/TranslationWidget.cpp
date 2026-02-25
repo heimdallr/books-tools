@@ -7,6 +7,8 @@
 #include "fnd/FindPair.h"
 #include "fnd/ScopedCall.h"
 
+#include "util/language.h"
+
 #include "log.h"
 #include "role.h"
 
@@ -70,10 +72,14 @@ private: // QAbstractItemModel
 
 		switch (role)
 		{
+			case Qt::DisplayRole:
+				return {};
 			case Role::Row:
 				return m_row;
 			case Role::Text:
 				return m_data.join('\n');
+			case Role::CharCount:
+				return 0;
 			default:
 				break;
 		}
@@ -301,7 +307,8 @@ private: // TranslationWidgetImpl
 private:
 	void OnLanguageChanged() const
 	{
-		m_model.setData(m_currentIndex, m_ui.language->currentData(), m_modeSettings.languageRole);
+		if (m_currentIndex.isValid())
+			m_model.setData(m_currentIndex, m_ui.language->currentData(), m_modeSettings.languageRole);
 	}
 };
 
@@ -335,7 +342,7 @@ public:
 
 	void AddLanguage(const QString& language) const
 	{
-		m_ui.language->addItem(language, language);
+		m_ui.language->addItem(GetLanguageTitle(language), language);
 	}
 
 	void SetLanguage(const QString& language) const
@@ -408,4 +415,12 @@ void TranslationWidget::SetRow(const int row)
 bool TranslationWidget::eventFilter(QObject* watched, QEvent* event)
 {
 	return m_impl->EventFilter(watched, event);
+}
+
+QString TranslationWidget::GetLanguageTitle(const QString& key)
+{
+	static const auto languages = GetLanguagesMap();
+
+	const auto it = languages.find(key);
+	return it != languages.end() ? QString { it->second } : key;
 }

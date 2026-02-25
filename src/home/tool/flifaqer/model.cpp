@@ -349,6 +349,55 @@ QJsonArray SaveImpl(const QString& language, const Item& parent)
 	return jsonArray;
 }
 
+QString CreateNewTemplate(const Item& item)
+{
+	Profile profile {
+		.outputFileExtension = "html",
+		.head                = R"(<!DOCTYPE html>
+<html lang="#LANGUAGE#">
+<head>
+	<title>#TITLE#</title>
+	<meta charset="UTF-8">
+</head>
+<body>
+<h1 id="header">#HEAD#</h1>
+)",
+		.tail = R"(<h2 id="footer">
+#TAIL#
+</h2>
+</body>
+</html>
+)",
+		.question = {
+			{"main"    , {.before = "<details>\n\t<summary>#QUESTION#</summary>\n", .after = "<hr>\n</details>\n\n"}},
+			{"subtitle", {.before = "<details>\n\t<summary>#QUESTION#</summary>\n", .after = "</details>\n"}},
+		},
+		.tags = {
+			{ R"(\[id (\S+)\])", R"(<p id="\1">)" },
+			{ R"(\[id (\S+) (\S+)\])", R"(<p id="\1" class="\2">)" },
+			{ R"(\[(\S+?) (\S+?)\])", R"(<\1 class="\2">)" },
+			{ R"(\[img (\S+?) (\S+?) (\S+?)\])", R"(<p class="img"><img src="img/\1/\2.jpg" alt="&#128558; image lost" class="img\3\">)" },
+		},
+	};
+
+	const auto enumerate = [&](const Item& parent, const bool main, const auto& r) -> void {
+		for (auto& child : parent.children)
+		{
+			child->question.Set(Constant::TEMPLATE, main ? profile.question.front().first : profile.question.back().first);
+			child->answer.Set(Constant::TEMPLATE, {});
+			r(*child, false, r);
+		}
+	};
+	enumerate(item, true, enumerate);
+
+	QJsonObject obj {
+		{ LANGUAGE, Constant::TEMPLATE },
+		{ ITEMS, SaveImpl(Constant::TEMPLATE, item) },
+	};
+	profile.Serialize(obj);
+	return QJsonDocument(obj).toJson();
+}
+
 class ModelImpl final : public QAbstractItemModel
 {
 public:
@@ -453,6 +502,12 @@ private:
 	{
 		switch (role)
 		{
+			case Role::NewFile:
+				return QString(R"({"%1": "%2"})").arg(LANGUAGE, "%1");
+
+			case Role::NewTemplate:
+				return CreateNewTemplate(*m_root);
+
 			case Role::QuestionTypeList:
 				return m_profile.question | std::views::keys | std::ranges::to<QStringList>();
 
@@ -541,6 +596,7 @@ private:
 					throw std::invalid_argument(Tr(ALREADY_ADDED).arg(it->first).toStdString());
 
 				m_files.emplace_back(std::move(file));
+				return true;
 			}
 
 			case Role::Language:
@@ -642,10 +698,11 @@ private:
 
 	[[nodiscard]] bool Save() const
 	{
-		Save(Constant::TEMPLATE, m_templatePath, [this](QJsonObject& obj) {
-			obj.remove(MACRO);
-			m_profile.Serialize(obj);
-		});
+		if (!m_templatePath.isEmpty())
+			Save(Constant::TEMPLATE, m_templatePath, [this](QJsonObject& obj) {
+				obj.remove(MACRO);
+				m_profile.Serialize(obj);
+			});
 		for (const auto& [language, file] : m_files)
 			Save(language, file, [](QJsonObject&) {
 			});

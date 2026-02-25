@@ -6,6 +6,7 @@
 
 #include <QClipboard>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QStyleFactory>
@@ -13,6 +14,8 @@
 #include "logging/LogAppender.h"
 #include "util/FunctorExecutionForwarder.h"
 #include "util/GeometryRestorable.h"
+#include "util/StrUtil.h"
+#include "util/language.h"
 
 #include "AppConstant.h"
 #include "Constant.h"
@@ -35,6 +38,7 @@ constexpr auto FONT_SIZE_KEY = "ui/Font/pointSizeF";
 
 constexpr auto ADD                = QT_TRANSLATE_NOOP("flifaqer", "Add");
 constexpr auto REMOVE             = QT_TRANSLATE_NOOP("flifaqer", "Remove");
+constexpr auto CREATE_FILE        = QT_TRANSLATE_NOOP("flifaqer", "Create file");
 constexpr auto SELECT_TEMPLATE    = QT_TRANSLATE_NOOP("flifaqer", "Select template");
 constexpr auto SELECT_FILES       = QT_TRANSLATE_NOOP("flifaqer", "Select files");
 constexpr auto SELECT_JSON_FILTER = QT_TRANSLATE_NOOP("flifaqer", "Json files (*.json);;All files (*.*)");
@@ -45,7 +49,30 @@ constexpr auto SAVE_CHANGES       = QT_TRANSLATE_NOOP("flifaqer", "Would you lik
 constexpr auto ABOUT_TITLE        = QT_TRANSLATE_NOOP("flifaqer", "About fliFAQer");
 constexpr auto ABOUT_TEXT         = QT_TRANSLATE_NOOP("flifaqer", "fliFAQer: question-and-answer reference html generator");
 
+template <typename O, typename P, typename... ARGS>
+void OnActionTriggered(P& parent, O& obj, void (O::*invoker)(const ARGS&...), const ARGS&... args)
+{
+	QString errorText;
+	try
+	{
+		std::invoke(invoker, obj, args...);
+	}
+	catch (const std::exception& ex)
+	{
+		errorText = ex.what();
+	}
+	catch (...)
+	{
+		errorText = "Unknown error";
+	}
+	if (errorText.isEmpty())
+		return;
+
+	QMessageBox::critical(&parent, Tr(Constant::ERROR), errorText);
+	PLOGE << errorText;
 }
+
+} // namespace
 
 class MainWindow::Impl final
 	: Util::GeometryRestorable
@@ -97,11 +124,11 @@ public:
 		setView(m_ui.referenceView, m_ui.actionToggleReferenceView, m_referenceWidget.get(), m_referenceTextView.get(), m_translationTextView.get());
 		setView(m_ui.translationView, m_ui.actionToggleTranslationView, m_translationWidget.get(), m_translationTextView.get(), m_referenceTextView.get());
 
+		LoadTemplate();
+		LoadFiles();
+
 		for (const auto& language : m_model->data({}, Role::LanguageList).toStringList())
 			AddLanguage(language);
-
-		if (const auto file = m_settings->Get(Constant::TEMPLATE).toString(); !file.isEmpty())
-			AddTemplate(file);
 
 		m_templateWidget->SetMode(TranslationWidget::Mode::Template);
 		m_referenceWidget->SetMode(TranslationWidget::Mode::Reference);
@@ -141,21 +168,32 @@ public:
 			m_translationTextView->SetCurrentIndex(index);
 		});
 
+		connect(m_ui.actionCloseAllFiles, &QAction::triggered, [this] {
+			m_settings->Remove(Constant::INPUT_FILES);
+			m_settings->Remove(Constant::TEMPLATE);
+			QCoreApplication::exit(Global::RESTART_APP);
+		});
+		connect(m_ui.actionCreateNewTemplate, &QAction::triggered, [this] {
+			OnActionTriggered(m_self, *this, &Impl::CreateNewTemplate);
+		});
+		connect(m_ui.actionCreateNewFile, &QAction::triggered, [this] {
+			OnActionTriggered(m_self, *this, &Impl::CreateNewFile);
+		});
 		connect(m_ui.actionAddFiles, &QAction::triggered, [this] {
-			OnActionTriggered(&Impl::OnActionAddFilesTriggered);
+			OnActionTriggered(m_self, *this, &Impl::AddFiles);
 		});
 		connect(m_ui.actionSave, &QAction::triggered, [this] {
-			OnActionTriggered(&Impl::OnActionSaveTriggered);
+			OnActionTriggered(m_self, *this, &Impl::Save);
 		});
 		connect(m_ui.actionExport, &QAction::triggered, [this] {
-			OnActionTriggered(&Impl::OnActionExportTriggered);
+			OnActionTriggered(m_self, *this, &Impl::Export);
 		});
 		connect(m_ui.actionValidate, &QAction::triggered, [this] {
-			OnActionValidateTriggered();
+			OnActionTriggered(m_self, *this, &Impl::Validate);
 		});
 
 		connect(m_ui.actionSetTemplate, &QAction::triggered, [this] {
-			OnActionSetTemplateTriggered();
+			OnActionTriggered(m_self, *this, &Impl::SetTemplate);
 		});
 
 		connect(m_model.get(), &QAbstractItemModel::dataChanged, [this] {
@@ -217,7 +255,7 @@ public:
 				return true;
 
 			case QMessageBox::Yes:
-				return OnActionSaveTriggered(), true;
+				return Save(), true;
 
 			default:
 				break;
@@ -262,12 +300,83 @@ private:
 		menu.exec(QCursor::pos());
 	}
 
-	void OnActionAddFilesTriggered()
+	void CreateNewTemplate()
+	{
+		auto file = QFileDialog::getSaveFileName(&m_self, Tr(CREATE_FILE), {}, Tr(SELECT_JSON_FILTER));
+		if (file.isEmpty())
+			return;
+
+		{
+			QFile stream(file);
+			if (!stream.open(QIODevice::WriteOnly))
+				throw std::ios_base::failure(std::format("cannot write to {}", file));
+
+			stream.write(m_model->data({}, Role::NewTemplate).toByteArray());
+		}
+
+		SetTemplateImpl(file);
+	}
+
+	void CreateNewFile()
+	{
+		auto languages =
+			LANGUAGES
+			| std::views::filter([un = QString(UNDEFINED_KEY), addedLanguages = m_model->data({}, Role::LanguageList).toStringList() | std::ranges::to<std::unordered_set<QString>>()](const auto& item) {
+				  return !(item.key == un || addedLanguages.contains(item.key));
+			  })
+			| std::ranges::to<std::vector<Language>>();
+		std::ranges::sort(languages, {}, [](const auto& item) {
+			return std::pair(item.priority, QString(item.title));
+		});
+
+		QInputDialog inputDialog(&m_self);
+		inputDialog.setComboBoxItems(
+			languages | std::views::transform([](const auto& item) {
+				return item.title;
+			})
+			| std::ranges::to<QStringList>()
+		);
+		inputDialog.setFont(m_self.font());
+		inputDialog.setLabelText("Select language");
+		if (inputDialog.exec() != QDialog::Accepted)
+			return;
+
+		const auto languageTitle = inputDialog.textValue();
+		if (languageTitle.isEmpty())
+			return;
+
+		const auto it = std::ranges::find(languages, languageTitle, [](const auto& item) {
+			return item.title;
+		});
+		assert(it != languages.end());
+
+		auto file = QFileDialog::getSaveFileName(&m_self, Tr(CREATE_FILE), {}, Tr(SELECT_JSON_FILTER));
+		if (file.isEmpty())
+			return;
+
+		{
+			QFile stream(file);
+			if (!stream.open(QIODevice::WriteOnly))
+				throw std::ios_base::failure(std::format("cannot write to {}", file));
+
+			stream.write(m_model->data({}, Role::NewFile).toString().arg(it->key).toUtf8());
+		}
+
+		AddFilesImpl({ std::move(file) });
+	}
+
+	void AddFiles()
+	{
+		if (auto inputFiles = QFileDialog::getOpenFileNames(&m_self, Tr(SELECT_FILES), {}, Tr(SELECT_JSON_FILTER)); !inputFiles.isEmpty())
+			AddFilesImpl(std::move(inputFiles));
+	}
+
+	void AddFilesImpl(QStringList inputFiles)
 	{
 		auto       files     = m_settings->Get(Constant::INPUT_FILES).toStringList();
 		const auto languages = m_model->data({}, Role::LanguageList).toStringList();
 
-		for (auto&& file : QFileDialog::getOpenFileNames(&m_self, Tr(SELECT_FILES), {}, Tr(SELECT_JSON_FILTER)))
+		for (auto&& file : inputFiles)
 		{
 			m_model->setData({}, file, Role::AddFile);
 			files << std::move(file);
@@ -295,25 +404,67 @@ private:
 			m_translationWidget->SetLanguage(translationLanguage);
 	}
 
-	void OnActionSaveTriggered()
+	void Save()
 	{
 		m_model->setData({}, {}, Role::Save);
 		m_dataChanged = false;
 	}
 
-	void OnActionExportTriggered()
+	void Export()
 	{
 		m_model->setData({}, {}, Role::Export);
 	}
 
-	void OnActionSetTemplateTriggered()
+	void SetTemplate()
 	{
 		const auto file = QFileDialog::getOpenFileName(&m_self, Tr(SELECT_TEMPLATE), {}, Tr(SELECT_JSON_FILTER));
-		if (file.isEmpty())
-			return;
+		if (!file.isEmpty())
+			SetTemplateImpl(file);
+	}
 
+	void SetTemplateImpl(const QString& file)
+	{
 		m_settings->Set(Constant::TEMPLATE, file);
 		AddTemplate(file);
+	}
+
+	void LoadTemplate()
+	{
+		try
+		{
+			if (const auto file = m_settings->Get(Constant::TEMPLATE).toString(); !file.isEmpty())
+				AddTemplate(file);
+			return;
+		}
+		catch (const std::exception& ex)
+		{
+			PLOGE << "Load template: " << ex.what();
+		}
+		catch (...)
+		{
+			PLOGE << "Load template: unknown error";
+		}
+		m_settings->Remove(Constant::TEMPLATE);
+	}
+
+	void LoadFiles()
+	{
+		QStringList files;
+		for (auto&& file : m_settings->Get(Constant::INPUT_FILES).toStringList())
+			try
+			{
+				m_model->setData({}, file, Role::AddFile);
+				files << std::move(file);
+			}
+			catch (const std::exception& ex)
+			{
+				PLOGE << "Load " << file << ex.what();
+			}
+			catch (...)
+			{
+				PLOGE << "Load template: unknown error";
+			}
+		m_settings->Set(Constant::INPUT_FILES, files);
 	}
 
 	void AddTemplate(const auto& file)
@@ -329,37 +480,15 @@ private:
 		if (m_ui.language->findData(language) >= 0)
 			return;
 
-		m_ui.language->addItem(language, language);
+		m_ui.language->addItem(TranslationWidget::GetLanguageTitle(language), language);
 		m_referenceWidget->AddLanguage(language);
 		m_translationWidget->AddLanguage(language);
 	}
 
-	void OnActionValidateTriggered()
+	void Validate()
 	{
 		m_model->setData({}, {}, Role::Validate) ? QMessageBox::information(&m_self, Tr(VALIDATION_RESULT), Tr(OK))
 												 : QMessageBox::warning(&m_self, Tr(VALIDATION_RESULT), m_model->data({}, Role::Validate).toString());
-	}
-
-	void OnActionTriggered(void (Impl::*invoker)())
-	{
-		QString errorText;
-		try
-		{
-			std::invoke(invoker, this);
-		}
-		catch (const std::exception& ex)
-		{
-			errorText = ex.what();
-		}
-		catch (...)
-		{
-			errorText = "Unknown error";
-		}
-		if (errorText.isEmpty())
-			return;
-
-		QMessageBox::critical(&m_self, Tr(Constant::ERROR), errorText);
-		PLOGE << errorText;
 	}
 
 	void ShowAbout() const

@@ -75,17 +75,6 @@ int main(int argc, char* argv[])
 			if (!currentTheme.isEmpty())
 				QApplication::setStyle(QStyleFactory::create(currentTheme));
 
-			try
-			{
-				const auto model = container->resolve<QAbstractItemModel>();
-				for (const auto& file : settings->Get(Constant::INPUT_FILES).toStringList())
-					model->setData({}, file, Role::AddFile);
-			}
-			catch (const std::exception& ex)
-			{
-				QMessageBox::critical(nullptr, Tr(Constant::ERROR), ex.what());
-			}
-
 			const auto mainWindow = container->resolve<QMainWindow>();
 			mainWindow->show();
 

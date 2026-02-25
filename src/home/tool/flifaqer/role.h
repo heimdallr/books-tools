@@ -9,7 +9,9 @@ struct Role
 {
 	enum
 	{
-		AddFile = Qt::UserRole,
+		NewFile = Qt::UserRole,
+		NewTemplate,
+		AddFile,
 		AddTemplate,
 		QuestionTypeList,
 		LanguageList,

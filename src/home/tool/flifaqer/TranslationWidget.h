@@ -25,6 +25,9 @@ public:
 		Translation,
 	};
 
+public:
+	static QString GetLanguageTitle(const QString& key);
+
 signals:
 	void LanguageChanged() const;
 	void RowChanged(int row) const;
