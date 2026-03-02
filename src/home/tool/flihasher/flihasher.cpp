@@ -247,11 +247,21 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 
 		SerializeHashSections(file.parseResult.hashSections, writer);
 
-		const auto histogram = bookGuard->Guard("histogram");
-		for (const auto& [count, word] : file.parseResult.hashValues)
+		if (!file.parseResult.hashValues.empty())
 		{
-			auto histogramItem = histogram->Guard("item");
-			histogramItem->WriteAttribute("count", QString::number(count)).WriteAttribute("word", word);
+			const auto histogram = bookGuard->Guard("histogram");
+			for (const auto& [count, word] : file.parseResult.hashValues)
+			{
+				auto histogramItem = histogram->Guard("item");
+				histogramItem->WriteAttribute("count", QString::number(count)).WriteAttribute("word", word);
+			}
+		}
+
+		if (!file.parseResult.annotation.isEmpty())
+		{
+			const auto guard = bookGuard->Guard("annotation");
+			for (const auto& str : file.parseResult.annotation)
+				guard->WriteStartElement("p").WriteCharacters(str).WriteEndElement();
 		}
 	}
 }
