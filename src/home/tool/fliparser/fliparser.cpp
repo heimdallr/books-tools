@@ -88,6 +88,7 @@ public:
 		: m_sourceLib { archive.sourceLib }
 		, m_inpDataProvider { inpDataProvider }
 		, m_replacement { replacement }
+		, m_folderExt { QFileInfo(archive.filePath).suffix().toLower() }
 	{
 		QFile file(archive.hashPath);
 		if (!file.open(QIODevice::ReadOnly))
@@ -112,6 +113,10 @@ private: // HashParser::IObserver
 		Util::TextHistogram
 	) override
 	{
+		if (!m_folderExt.isEmpty())
+			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
+				folder = folder.first(pos + 1) + m_folderExt;
+
 		UniqueFile::Uid uid { folder, file };
 		if (!originFolder.isEmpty())
 			m_replacement.try_emplace(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
@@ -125,6 +130,7 @@ private:
 	QString&         m_sourceLib;
 	InpDataProvider& m_inpDataProvider;
 	Replacement&     m_replacement;
+	const QString    m_folderExt;
 };
 
 class CompilationHandler final : Util::HashParser::IObserver
@@ -145,6 +151,8 @@ public:
 									   return !item.hashPath.isEmpty();
 								   }))
 		{
+			m_folderExt = QFileInfo(archive.filePath).suffix().toLower();
+
 			QFile file(archive.hashPath);
 			if (!file.open(QIODevice::ReadOnly))
 				throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
@@ -180,6 +188,10 @@ private: // HashParser::IObserver
 	{
 		if (!originFolder.isEmpty())
 			return true;
+
+		if (!m_folderExt.isEmpty())
+			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
+				folder = folder.first(pos + 1) + m_folderExt;
 
 		const auto enumerate =
 			[this](const Book* book, const Util::HashParser::Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
@@ -255,6 +267,7 @@ private:
 	const std::unordered_multimap<QString, Book*> m_sectionToBook;
 	QJsonArray                                    m_compilations;
 	Util::Progress                                m_progress;
+	QString                                       m_folderExt;
 };
 
 FileInfo GetFileHash(const Zip& zip, const QString& fileName)
