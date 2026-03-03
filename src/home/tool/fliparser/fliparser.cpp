@@ -35,6 +35,7 @@
 #include "util/progress.h"
 #include "util/xml/Initializer.h"
 #include "util/xml/SaxParser.h"
+#include "util/xml/XmlWriter.h"
 
 #include "Constant.h"
 #include "log.h"
@@ -59,6 +60,7 @@ constexpr auto LIBRARY                      = "library";
 constexpr auto SKIP_CONTENTS                = "skip-contents";
 constexpr auto SKIP_REVIEWS                 = "skip-reviews";
 constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
+constexpr auto SKIP_ANNOTATIONS             = "skip-annotations";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -81,6 +83,137 @@ struct FileInfo
 	qsizetype  size;
 };
 
+class IAnnotationCollector // NOLINT(cppcoreguidelines-special-member-functions)
+{
+public:
+	virtual ~IAnnotationCollector()                                                             = default;
+	virtual void StartFolder()                                                                  = 0;
+	virtual void Add(const QString& folder, const QString& file, const QStringList& annotation) = 0;
+};
+
+class AnnotationCollectorStub final : virtual public IAnnotationCollector
+{
+public:
+	static std::unique_ptr<IAnnotationCollector> Create()
+	{
+		return std::make_unique<AnnotationCollectorStub>();
+	}
+
+private: // IAnnotationCollector
+	void StartFolder() override
+	{
+	}
+
+	void Add(const QString&, const QString&, const QStringList&) override
+	{
+	}
+};
+
+class AnnotationCollector final : virtual public IAnnotationCollector
+{
+	NON_COPY_MOVABLE(AnnotationCollector)
+
+	class Data
+	{
+		NON_COPY_MOVABLE(Data)
+
+	public:
+		Data(IZipFileController& zipFiles, QString folder)
+			: m_zipFiles { zipFiles }
+			, m_folder { std::move(folder) }
+		{
+			(*m_folderGuard)->WriteAttribute("name", m_folder);
+		}
+
+		~Data()
+		{
+			m_folderGuard.reset();
+			m_writer.reset();
+			m_stream.reset();
+			if (m_found)
+				m_zipFiles.AddFile(std::move(m_folder), std::move(m_data));
+		}
+
+		void Add(const QString& file, const QStringList& annotation)
+		{
+			if (annotation.isEmpty())
+				return;
+
+			m_found = true;
+
+			auto item = (*m_folderGuard)->Guard("file");
+			item->WriteAttribute("name", file);
+			for (const auto& str : annotation)
+				item->WriteStartElement("p").WriteCharacters(str).WriteEndElement();
+		}
+
+	private:
+		static std::unique_ptr<QIODevice> CreateStream(QByteArray& data)
+		{
+			auto stream = std::make_unique<QBuffer>(&data);
+			stream->open(QIODevice::WriteOnly);
+			return stream;
+		}
+
+	private:
+		IZipFileController& m_zipFiles;
+		QString             m_folder;
+
+		QByteArray                                     m_data;
+		std::unique_ptr<QIODevice>                     m_stream { CreateStream(m_data) };
+		std::unique_ptr<Util::XmlWriter>               m_writer { std::make_unique<Util::XmlWriter>(*m_stream) };
+		std::unique_ptr<Util::XmlWriter::XmlNodeGuard> m_folderGuard { std::make_unique<Util::XmlWriter::XmlNodeGuard>(m_writer->Guard("folder")) };
+
+		bool m_found { false };
+	};
+
+public:
+	static std::unique_ptr<IAnnotationCollector> Create(const std::filesystem::path& outputFolder)
+	{
+		return std::make_unique<AnnotationCollector>(outputFolder);
+	}
+
+	explicit AnnotationCollector(const std::filesystem::path& outputFolder)
+		: m_outputFolder { outputFolder }
+	{
+	}
+
+	~AnnotationCollector() override
+	{
+		PLOGI << "Archive annotations";
+		m_data.reset();
+
+		const auto zipFileName = QString::fromStdWString(m_outputFolder / Inpx::ANNOTATIONS);
+		QFile::remove(zipFileName);
+		Zip zip(zipFileName, ZipDetails::Format::SevenZip);
+		zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
+		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
+		zip.Write(std::move(m_zipFiles));
+	}
+
+private: // IAnnotationCollector
+	void StartFolder() override
+	{
+		m_data.reset();
+	}
+
+	void Add(const QString& folder, const QString& file, const QStringList& annotation) override
+	{
+		if (annotation.isEmpty())
+			return;
+
+		if (!m_data)
+			m_data = std::make_unique<Data>(*m_zipFiles, folder);
+
+		m_data->Add(file, annotation);
+	}
+
+private:
+	const std::filesystem::path&        m_outputFolder;
+	std::shared_ptr<IZipFileController> m_zipFiles { Zip::CreateZipFileController() };
+	std::unique_ptr<Data>               m_data;
+};
+
 class FileHashParser final : Util::HashParser::IObserver
 {
 public:
@@ -88,6 +221,7 @@ public:
 		: m_sourceLib { archive.sourceLib }
 		, m_inpDataProvider { inpDataProvider }
 		, m_replacement { replacement }
+		, m_folderExt { QFileInfo(archive.filePath).suffix().toLower() }
 	{
 		QFile file(archive.hashPath);
 		if (!file.open(QIODevice::ReadOnly))
@@ -109,9 +243,14 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr,
-		Util::TextHistogram
+		Util::TextHistogram,
+		QStringList
 	) override
 	{
+		if (!m_folderExt.isEmpty())
+			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
+				folder = folder.first(pos + 1) + m_folderExt;
+
 		UniqueFile::Uid uid { folder, file };
 		if (!originFolder.isEmpty())
 			m_replacement.try_emplace(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
@@ -125,13 +264,15 @@ private:
 	QString&         m_sourceLib;
 	InpDataProvider& m_inpDataProvider;
 	Replacement&     m_replacement;
+	const QString    m_folderExt;
 };
 
 class CompilationHandler final : Util::HashParser::IObserver
 {
 public:
-	CompilationHandler(const Archives& archives, const InpDataProvider& inpDataProvider)
+	CompilationHandler(const Archives& archives, const InpDataProvider& inpDataProvider, IAnnotationCollector& annotationCollector)
 		: m_inpDataProvider { inpDataProvider }
+		, m_annotationCollector { annotationCollector }
 		, m_sectionToBook { m_inpDataProvider.Books() | std::views::transform([](Book* book) {
 								return std::make_pair(book->id, book);
 							})
@@ -143,8 +284,11 @@ public:
 
 		for (const auto& archive : archives | std::views::filter([](const auto& item) {
 									   return !item.hashPath.isEmpty();
-								   }))
+								   }) | std::views::reverse)
 		{
+			m_folderExt = QFileInfo(archive.filePath).suffix().toLower();
+			m_annotationCollector.StartFolder();
+
 			QFile file(archive.hashPath);
 			if (!file.open(QIODevice::ReadOnly))
 				throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
@@ -175,11 +319,18 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
-		Util::TextHistogram
+		Util::TextHistogram,
+		QStringList annotation
 	) override
 	{
 		if (!originFolder.isEmpty())
 			return true;
+
+		if (!m_folderExt.isEmpty())
+			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
+				folder = folder.first(pos + 1) + m_folderExt;
+
+		m_annotationCollector.Add(folder, file, annotation);
 
 		const auto enumerate =
 			[this](const Book* book, const Util::HashParser::Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
@@ -252,9 +403,11 @@ private: // HashParser::IObserver
 
 private:
 	const InpDataProvider&                        m_inpDataProvider;
+	IAnnotationCollector&                         m_annotationCollector;
 	const std::unordered_multimap<QString, Book*> m_sectionToBook;
 	QJsonArray                                    m_compilations;
 	Util::Progress                                m_progress;
+	QString                                       m_folderExt;
 };
 
 FileInfo GetFileHash(const Zip& zip, const QString& fileName)
@@ -696,10 +849,10 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 	zip.Write(std::move(zipFiles));
 }
 
-void ProcessCompilations(const std::filesystem::path& outputFolder, const Archives& archives, const InpDataProvider& inpDataProvider)
+void ProcessCompilations(const std::filesystem::path& outputFolder, const Archives& archives, const InpDataProvider& inpDataProvider, IAnnotationCollector& annotationCollector)
 {
 	PLOGI << "collect compilation info";
-	const CompilationHandler compilationHandler(archives, inpDataProvider);
+	const CompilationHandler compilationHandler(archives, inpDataProvider, annotationCollector);
 	auto                     data = compilationHandler.GetResult();
 	if (data.isEmpty())
 	{
@@ -813,6 +966,7 @@ int main(int argc, char* argv[])
 			{ SKIP_CONTENTS, "Skip contents" },
 			{ SKIP_REVIEWS, "Skip size readers reviews" },
 			{ SKIP_COMPILATIONS, "Skip compilations info" },
+			{ SKIP_ANNOTATIONS, "Skip annotations" },
     }
 	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -863,8 +1017,10 @@ int main(int argc, char* argv[])
 		if (!parser.isSet(SKIP_REVIEWS))
 			CreateReview(settings.outputFolder, *inpDataProvider, replacement);
 
+		auto annotationCollector = parser.isSet(SKIP_ANNOTATIONS) ? AnnotationCollectorStub::Create() : AnnotationCollector::Create(settings.outputFolder);
+
 		if (!parser.isSet(SKIP_COMPILATIONS))
-			ProcessCompilations(settings.outputFolder, archives, *inpDataProvider);
+			ProcessCompilations(settings.outputFolder, archives, *inpDataProvider, *annotationCollector);
 
 		return 0;
 	}

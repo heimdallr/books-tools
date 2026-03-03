@@ -179,7 +179,8 @@ private:
 			Util::HashParser::HashImageItem cover,
 		Util::HashParser::HashImageItems    images,
 		Util::HashParser::Section::Ptr,
-		Util::TextHistogram
+		Util::TextHistogram,
+		QStringList
 	) override
 	{
 		if (!originFolder.isEmpty())
