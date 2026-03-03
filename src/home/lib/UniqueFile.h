@@ -139,7 +139,8 @@ private:
 			Util::HashParser::HashImageItem cover,
 		Util::HashParser::HashImageItems    images,
 		Util::HashParser::Section::Ptr      section,
-		Util::TextHistogram                 textHistogram
+		Util::TextHistogram                 textHistogram,
+		QStringList                         annotation
 	) override;
 
 private:
