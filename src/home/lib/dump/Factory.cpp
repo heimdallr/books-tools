@@ -5,8 +5,6 @@
 #include <regex>
 
 #include <QDir>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QRegularExpression>
 
 #include "database/interface/ICommand.h"
@@ -40,6 +38,18 @@ constexpr std::pair<const char*, Creator> LIBRARIES[] {
 
 namespace
 {
+
+const IDump::DictionaryTableDescription AUTHOR {
+	.table = "Author",
+	.id    = "AuthorId",
+	.names = { "FirstName", "MiddleName", "LastName" },
+};
+
+const IDump::DictionaryTableDescription SERIES {
+	.table = "Series",
+	.id    = "SeriesId",
+	.names = { "Title" },
+};
 
 void ReplaceStringInPlace(std::string& subject, const std::string& search, const std::string& replace)
 {
@@ -163,29 +173,20 @@ void FillTablesImpl(const std::filesystem::path& sqlDir, const IDump& dump, DB::
 using ReplaceDstValues = std::vector<std::pair<long long, std::vector<QString>>>;
 using ReplaceSrcValues = std::unordered_map<long long, std::vector<QString>>;
 
-ReplaceSrcValues GetReplaceSrcValues(const QJsonObject& obj, const IDump::DictionaryTableDescription& tableDescription)
+ReplaceSrcValues GetReplaceSrcValues(DB::IDatabase& db, const IDump::DictionaryTableDescription& tableDescription, const QString& dumpName)
 {
 	ReplaceSrcValues result;
-	const auto       valuesVar = obj[tableDescription.table];
-	if (!valuesVar.isObject())
-		return result;
 
-	const auto valuesObj = valuesVar.toObject();
+	std::string names;
+	for (const auto* name : tableDescription.names)
+		names.append(", t.").append(name);
 
-	for (auto it = valuesObj.constBegin(), end = valuesObj.constEnd(); it != end; ++it)
+	const auto query = db.CreateQuery(std::format("select t.{}{} from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", tableDescription.id, names, tableDescription.table, dumpName));
+	for (query->Execute(); !query->Eof(); query->Next())
 	{
-		auto&      values = result.try_emplace(it.key().toLongLong()).first->second;
-		const auto value  = it.value();
-		if (value.isString())
-		{
-			values.push_back(value.toString());
-			continue;
-		}
-
-		assert(value.isObject());
-		const auto valueObj = value.toObject();
-		std::ranges::transform(tableDescription.names, std::back_inserter(values), [&](const auto& name) {
-			return valueObj[name].toString();
+		auto& values = result.try_emplace(query->Get<long long>(0)).first->second;
+		std::ranges::transform(std::views::iota(1, static_cast<int>(query->ColumnCount())), std::back_inserter(values), [&](const auto n) {
+			return query->Get<const char*>(n);
 		});
 	}
 
@@ -222,17 +223,24 @@ bool ReplaceImpl(const long long id, std::vector<QString>& value, const ReplaceS
 	return true;
 }
 
-void ReplaceImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tableDescription, const QJsonObject& replacementObj, const auto& additional)
+void ReplaceImpl(
+	DB::IDatabase&                           db,
+	const IDump::DictionaryTableDescription& tableSrc,
+	const IDump::DictionaryTableDescription& tableDst,
+	DB::IDatabase&                           dbReplacement,
+	const QString&                           dumpName,
+	const auto&                              additional
+)
 {
-	const auto values      = GetReplacedValues(db, tableDescription);
-	const auto replacement = GetReplaceSrcValues(replacementObj, tableDescription);
+	const auto values      = GetReplacedValues(db, tableDst);
+	const auto replacement = GetReplaceSrcValues(dbReplacement, tableSrc, dumpName);
 
 	const auto  tr = db.CreateTransaction();
 	std::string names;
-	for (const auto* name : tableDescription.names)
+	for (const auto* name : tableDst.names)
 		names.append(name).append(" = ?,");
 	names.pop_back();
-	const auto command = tr->CreateCommand(std::format("update {} set {} where {} = ?", tableDescription.table, names, tableDescription.id));
+	const auto command = tr->CreateCommand(std::format("update {} set {} where {} = ?", tableDst.table, names, tableDst.id));
 
 	for (const auto& [id, oldValues] : values)
 	{
@@ -246,10 +254,10 @@ void ReplaceImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tab
 		if (newValues == oldValues)
 			continue;
 
-		for (const auto index : std::views::iota(0, static_cast<int>(tableDescription.names.size())))
+		for (const auto index : std::views::iota(0, static_cast<int>(tableDst.names.size())))
 			command->Bind(index, newValues[index].toStdString());
 
-		command->Bind(tableDescription.names.size(), id);
+		command->Bind(tableDst.names.size(), id);
 		command->Execute();
 	}
 
@@ -258,22 +266,10 @@ void ReplaceImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tab
 
 void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump, DB::IDatabase& db)
 {
-	auto doc = [&]() -> QJsonDocument {
-		if (replacementPath.empty())
-			return {};
+	if (replacementPath.empty())
+		return;
 
-		QFile file(replacementPath);
-		if (!file.open(QIODevice::ReadOnly))
-			throw std::invalid_argument(std::format("cannot open {}", replacementPath));
-
-		const auto result = QJsonDocument::fromJson(file.readAll());
-		if (!result.isObject())
-			throw std::invalid_argument(std::format("{} must be the object json", replacementPath));
-
-		return result;
-	}();
-
-	const auto replacementObj = doc.object();
+	auto dbReplacement = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag={}", replacementPath.string(), "READONLY"));
 
 	const QRegularExpression expressions[] { QRegularExpression { R"(^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]\s*(.*?)$)" } };
 	const auto               processBrackets = [&](std::vector<QString>& values) {
@@ -295,11 +291,11 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 		return false;
 	};
 
-	ReplaceImpl(db, dump.GetSeriesTable(), replacementObj, processBrackets);
-	ReplaceImpl(db, dump.GetAuthorTable(), replacementObj, removeColon);
+	ReplaceImpl(db, SERIES, dump.GetSeriesTable(), *dbReplacement, dump.GetName(), processBrackets);
+	ReplaceImpl(db, AUTHOR, dump.GetAuthorTable(), *dbReplacement, dump.GetName(), removeColon);
 }
 
-} // namespace
+}
 
 std::unique_ptr<IDump> Create(const std::filesystem::path& sqlDir, const std::filesystem::path& dbPath, const QString& sourceLib, const std::filesystem::path& replacementPath)
 {
