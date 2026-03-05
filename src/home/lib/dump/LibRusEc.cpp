@@ -187,6 +187,12 @@ private: // IDatabase
 		return table;
 	}
 
+	const LinkTableDescription& GetAuthorLinkTable() const noexcept override
+	{
+		static constexpr LinkTableDescription table { .table = "libavtor", .bookId = "bid", .objId = "aid", .additional = "role" };
+		return table;
+	}
+
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
 		const auto query = m_db->CreateQuery(R"(

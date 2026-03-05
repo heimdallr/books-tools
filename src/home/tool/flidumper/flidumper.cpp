@@ -6,7 +6,6 @@
 
 #include "lib/dump/Factory.h"
 #include "lib/dump/IDump.h"
-#include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/LogConsoleFormatter.h"
