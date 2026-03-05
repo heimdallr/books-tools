@@ -264,6 +264,23 @@ void ReplaceImpl(
 	tr->Commit();
 }
 
+void Append(DB::IDatabase& db, const IDump::LinkTableDescription& tableDescription, DB::IDatabase& dbSource, const QString& tableSource, const QString& dumpName)
+{
+	const auto query = dbSource.CreateQuery(std::format("select t.Id, t.BookId, t.Additional from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", tableSource, dumpName));
+	const auto tr    = db.CreateTransaction();
+	const auto command = tr->CreateCommand(std::format("insert or ignore into {}({}, {}, {}) values(?, ?, ?)", tableDescription.table, tableDescription.objId, tableDescription.bookId, tableDescription.additional));
+
+	for (query->Execute(); !query->Eof(); query->Next())
+	{
+		command->Bind(0, query->Get<long long>(0));
+		command->Bind(1, query->Get<long long>(1));
+		command->Bind(2, query->Get<const char*>(2));
+		command->Execute();
+	}
+
+	tr->Commit();
+}
+
 void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump, DB::IDatabase& db)
 {
 	if (replacementPath.empty())
@@ -293,6 +310,7 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 
 	ReplaceImpl(db, SERIES, dump.GetSeriesTable(), *dbReplacement, dump.GetName(), processBrackets);
 	ReplaceImpl(db, AUTHOR, dump.GetAuthorTable(), *dbReplacement, dump.GetName(), removeColon);
+	Append(db, dump.GetAuthorLinkTable(), *dbReplacement, "AuthorList", dump.GetName());
 }
 
 }

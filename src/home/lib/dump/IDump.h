@@ -24,6 +24,14 @@ public:
 		std::vector<const char*> names;
 	};
 
+	struct LinkTableDescription
+	{
+		const char* table;
+		const char* bookId;
+		const char* objId;
+		const char* additional;
+	};
+
 	enum class AdditionalType
 	{
 		None       = 0,
@@ -43,8 +51,9 @@ public:
 
 	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, AdditionalType additionalType) const = 0;
 
-	virtual const DictionaryTableDescription& GetAuthorTable() const noexcept = 0;
-	virtual const DictionaryTableDescription& GetSeriesTable() const noexcept = 0;
+	virtual const DictionaryTableDescription& GetAuthorTable() const noexcept     = 0;
+	virtual const DictionaryTableDescription& GetSeriesTable() const noexcept     = 0;
+	virtual const LinkTableDescription&       GetAuthorLinkTable() const noexcept = 0;
 
 	virtual std::vector<std::pair<int, int>> GetReviewMonths() const                                                                                          = 0;
 	virtual void                             Review(int year, int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const = 0;
