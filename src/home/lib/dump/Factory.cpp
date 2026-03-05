@@ -268,7 +268,8 @@ void Append(DB::IDatabase& db, const IDump::LinkTableDescription& tableDescripti
 {
 	const auto query = dbSource.CreateQuery(std::format("select t.Id, t.BookId, t.Additional from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", tableSource, dumpName));
 	const auto tr    = db.CreateTransaction();
-	const auto command = tr->CreateCommand(std::format("insert or ignore into {}({}, {}, {}) values(?, ?, ?)", tableDescription.table, tableDescription.objId, tableDescription.bookId, tableDescription.additional));
+	const auto command =
+		tr->CreateCommand(std::format("insert or ignore into {}({}, {}, {}) values(?, ?, ?)", tableDescription.table, tableDescription.objId, tableDescription.bookId, tableDescription.additional));
 
 	for (query->Execute(); !query->Eof(); query->Next())
 	{
@@ -313,7 +314,7 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 	Append(db, dump.GetAuthorLinkTable(), *dbReplacement, "AuthorList", dump.GetName());
 }
 
-}
+} // namespace
 
 std::unique_ptr<IDump> Create(const std::filesystem::path& sqlDir, const std::filesystem::path& dbPath, const QString& sourceLib, const std::filesystem::path& replacementPath)
 {
