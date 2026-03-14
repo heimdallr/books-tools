@@ -16,3 +16,6 @@
 [submodule "src/ext/Hypodermic"]
 	path = src/ext/Hypodermic
 	url = git@github.com:heimdallr/Hypodermic.git
+[submodule "src/ext/bit7z"]
+	path = src/ext/bit7z
+	url = git@github.com:heimdallr/bit7z.git
