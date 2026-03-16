@@ -4,12 +4,6 @@
 [submodule "src/ext/foundation"]
 	path = src/ext/foundation
 	url = git@github.com:heimdallr/books-fnd.git
-[submodule "src/ext/MyHomeLib"]
-	path = src/ext/MyHomeLib
-	url = git@github.com:heimdallr/MyHomeLib.git
-[submodule "src/ext/sqlite/sqlite"]
-	path = src/ext/sqlite/sqlite
-	url = git@github.com:heimdallr/sqlite3.git
 [submodule "src/ext/sqlite/sqlite3pp"]
 	path = src/ext/sqlite/sqlite3pp
 	url = git@github.com:heimdallr/sqlite3pp.git

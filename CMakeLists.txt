@@ -69,6 +69,7 @@ find_package(XercesC REQUIRED)
 find_package(ICU REQUIRED)
 find_package(libjxl REQUIRED)
 find_package(cimg REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home/common)
