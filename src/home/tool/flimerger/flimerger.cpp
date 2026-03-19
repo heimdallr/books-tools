@@ -8,6 +8,7 @@
 #include <plog/Appenders/ConsoleAppender.h>
 
 #include "fnd/ScopedCall.h"
+#include "fnd/StrUtil.h"
 
 #include "impl/FileItem.h"
 #include "lib/UniqueFile.h"

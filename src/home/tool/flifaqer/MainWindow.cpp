@@ -11,10 +11,11 @@
 #include <QPlainTextEdit>
 #include <QStyleFactory>
 
+#include "fnd/StrUtil.h"
+
 #include "logging/LogAppender.h"
 #include "util/FunctorExecutionForwarder.h"
 #include "util/GeometryRestorable.h"
-#include "util/StrUtil.h"
 #include "util/language.h"
 
 #include "AppConstant.h"

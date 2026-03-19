@@ -160,12 +160,12 @@ private:
 
 		auto zipFiles = Zip::CreateZipFileController();
 		for (auto&& [fileName, body, time] : data)
-			zipFiles->AddFile(std::move(fileName), std::move(body), std::move(time));
+			zipFiles->AddFile(std::move(fileName), body, std::move(time));
 
 		Zip zip(outputFileName, Zip::Format::Zip);
 		zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::Ultra));
 		zip.SetProperty(Zip::PropertyId::ThreadsCount, m_settings.maxThreadCount);
-		zip.Write(std::move(zipFiles));
+		zip.Write(*zipFiles);
 
 		PLOGI << "archive " << outputFileName << " done";
 	}

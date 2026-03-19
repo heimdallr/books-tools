@@ -250,7 +250,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 				Zip zip(buffer, Zip::Format::SevenZip);
 				zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 				zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
-				zip.Write(std::move(zipFiles));
+				zip.Write(*zipFiles);
 			}
 
 			QByteArray pictures;
@@ -296,7 +296,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 
 				std::lock_guard zipLock(zipGuard);
 				Zip             zip(buffer, Zip::Format::Zip);
-				zip.Write(std::move(zipFiles));
+				zip.Write(*zipFiles);
 			}
 
 			std::lock_guard lock(archivesGuard);

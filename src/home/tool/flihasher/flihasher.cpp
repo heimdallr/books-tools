@@ -10,12 +10,13 @@
 
 #include <plog/Appenders/ConsoleAppender.h>
 
+#include "fnd/StrUtil.h"
+
 #include "lib/dump/Factory.h"
 #include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/LogConsoleFormatter.h"
-#include "util/StrUtil.h"
 #include "util/bookhash/hashfb2.h"
 #include "util/files.h"
 #include "util/progress.h"

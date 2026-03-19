@@ -17,6 +17,7 @@
 #include <plog/Appenders/ConsoleAppender.h>
 
 #include "fnd/ScopedCall.h"
+#include "fnd/StrUtil.h"
 
 #include "lib/UniqueFile.h"
 #include "lib/archive.h"
@@ -28,7 +29,6 @@
 #include "logging/init.h"
 #include "util/Fb2InpxParser.h"
 #include "util/LogConsoleFormatter.h"
-#include "util/StrUtil.h"
 #include "util/bookhash/hashparser.h"
 #include "util/executor/ThreadPool.h"
 #include "util/language.h"
@@ -131,7 +131,7 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 			m_writer.reset();
 			m_stream.reset();
 			if (m_found)
-				m_zipFiles.AddFile(std::move(m_folder), std::move(m_data));
+				m_zipFiles.AddFile(std::move(m_folder), m_data);
 		}
 
 		void Add(const QString& file, const QStringList& annotation)
@@ -188,7 +188,7 @@ public:
 		Zip zip(zipFileName, ZipDetails::Format::SevenZip);
 		zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
-		zip.Write(std::move(m_zipFiles));
+		zip.Write(*m_zipFiles);
 	}
 
 private: // IAnnotationCollector
@@ -581,7 +581,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 			PLOGW << zipFileInfo.fileName() << ", not all books added: " << counter << " out of " << bookFiles.size();
 
 		if (!file.isEmpty())
-			zipFileController->AddFile(zipFileInfo.completeBaseName() + ".inp", std::move(file), QDateTime::currentDateTime());
+			zipFileController->AddFile(zipFileInfo.completeBaseName() + ".inp", file, QDateTime::currentDateTime());
 
 		totalCounter += counter;
 	}
@@ -605,7 +605,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 
 	{
 		Zip inpx(QString::fromStdWString(inpxFileName), ZipDetails::Format::Zip);
-		inpx.Write(std::move(zipFileController));
+		inpx.Write(*zipFileController);
 	}
 }
 
@@ -670,8 +670,8 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 			);
 			Zip  zip(buffer, Zip::Format::Zip);
 			auto zipFiles = Zip::CreateZipFileController();
-			zipFiles->AddFile(Inpx::REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, std::move(additional));
-			zip.Write(std::move(zipFiles));
+			zipFiles->AddFile(Inpx::REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, additional);
+			zip.Write(*zipFiles);
 		}
 
 		std::lock_guard lock(archivesGuard);
@@ -731,7 +731,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				Zip zip(buffer, Zip::Format::SevenZip);
 				zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 				zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
-				zip.Write(std::move(zipFiles));
+				zip.Write(*zipFiles);
 			}
 
 			std::lock_guard lock(archivesGuard);
@@ -836,7 +836,7 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 			                .toUtf8());
 		}
 
-		zipFiles->AddFile(value.first + ".txt", std::move(data));
+		zipFiles->AddFile(value.first + ".txt", data);
 	});
 
 	PLOGI << "archive contents";
@@ -846,7 +846,7 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
 	zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
-	zip.Write(std::move(zipFiles));
+	zip.Write(*zipFiles);
 }
 
 void ProcessCompilations(const std::filesystem::path& outputFolder, const Archives& archives, const InpDataProvider& inpDataProvider, IAnnotationCollector& annotationCollector)
@@ -865,11 +865,11 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	remove(contentsFile);
 
 	auto zipFiles = Zip::CreateZipFileController();
-	zipFiles->AddFile(Inpx::COMPILATIONS_JSON, std::move(data));
+	zipFiles->AddFile(Inpx::COMPILATIONS_JSON, data);
 
 	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
 	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
-	zip.Write(std::move(zipFiles));
+	zip.Write(*zipFiles);
 }
 
 void CreateReview(const std::filesystem::path& outputFolder, const InpDataProvider& inpDataProvider, const Replacement& replacement)

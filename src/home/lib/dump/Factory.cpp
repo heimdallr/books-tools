@@ -7,13 +7,14 @@
 #include <QDir>
 #include <QRegularExpression>
 
+#include "fnd/StrUtil.h"
+
 #include "database/interface/ICommand.h"
 #include "database/interface/IDatabase.h"
 #include "database/interface/IQuery.h"
 #include "database/interface/ITransaction.h"
 
 #include "database/factory/Factory.h"
-#include "util/StrUtil.h"
 
 #include "IDump.h"
 #include "log.h"

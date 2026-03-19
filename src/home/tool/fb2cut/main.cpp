@@ -884,12 +884,12 @@ private:
 
 		auto zipFiles = Zip::CreateZipFileController();
 		for (auto&& image : images)
-			zipFiles->AddFile(std::move(image.fileName), std::move(image.body), std::move(image.dateTime));
+			zipFiles->AddFile(std::move(image.fileName), image.body, std::move(image.dateTime));
 
 		Zip zip(archiveFileName, Zip::Format::Zip);
 		zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::Ultra));
 		zip.SetProperty(Zip::PropertyId::ThreadsCount, m_maxThreadCount);
-		zip.Write(std::move(zipFiles));
+		zip.Write(*zipFiles);
 
 		images.clear();
 	}
@@ -1018,7 +1018,7 @@ bool ArchiveFb2(const Settings& settings)
 	if (settings.format == Zip::Format::SevenZip)
 		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
 
-	const auto result = zip.Write(std::move(zipFiles));
+	const auto result = zip.Write(*zipFiles);
 	if (result)
 		for (const auto& file : settings.dstDir.entryList({ "*.fb2" }))
 			QFile::remove(settings.dstDir.filePath(file));

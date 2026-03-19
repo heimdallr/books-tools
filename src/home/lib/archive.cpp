@@ -7,7 +7,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
-#include "util/StrUtil.h"
+#include "fnd/StrUtil.h"
+
 #include "util/files.h"
 
 #include "log.h"

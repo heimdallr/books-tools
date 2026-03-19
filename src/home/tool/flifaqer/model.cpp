@@ -13,9 +13,8 @@
 #include <QMessageBox>
 
 #include "fnd/ScopedCall.h"
+#include "fnd/StrUtil.h"
 #include "fnd/algorithm.h"
-
-#include "util/StrUtil.h"
 
 #include "AppConstant.h"
 #include "di_app.h"
