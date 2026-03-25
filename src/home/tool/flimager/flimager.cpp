@@ -372,7 +372,7 @@ bool run(int argc, char* argv[])
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 	const auto                                       settings = ProcessCommandLine(app);
-	Log::LoggingInitializer                          logging(settings.logFileName.toStdWString());
+	Log::LoggingInitializer                          logging(settings.logFileName);
 	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	PLOGI << QString("%1 started").arg(APP_ID);

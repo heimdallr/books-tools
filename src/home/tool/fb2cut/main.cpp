@@ -1323,7 +1323,7 @@ bool run(int argc, char* argv[])
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
 
 	auto                                             settings = ProcessCommandLine(app);
-	Log::LoggingInitializer                          logging(settings.logFileName.toStdWString());
+	Log::LoggingInitializer                          logging(settings.logFileName);
 	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	PLOGI << QString("%1 started").arg(APP_ID);

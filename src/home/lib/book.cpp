@@ -27,7 +27,7 @@ Book Book::FromString(const QString& str)
 		.deleted   = l[8] == "1",
 		.ext       = std::move(l[9]),
 		.date      = std::move(l[10]),
-		.lang      = QString::fromStdWString(GetLanguage(l[11].toLower().toStdWString())),
+		.lang      = GetLanguage(l[11].toLower()).toString(),
 		.rate      = l[12].toDouble(),
 		.rateCount = 1,
 		.keywords  = std::move(l[13]),

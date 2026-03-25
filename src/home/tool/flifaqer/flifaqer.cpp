@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
 		QCoreApplication::setApplicationName(PRODUCT_ID);
 		QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 
-		Log::LoggingInitializer logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID).toStdWString());
+		Log::LoggingInitializer logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID));
 
 		PLOGI << "App started";
 		PLOGI << "Commit hash: " << GIT_HASH;

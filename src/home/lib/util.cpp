@@ -119,7 +119,7 @@ InpData CreateInpData(const IDump& dump)
 							 .deleted   = deleted && *deleted != '0',
 							 .ext       = std::move(type),
 							 .date      = QString::fromUtf8(query.Get<const char*>(10), 10),
-							 .lang      = QString::fromStdWString(GetLanguage(QString(query.Get<const char*>(11)).toLower().toStdWString())),
+							 .lang      = GetLanguage(QString(query.Get<QString>(11)).toLower()).toString(),
 							 .rate      = query.Get<double>(12),
 							 .rateCount = query.Get<int>(13),
 							 .keywords  = query.Get<const char*>(14),

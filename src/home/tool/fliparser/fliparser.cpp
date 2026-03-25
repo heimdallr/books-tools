@@ -599,9 +599,9 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 	}();
 
 	zipFileController->AddFile(Inpx::STRUCTURE_INFO, Inpx::INP_FIELDS_DESCRIPTION, QDateTime::currentDateTime());
-	zipFileController->AddFile(QString::fromStdWString(Inpx::VERSION_INFO), maxTime.toString("yyyyMMdd").toUtf8(), QDateTime::currentDateTime());
+	zipFileController->AddFile(Inpx::VERSION_INFO, maxTime.toString("yyyyMMdd").toUtf8(), QDateTime::currentDateTime());
 	if (!collectionInfo.isEmpty())
-		zipFileController->AddFile(QString::fromStdWString(Inpx::COLLECTION_INFO), collectionInfo.toUtf8(), QDateTime::currentDateTime());
+		zipFileController->AddFile(Inpx::COLLECTION_INFO, collectionInfo.toUtf8(), QDateTime::currentDateTime());
 
 	{
 		Zip inpx(QString::fromStdWString(inpxFileName), ZipDetails::Format::Zip);
@@ -973,7 +973,7 @@ int main(int argc, char* argv[])
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	Log::LoggingInitializer                          logging((parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath).toStdWString());
+	Log::LoggingInitializer                          logging(parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath);
 	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
 	try
