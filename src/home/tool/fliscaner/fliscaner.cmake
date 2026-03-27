@@ -9,6 +9,5 @@
 		logging
 		network
 	QT_PLUGINS
-		qopensslbackend
 		qschannelbackend
 )
