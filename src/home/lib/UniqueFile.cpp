@@ -478,14 +478,14 @@ void UniqueFileStorage::Save(const QString& folder, const bool moveDuplicates)
 	const QDir srcDir     = dstDir.filePath(folder);
 	const QDir duplicates = srcDir.filePath("duplicates");
 	const auto rename     = [&](const QString& fileName) {
-        if (!moveDuplicates)
-            return;
+		if (!moveDuplicates)
+			return;
 
-        if (!duplicates.exists())
-            duplicates.mkpath(".");
+		if (!duplicates.exists())
+			duplicates.mkpath(".");
 
-        [[maybe_unused]] const auto ok = QFile::rename(srcDir.filePath(fileName), duplicates.filePath(fileName));
-        assert(ok);
+		[[maybe_unused]] const auto ok = QFile::rename(srcDir.filePath(fileName), duplicates.filePath(fileName));
+		assert(ok);
 	};
 
 	for (auto&& [hash, newItems] : m_new)

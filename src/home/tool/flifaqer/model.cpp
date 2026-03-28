@@ -60,11 +60,11 @@ QString ToString(const QJsonValue& value)
 	return (value.isNull() || value.isUndefined()) ? QString {}
 	     : value.isString()                        ? value.toString()
 	     : value.isArray()                         ? (value.toArray() | std::views::transform([](const auto& item) {
-                                  return item.toString();
-                              })
-                              | std::ranges::to<QStringList>())
-	                             .join(STRING_SEPARATOR)
-	                       : (assert(false && "unknown type"), QString {});
+								  return item.toString();
+													  })
+	                                                  | std::ranges::to<QStringList>())
+	                                                     .join(STRING_SEPARATOR)
+	                                               : (assert(false && "unknown type"), QString {});
 }
 
 QJsonValue FromString(const QString& value)

@@ -723,8 +723,8 @@ private:
 
 		QProcess   process;
 		QEventLoop eventLoop;
-		const auto args = QStringList() << "-i" << "pipe:0" << "-f" << "mjpeg" << "-vf"
-		                                << QString("scale='min(%1,iw)':min'(%2,ih)':force_original_aspect_ratio=decrease").arg(settings.maxSize.width()).arg(settings.maxSize.height()) << "pipe:1";
+		const auto args           = QStringList() << "-i" << "pipe:0" << "-f" << "mjpeg" << "-vf"
+		                                          << QString("scale='min(%1,iw)':min'(%2,ih)':force_original_aspect_ratio=decrease").arg(settings.maxSize.width()).arg(settings.maxSize.height()) << "pipe:1";
 		const auto ffmpegFileName = QFileInfo(m_settings.ffmpeg).fileName();
 
 		QByteArray fixed;

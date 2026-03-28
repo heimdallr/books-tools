@@ -292,11 +292,11 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 
 	const QRegularExpression expressions[] { QRegularExpression { R"(^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]\s*(.*?)$)" } };
 	const auto               processBrackets = [&](std::vector<QString>& values) {
-        for (const auto& expr : expressions)
-            if (const auto match = expr.match(values.front()); match.hasMatch())
-                values.front() = QString("%1 [%2]%3").arg(match.captured(1), match.captured(2), match.captured(3)).simplified();
+		for (const auto& expr : expressions)
+			if (const auto match = expr.match(values.front()); match.hasMatch())
+				values.front() = QString("%1 [%2]%3").arg(match.captured(1), match.captured(2), match.captured(3)).simplified();
 
-        return false;
+		return false;
 	};
 
 	const auto removeColon = [](std::vector<QString>& author) {

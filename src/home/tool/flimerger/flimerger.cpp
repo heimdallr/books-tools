@@ -275,8 +275,8 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 		return nullptr;
 	});
 	auto images   = Util::Remove::CollectImageFiles(allFiles, outputDir.absolutePath(), [] {
-        return nullptr;
-    });
+		return nullptr;
+	});
 	std::ranges::move(std::move(images), std::inserter(allFiles, allFiles.end()));
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
