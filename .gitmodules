@@ -1,15 +1,15 @@
 [submodule "src/ext/scripts"]
 	path = src/ext/scripts
-	url = git@github.com:heimdallr/scripts.git
+	url = ../scripts.git
 [submodule "src/ext/foundation"]
 	path = src/ext/foundation
-	url = git@github.com:heimdallr/books-fnd.git
+	url = ../books-fnd.git
 [submodule "src/ext/sqlite/sqlite3pp"]
 	path = src/ext/sqlite/sqlite3pp
-	url = git@github.com:heimdallr/sqlite3pp.git
+	url = ../sqlite3pp.git
 [submodule "src/ext/Hypodermic"]
 	path = src/ext/Hypodermic
-	url = git@github.com:heimdallr/Hypodermic.git
+	url = ../Hypodermic.git
 [submodule "src/ext/bit7z"]
 	path = src/ext/bit7z
-	url = git@github.com:heimdallr/bit7z.git
+	url = ../bit7z.git
