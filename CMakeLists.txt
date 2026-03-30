@@ -26,6 +26,15 @@ endif ()
 set(CMAKE_CONFIGURATION_TYPES ${CMAKE_BUILD_TYPE})
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+if (NOT DEFINED 7zip_BIN_DIR)
+	if(${CMAKE_CXX_COMPILER_ID} STREQUAL GNU)
+		set(7zip_BIN_DIR "/usr/lib/7zip" CACHE STRING "Path to 7zip binaries (required)")
+	endif()
+endif()
+if ("${7zip_BIN_DIR}" STREQUAL "")
+	message(FATAL_ERROR "7zip_BIN_DIR is not set. Please provide a value using -D7zip_BIN_DIR='Path/to/7zip/binaries'")
+endif ()
+
 include(${BUILDSCRIPTS_ROOT}/cmake/conan.cmake)
 conan_install(
 	${CMAKE_SOURCE_DIR}/src/home/script/conan
@@ -55,13 +64,14 @@ endif()
 
 set(QtModules Core Gui Widgets Network Svg)
 find_package(Qt${QT_MAJOR_VERSION} REQUIRED COMPONENTS ${QtModules})
-include(QtInstallPaths)
 
 set(BIT7Z_AUTO_FORMAT ON CACHE BOOL "enable auto format support" FORCE)
 set(BIT7Z_USE_NATIVE_STRING ON CACHE BOOL "enable native string" FORCE)
 set(BIT7Z_USE_STD_BYTE ON CACHE BOOL "enable std::byte" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/ext/bit7z)
-set_property(TARGET bit7z PROPERTY FOLDER Foundation/zip)
+if(MSVC)
+	set_property(TARGET bit7z PROPERTY FOLDER Foundation/zip)
+endif()
 
 include(${BUILDSCRIPTS_ROOT}/cmake/target.cmake)
 
@@ -90,7 +100,11 @@ include(${FOUNDATION_ROOT}/platform/platform.cmake)
 file(WRITE "${CMAKE_BINARY_DIR}/var/7z" "${7zip_BIN_DIR}/")
 file(WRITE "${CMAKE_BINARY_DIR}/var/version" ${PRODUCT_VERSION})
 
-add_compile_definitions(PLOG_IMPORT)
+set(PLOG_SHARED_IMPORT PLOG_GLOBAL)
+if(WIN32)
+	set(PLOG_SHARED_IMPORT PLOG_IMPORT)
+endif()
+add_compile_definitions(${PLOG_SHARED_IMPORT})
 add_compile_definitions(UNICODE _UNICODE NOMINMAX _USE_MATH_DEFINES)
 add_compile_definitions(HYPODERMIC_OVERRIDE_CONSTRUCTOR_ARGUMENT_COUNT=32)
 include_directories("src/ext/Hypodermic")
