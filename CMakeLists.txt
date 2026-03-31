@@ -20,7 +20,7 @@ set(PRODUCT_VERSION 2.6.0)
 
 project(FLibraryTools VERSION ${PRODUCT_VERSION})
 
-if ((NOT DEFINED CMAKE_BUILD_TYPE) OR (${CMAKE_BUILD_TYPE} STREQUAL ""))
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
 	set(CMAKE_BUILD_TYPE Debug)
 endif ()
 set(CMAKE_CONFIGURATION_TYPES ${CMAKE_BUILD_TYPE})
@@ -112,3 +112,6 @@ include_directories("src/ext/Hypodermic")
 include("src/ext/sqlite.cmake")
 include("src/home/lib/lib.cmake")
 include("src/home/tool/tool.cmake")
+
+set(CPACK_ARCHIVE_FILE_NAME "${PROJECT_NAME}_setup_${CMAKE_PROJECT_VERSION}")
+INCLUDE(CPack)
