@@ -125,6 +125,6 @@ include("src/home/lib/lib.cmake")
 include("src/home/tool/tool.cmake")
 
 if (DEFINED CPACK_GENERATOR)
-	set(CPACK_ARCHIVE_FILE_NAME "${PROJECT_NAME}_setup_${CMAKE_PROJECT_VERSION}")
+	set(CPACK_ARCHIVE_FILE_NAME "flitools_${CMAKE_PROJECT_VERSION}")
 	INCLUDE(CPack)
 endif()
