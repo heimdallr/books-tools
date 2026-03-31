@@ -529,7 +529,7 @@ void UniqueFileStorage::OnParseStarted(const QString& sourceLib)
 }
 
 bool UniqueFileStorage::OnBookParsed(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
+#define HASH_PARSER_CALLBACK_ITEM(NAME) [[maybe_unused]] QString NAME,
 	HASH_PARSER_CALLBACK_ITEMS_X_MACRO
 #undef HASH_PARSER_CALLBACK_ITEM
 		Util::HashParser::HashImageItem cover,

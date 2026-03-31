@@ -183,7 +183,7 @@ public:
 		PLOGI << "Archive annotations";
 		m_data.reset();
 
-		const auto zipFileName = QString::fromStdWString(m_outputFolder / Inpx::ANNOTATIONS);
+        const auto zipFileName = Platform::PathToString(m_outputFolder / Inpx::ANNOTATIONS);
 		QFile::remove(zipFileName);
 		Zip zip(zipFileName, ZipDetails::Format::SevenZip);
 		zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
@@ -356,7 +356,7 @@ private: // HashParser::IObserver
 				{
 					found.append(
 						QJsonObject {
-							{   Inpx::PART,       std::ssize(idFound) },
+                            {   Inpx::PART,       static_cast<qlonglong>(idFound.size()) },
 							{ Inpx::FOLDER,        it->second->folder },
 							{   Inpx::FILE, it->second->GetFileName() },
                     }
@@ -604,7 +604,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		zipFileController->AddFile(Inpx::COLLECTION_INFO, collectionInfo.toUtf8(), QDateTime::currentDateTime());
 
 	{
-		Zip inpx(QString::fromStdWString(inpxFileName), ZipDetails::Format::Zip);
+        Zip inpx(Platform::PathToString(inpxFileName), ZipDetails::Format::Zip);
 		inpx.Write(*zipFileController);
 	}
 }
@@ -643,7 +643,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	std::vector<std::tuple<QString, QByteArray>> archives;
 
 	threadPool->enqueue([&] {
-		auto             archiveName = QString::fromStdWString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
+        auto             archiveName = Platform::PathToString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 		const ScopedCall logGuard(
 			[&] {
 				PLOGI << archiveName << " started";
@@ -681,7 +681,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	using Data = std::vector<std::tuple<QString, QString, QString, QString, QString>>;
 
 	const auto write = [&](const int year, const int month, Data data) {
-		auto archiveName = QString::fromStdWString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
+        auto archiveName = Platform::PathToString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
 
 		threadPool->enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)]() mutable {
 			size_t           counter = 0;
@@ -843,7 +843,7 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 	const auto contentsFile = outputFolder / Inpx::CONTENTS;
 	remove(contentsFile);
 
-	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
+    Zip zip(Platform::PathToString(contentsFile), Zip::Format::SevenZip);
 	zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
 	zip.Write(*zipFiles);
@@ -867,7 +867,7 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	auto zipFiles = Zip::CreateZipFileController();
 	zipFiles->AddFile(Inpx::COMPILATIONS_JSON, data);
 
-	Zip zip(QString::fromStdWString(contentsFile), Zip::Format::SevenZip);
+    Zip zip(Platform::PathToString(contentsFile), Zip::Format::SevenZip);
 	zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
 	zip.Write(*zipFiles);
 }

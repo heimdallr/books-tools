@@ -60,6 +60,17 @@ if(MSVC)
 		/wd4503	# decorated name length exceeded, name was truncated
 		/bigobj # number of sections exceeded object file format limit
 	)
+else()
+	add_compile_options(
+		-Wall
+		-Wextra
+		-Werror
+		-pedantic
+		-Wno-deprecated-declarations
+		-Wno-virtual-move-assign
+		-Wno-missing-field-initializers
+		-fPIC
+	)
 endif()
 
 set(QtModules Core Gui Widgets Network Svg)
@@ -113,5 +124,7 @@ include("src/ext/sqlite.cmake")
 include("src/home/lib/lib.cmake")
 include("src/home/tool/tool.cmake")
 
-set(CPACK_ARCHIVE_FILE_NAME "${PROJECT_NAME}_setup_${CMAKE_PROJECT_VERSION}")
-INCLUDE(CPack)
+if (DEFINED CPACK_GENERATOR)
+	set(CPACK_ARCHIVE_FILE_NAME "${PROJECT_NAME}_setup_${CMAKE_PROJECT_VERSION}")
+	INCLUDE(CPack)
+endif()

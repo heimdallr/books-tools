@@ -122,7 +122,9 @@ void go(const int argc, char* argv[])
 			Bind(*command, 8, data[8], qOverload<bool*, int>(&QString::toInt));
 			command->Bind(9, data[9].toStdString());
 			if (!command->Execute())
-				PLOGE << "error line: " << counter;
+            {
+                PLOGE << "error line: " << counter;
+            }
 			++counter;
 
 			const auto position        = inp.pos();

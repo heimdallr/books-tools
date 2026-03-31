@@ -90,7 +90,9 @@ void FillTables(DB::IDatabase& db, const std::filesystem::path& path)
 		[[maybe_unused]] const auto ok = tr->CreateCommand(line)->Execute();
 		assert(ok);
 		if (const auto percents = 100 * inp.tellg() / size; percents != currentPercents)
-			LOGI << path.stem().string() << " " << (currentPercents = percents) << "%";
+        {
+            LOGI << path.stem().string() << " " << (currentPercents = percents) << "%";
+        }
 	}
 
 	LOGI << path.stem().string() << " " << 100 << "%";
@@ -113,7 +115,7 @@ std::unique_ptr<IDump> CreateImpl(const std::filesystem::path& sqlDir, const QSt
 	if (const auto it = std::ranges::find_if(
 			LIBRARIES,
 			[&](const auto& item) {
-				return QDir::fromNativeSeparators(QString::fromStdWString(sqlDir)).contains(QString("/%1/").arg(item.first), Qt::CaseInsensitive);
+                return QDir::fromNativeSeparators(Platform::PathToString(sqlDir)).contains(QString("/%1/").arg(item.first), Qt::CaseInsensitive);
 			}
 		);
 	    it != std::end(LIBRARIES))

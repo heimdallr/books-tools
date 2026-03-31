@@ -8,6 +8,7 @@ AddTarget(fliparser	app_console
 		dbfactory
 		lib
 		logging
+		platform
 		util
 		zip
 )
