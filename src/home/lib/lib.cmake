@@ -8,6 +8,7 @@ AddTarget(lib	shared_lib
 	LINK_TARGETS
 		dbfactory
 		logging
+		platform
 		util
 		zip
 )
