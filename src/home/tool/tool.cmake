@@ -1,26 +1,8 @@
-#Да, колхоз. Но я устал
 if (MSVC)
-	set(D)
-	if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
-		set(D d)
-	endif()
-
-	set(QT_BIN_FILES
-		${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}/Qt6Core${D}.dll
-		${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}/Qt6Gui${D}.dll
-		${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}/Qt6Network${D}.dll
-		${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}/Qt6Svg${D}.dll
-		${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}/Qt6Widgets${D}.dll
-	)
-	file(COPY ${QT_BIN_FILES} DESTINATION ${CMAKE_BINARY_DIR}/bin)
-
-	if (${CMAKE_BUILD_TYPE} STREQUAL "Release")
-		install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/imageformats DESTINATION .)
-		install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/platforms DESTINATION .)
-		install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/styles DESTINATION .)
-		install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/tls DESTINATION .)
-		install(FILES ${QT_BIN_FILES} DESTINATION .)
-	endif()
+	#Да, колхоз. Но я устал
+	CopyAndInstallICU(tu dt uc in)
+	CopyAndInstallQt(${QtModules})
+	InstallQtPlugins(imageformats platforms styles tls)
 endif()
 
 file(GLOB sources_list LIST_DIRECTORIES true "${CMAKE_CURRENT_LIST_DIR}/*")

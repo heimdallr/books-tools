@@ -85,6 +85,7 @@ if(MSVC)
 endif()
 
 include(${BUILDSCRIPTS_ROOT}/cmake/target.cmake)
+include(${BUILDSCRIPTS_ROOT}/cmake/sdk.cmake)
 
 find_package(plog REQUIRED)
 find_package(Boost REQUIRED)
