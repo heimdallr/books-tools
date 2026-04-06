@@ -226,7 +226,12 @@ struct Item
 		answer.replace(QRegularExpression(expression), replacement);
 
 	for (const auto& string : item.answer(language).split(STRING_SEPARATOR))
-		answer = answer.arg(string);
+	{
+		auto str = string;
+		str.replace('%', "#PERCENT");
+		answer = answer.arg(str);
+	}
+	answer.replace("#PERCENT", "%");
 
 	for (const auto& child : item.children)
 		answer.replace(QString(R"([q%1])").arg(child->row), recursive ? GetText(profile, language, *child, recursive) : QString("<br><b>+ %1</b>").arg(child->question(language)));
