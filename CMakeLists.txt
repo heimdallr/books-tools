@@ -16,7 +16,7 @@ set(FOUNDATION_ROOT ${EXT_ROOT}/foundation CACHE STRING "FOUNDATION_ROOT")
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-set(PRODUCT_VERSION 2.6.1)
+set(PRODUCT_VERSION 2.6.2)
 
 project(FLibraryTools VERSION ${PRODUCT_VERSION})
 
@@ -113,6 +113,7 @@ include(${FOUNDATION_ROOT}/platformgui/platformgui.cmake)
 
 file(WRITE "${CMAKE_BINARY_DIR}/var/7z" "${7zip_BIN_DIR}/")
 file(WRITE "${CMAKE_BINARY_DIR}/var/version" ${PRODUCT_VERSION})
+file(WRITE "${CMAKE_BINARY_DIR}/var/os" ${CMAKE_HOST_SYSTEM_NAME})
 
 set(PLOG_SHARED_IMPORT PLOG_GLOBAL)
 if(WIN32)
@@ -128,6 +129,6 @@ include("src/home/lib/lib.cmake")
 include("src/home/tool/tool.cmake")
 
 if (DEFINED CPACK_GENERATOR)
-	set(CPACK_ARCHIVE_FILE_NAME "flitools_${CMAKE_PROJECT_VERSION}")
+	set(CPACK_PACKAGE_FILE_NAME "flitools_${CMAKE_PROJECT_VERSION}_${CMAKE_HOST_SYSTEM_NAME}")
 	INCLUDE(CPack)
 endif()

@@ -9,6 +9,7 @@ set start_time=%DATE% %TIME%
 set BUILD_DIR=%~dp0build\%BUILD_TYPE%
 set /p PRODUCT_VERSION=<%BUILD_DIR%\var\version
 set /p SEVEN_ZIP_PATH=<%BUILD_DIR%\var\7z
+set /p OS=<%BUILD_DIR%\var\os
 
 echo building
 cmake --build %BUILD_DIR% --config Release
@@ -23,7 +24,7 @@ rem if %errorlevel% NEQ 0 goto Error
 echo installer creating
 mkdir %~dp0build\installer
 
-%SEVEN_ZIP_PATH%7z a %~dp0build\installer\flitools_%PRODUCT_VERSION%.7z %BUILD_DIR%\flitools
+%SEVEN_ZIP_PATH%7z a %~dp0build\installer\flitools_%PRODUCT_VERSION%_%OS%.7z %BUILD_DIR%\flitools
 
 goto End
 
