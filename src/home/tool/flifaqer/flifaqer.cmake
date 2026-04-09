@@ -17,6 +17,7 @@ AddTarget(fliFAQer	app
 	LINK_TARGETS
 		logging
 		util
+		utilgui
 	QT_PLUGINS
 		qwindows
 		qmodernwindowsstyle

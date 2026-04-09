@@ -15,8 +15,8 @@
 
 #include "logging/LogAppender.h"
 #include "util/FunctorExecutionForwarder.h"
-#include "util/GeometryRestorable.h"
 #include "util/language.h"
+#include "utilgui/GeometryRestorable.h"
 
 #include "AppConstant.h"
 #include "Constant.h"
