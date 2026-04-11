@@ -16,7 +16,11 @@ set(FOUNDATION_ROOT ${EXT_ROOT}/foundation CACHE STRING "FOUNDATION_ROOT")
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-set(PRODUCT_VERSION 2.6.2)
+set(MAJOR_PRODUCT_VERSION 2)
+set(MINOR_PRODUCT_VERSION 6)
+set(BUILD_PRODUCT_VERSION 2)
+
+set(PRODUCT_VERSION ${MAJOR_PRODUCT_VERSION}.${MINOR_PRODUCT_VERSION}.${BUILD_PRODUCT_VERSION})
 
 project(FLibraryTools VERSION ${PRODUCT_VERSION})
 
@@ -61,6 +65,10 @@ if(MSVC)
 		/bigobj # number of sections exceeded object file format limit
 	)
 else()
+	SET(CMAKE_SKIP_BUILD_RPATH FALSE)
+	SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+	SET(CMAKE_INSTALL_RPATH lib)
+
 	add_compile_options(
 		-Wall
 		-Wextra
@@ -129,6 +137,6 @@ include("src/home/lib/lib.cmake")
 include("src/home/tool/tool.cmake")
 
 if (DEFINED CPACK_GENERATOR)
-	set(CPACK_PACKAGE_FILE_NAME "flitools_${CMAKE_PROJECT_VERSION}_${CMAKE_HOST_SYSTEM_NAME}")
+	set(CPACK_PACKAGE_FILE_NAME "flitools-${CMAKE_PROJECT_VERSION}-${CMAKE_HOST_SYSTEM_NAME}")
 	INCLUDE(CPack)
 endif()
