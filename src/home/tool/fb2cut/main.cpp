@@ -140,9 +140,9 @@ void WriteErrorImpl(const QDir& dir, std::mutex& guard, const QString& name, con
 	}
 
 	if (file.write(body) != body.size())
-    {
-        PLOGE << QString("%1 written with errors").arg(filePath);
-    }
+	{
+		PLOGE << QString("%1 written with errors").arg(filePath);
+	}
 }
 
 std::pair<QImage, QString> ToImage(QByteArray& body)
@@ -759,9 +759,9 @@ private:
 
 		auto [image, errorString] = ToImage(fixed);
 		if (!errorString.isEmpty())
-        {
-            PLOGW << errorString;
-        }
+		{
+			PLOGW << errorString;
+		}
 
 		return image;
 	}
@@ -1094,9 +1094,9 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, Util::Progres
 
 	const auto fileCount = progress.GetCount();
 	if (fileCount - currentFileCount != fileListCount)
-    {
-        PLOGE << QString("something strange: %1 files in archive %2 but processed %3").arg(fileListCount).arg(fileInfo.fileName()).arg(fileCount - currentFileCount);
-    }
+	{
+		PLOGE << QString("something strange: %1 files in archive %2 but processed %3").arg(fileListCount).arg(fileInfo.fileName()).arg(fileCount - currentFileCount);
+	}
 
 	const auto resultReport = QString("%1 (%2 of %3 files) processed %4").arg(fileInfo.fileName()).arg(fileCount - currentFileCount).arg(fileListCount).arg(hasError ? "with errors" : "successfully");
 	if (hasError)

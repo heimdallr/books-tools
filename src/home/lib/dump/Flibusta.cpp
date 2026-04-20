@@ -200,7 +200,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 	std::unordered_set<QString> picsFiles;
 	if (const auto picsArchiveName = sqlPath / "lib.a.attached.zip"; exists(picsArchiveName))
 	{
-        pics       = std::make_unique<Zip>(Platform::PathToString(picsArchiveName));
+		pics       = std::make_unique<Zip>(Platform::PathToString(picsArchiveName));
 		auto files = pics->GetFileNameList();
 		std::unordered_set(std::make_move_iterator(std::begin(files)), std::make_move_iterator(std::end(files))).swap(picsFiles);
 	}
@@ -460,7 +460,7 @@ private:
 			if (data.isEmpty())
 				return;
 
-            const auto archiveName = Platform::PathToString(path / std::to_string(id)) + ext;
+			const auto archiveName = Platform::PathToString(path / std::to_string(id)) + ext;
 			if (const auto archivePath = std::filesystem::path(archiveName.toStdWString()); exists(archivePath))
 				remove(archivePath);
 

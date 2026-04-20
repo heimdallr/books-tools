@@ -153,9 +153,9 @@ public:
 			m_queue.emplace(std::move(bookTaskItem));
 		}
 		if (++m_queueSize > 1)
-        {
-            PLOGV << "Queue size: " << m_queueSize;
-        }
+		{
+			PLOGV << "Queue size: " << m_queueSize;
+		}
 
 		m_queueCondition.notify_all();
 	}

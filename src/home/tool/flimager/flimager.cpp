@@ -166,7 +166,7 @@ private:
 
 		Zip zip(outputFileName, Zip::Format::Zip);
 		zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::Ultra));
-        zip.SetProperty(Zip::PropertyId::ThreadsCount, static_cast<qulonglong>(m_settings.maxThreadCount));
+		zip.SetProperty(Zip::PropertyId::ThreadsCount, static_cast<qulonglong>(m_settings.maxThreadCount));
 		zip.Write(*zipFiles);
 
 		PLOGI << "archive " << outputFileName << " done";
@@ -184,9 +184,9 @@ private:
 				int        imageCount      = ++m_imageCount;
 				const auto currentPercents = imageCount * 100 / m_settings.totalImageCount;
 				if (percents != currentPercents || imageCount % 100 == 0)
-                {
-                    PLOGV << QString("%1, %2 (%3) %4%").arg(fileName.last(fileName.length() - m_settings.inputDir.length())).arg(imageCount).arg(m_settings.totalImageCount).arg(currentPercents);
-                }
+				{
+					PLOGV << QString("%1, %2 (%3) %4%").arg(fileName.last(fileName.length() - m_settings.inputDir.length())).arg(imageCount).arg(m_settings.totalImageCount).arg(currentPercents);
+				}
 			});
 
 			const auto imageBody = zip.Read(imageFile)->GetStream().readAll();
