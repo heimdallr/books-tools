@@ -12,4 +12,4 @@
 	url = ../Hypodermic.git
 [submodule "src/ext/bit7z"]
 	path = src/ext/bit7z
-	url = git@github.com:heimdallr/bit7z.git
+	url = ../bit7z.git
