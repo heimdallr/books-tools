@@ -85,6 +85,21 @@ else()
 endif()
 
 set(QtModules Core Gui Widgets Network Svg)
+set(QtPlugins
+	QSvgIcon
+	QGif QICNS QICO QJpeg QSvg QTga QTiff QWbmp QWebp
+	QWindowsIntegration
+)
+if(QT5)
+	list(APPEND QtPlugins
+		QWindowsVistaStyle
+	)
+elseif(QT6)
+	list(APPEND QtPlugins
+		QModernWindowsStyle
+		QTlsBackendCertOnly QSchannelBackend
+	)
+endif()
 find_package(Qt${QT_MAJOR_VERSION} REQUIRED COMPONENTS ${QtModules})
 get_filename_component(QT_ROOT "${Qt${QT_MAJOR_VERSION}_DIR}/../../.." ABSOLUTE)
 
@@ -106,6 +121,10 @@ find_package(ICU REQUIRED)
 find_package(libjxl REQUIRED)
 find_package(cimg REQUIRED)
 find_package(SQLite3 REQUIRED)
+
+CopyAndInstallICU(tu dt uc in)
+CopyAndInstallQtModules(${QtModules})
+CopyAndInstallQtPlugins(${QtPlugins})
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src/home/common)

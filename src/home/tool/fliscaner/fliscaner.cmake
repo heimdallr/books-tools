@@ -8,6 +8,4 @@
 	LINK_TARGETS
 		logging
 		network
-	QT_PLUGINS
-		qschannelbackend
 )

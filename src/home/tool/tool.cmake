@@ -1,10 +1,3 @@
-if (MSVC)
-	#Да, колхоз. Но я устал
-	CopyAndInstallICU(tu dt uc in)
-	CopyAndInstallQt(${QtModules})
-	InstallQtPlugins(imageformats platforms styles tls)
-endif()
-
 file(GLOB sources_list LIST_DIRECTORIES true "${CMAKE_CURRENT_LIST_DIR}/*")
 foreach(dir ${sources_list})
 	if(IS_DIRECTORY ${dir})

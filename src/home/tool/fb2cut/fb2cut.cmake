@@ -14,6 +14,4 @@ AddTarget(fb2cut	app_console
 		logging
 		util
 		zip
-	QT_PLUGINS
-		qwindows
 )

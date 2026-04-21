@@ -10,6 +10,4 @@ AddTarget(flihasher	app_console
 		logging
 		util
 		zip
-	QT_PLUGINS
-		qwindows
 )
