@@ -69,7 +69,7 @@ if(MSVC)
 	)
 else()
 	SET(CMAKE_SKIP_BUILD_RPATH FALSE)
-	SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+        SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 	SET(CMAKE_INSTALL_RPATH lib)
 
 	add_compile_options(
@@ -85,21 +85,32 @@ else()
 endif()
 
 set(QtModules Core Gui Widgets Network Svg)
+if(NOT WIN32)
+        list(APPEND QtModules DBus WaylandClient)
+endif()
+
 set(QtPlugins
 	QSvgIcon
 	QGif QICNS QICO QJpeg QSvg QTga QTiff QWbmp QWebp
-	QWindowsIntegration
+        QTlsBackendCertOnly
 )
-if(QT5)
-	list(APPEND QtPlugins
-		QWindowsVistaStyle
-	)
-elseif(QT6)
-	list(APPEND QtPlugins
-		QModernWindowsStyle
-		QTlsBackendCertOnly QSchannelBackend
-	)
+if(WIN32)
+        list(APPEND QtPlugins
+                QWindowsIntegration
+                QModernWindowsStyle
+                QSchannelBackend
+        )
+else()
+        list(APPEND QtPlugins
+                QWaylandIntegration QXcbIntegration
+                QNetworkManagerNetworkInformation QGlibNetworkInformation QConnManNetworkInformation
+                QGtk3Theme QXdgDesktopPortalTheme
+                QWaylandAdwaitaDecoration QWaylandBradientDecoration
+                DrmEglServerBuffer QWaylandEglClientBuffer ShmServerBuffer
+                QWaylandFullScreenShellV1Integration QWaylandIviShellIntegration QWaylandQtShellIntegration QWaylandWlShellIntegration QWaylandXdgShellIntegration
+        )
 endif()
+
 find_package(Qt${QT_MAJOR_VERSION} REQUIRED COMPONENTS ${QtModules})
 get_filename_component(QT_ROOT "${Qt${QT_MAJOR_VERSION}_DIR}/../../.." ABSOLUTE)
 
