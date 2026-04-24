@@ -17,8 +17,8 @@ void DiInit(Hypodermic::ContainerBuilder& builder, std::shared_ptr<Hypodermic::C
 	builder.registerType<Model>().as<QAbstractItemModel>().singleInstance();
 
 	builder
-		.registerInstanceFactory([](Hypodermic::ComponentContext&) {
-			return std::make_shared<Settings>(COMPANY_ID, APP_ID);
+		.registerInstanceFactory([](Hypodermic::ComponentContext&) -> std::shared_ptr<SettingsFactory::AbstractSettings> {
+			return SettingsFactory::Create(COMPANY_ID, APP_ID);
 		})
 		.as<ISettings>()
 		.singleInstance();
