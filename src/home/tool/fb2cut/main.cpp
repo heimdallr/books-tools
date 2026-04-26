@@ -11,6 +11,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTextCodec>
 #include <QTranslator>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -177,23 +178,28 @@ public:
 			PLOGV << decoder;
 	}
 
-	std::string Decode(const QString& id, const std::string_view src) const
+	QString Decode(const QString& id, const QByteArray& src) const
 	{
-		return GetDecoder(id).Decode(src);
+		return GetDecoder(id)->toUnicode(src);
 	}
 
 private:
-	const ICU::IDecoder& GetDecoder(const QString& id) const
+	const QTextCodec* GetDecoder(const QString& id) const
 	{
 		std::lock_guard lock(m_decodersGuard);
 
 		const auto it = m_decoders.find(id);
-		return *(it != m_decoders.end() ? it->second : m_decoders.try_emplace(id, ICU::IDecoder::Create(id.toStdString().data())).first->second);
+		if (it != m_decoders.end())
+			return it->second;
+
+		const auto codec = QTextCodec::codecForName(id.toUtf8());
+		PLOGI << id << " codec created";
+		return m_decoders.try_emplace(id, codec).first->second;
 	}
 
 private:
-	mutable std::mutex                                      m_decodersGuard;
-	mutable std::unordered_map<QString, ICU::IDecoder::Ptr> m_decoders;
+	mutable std::mutex                                     m_decodersGuard;
+	mutable std::unordered_map<QString, const QTextCodec*> m_decoders;
 };
 
 QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
@@ -228,7 +234,7 @@ QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
 		if (IsOneOf(encoding, "UTF-8", "UTF8"))
 			return inputFileBody;
 
-		auto result = QString::fromStdString(decoder.Decode(encoding, { inputFileBody.data(), static_cast<size_t>(inputFileBody.size()) }));
+		auto result = decoder.Decode(encoding, inputFileBody.data());
 
 		const auto index = result.indexOf("?>") + 2;
 		return index < 2 ? result : R"(<?xml version="1.0" encoding="utf-8"?>)" + result.mid(index);
@@ -377,6 +383,7 @@ public:
 	Worker(
 		const Settings&          settings,
 		QString                  folder,
+		const IEncodingDetector& encodingDetector,
 		std::condition_variable& queueCondition,
 		std::mutex&              queueGuard,
 		DataItems&               queue,
@@ -389,6 +396,7 @@ public:
 	)
 		: m_settings { settings }
 		, m_folder { std::move(folder) }
+		, m_encodingDetector { encodingDetector }
 		, m_queueCondition { queueCondition }
 		, m_queueGuard { queueGuard }
 		, m_queue { queue }
@@ -606,11 +614,12 @@ private:
 			(isCover ? m_covers : m_images).emplace_back(std::move(imageItem));
 		};
 
-		if (!Fb2ImageParser::Parse(input, std::move(binaryCallback)))
+		const auto parseResult = Fb2ImageParser::Parse(input, std::move(binaryCallback), m_encodingDetector);
+		if (!parseResult)
 			return {};
 
 		input.seek(0);
-		Fb2Parser::Parse(inputFilePath, input, output, idToNum);
+		Fb2Parser::Parse(inputFilePath, input, output, idToNum, parseResult.encoding);
 		return bodyOutput;
 	}
 
@@ -767,8 +776,9 @@ private:
 	}
 
 private:
-	const Settings& m_settings;
-	const QString   m_folder;
+	const Settings&          m_settings;
+	const QString            m_folder;
+	const IEncodingDetector& m_encodingDetector;
 
 	std::condition_variable& m_queueCondition;
 	std::mutex&              m_queueGuard;
@@ -805,6 +815,7 @@ public:
 	FileProcessor(
 		const Settings&          settings,
 		const QString&           folder,
+		const IEncodingDetector& encodingDetector,
 		std::condition_variable& queueCondition,
 		std::mutex&              queueGuard,
 		const int                poolSize,
@@ -821,7 +832,7 @@ public:
 		, m_imageStatisticsStream { imageStatisticsStream }
 	{
 		for (int i = 0; i < poolSize; ++i)
-			m_workers.push_back(std::make_unique<Worker>(settings, folder, m_queueCondition, m_queueGuard, m_queue, m_fileSystemGuard, m_hasError, m_queueSize, progress, *this, decoder));
+			m_workers.push_back(std::make_unique<Worker>(settings, folder, encodingDetector, m_queueCondition, m_queueGuard, m_queue, m_fileSystemGuard, m_hasError, m_queueSize, progress, *this, decoder));
 	}
 
 public:
@@ -1031,7 +1042,7 @@ bool ArchiveFb2(const Settings& settings)
 	return !result;
 }
 
-bool ProcessArchiveImpl(const QString& archive, Settings settings, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
+bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
 {
 	const QFileInfo fileInfo(archive);
 	settings.dstDir = QDir(settings.dstDir.filePath(fileInfo.completeBaseName()));
@@ -1052,7 +1063,7 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, Util::Progres
 
 		std::condition_variable queueCondition;
 		std::mutex              queueGuard;
-		FileProcessor           fileProcessor(settings, fileInfo.completeBaseName(), queueCondition, queueGuard, maxThreadCount, progress, imageStatisticsStream, decoder);
+		FileProcessor           fileProcessor(settings, fileInfo.completeBaseName(), encodingDetector, queueCondition, queueGuard, maxThreadCount, progress, imageStatisticsStream, decoder);
 
 		while (!fileList.isEmpty())
 		{
@@ -1107,11 +1118,11 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, Util::Progres
 	return hasError;
 }
 
-bool ProcessArchive(const QString& file, const Settings& settings, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
+bool ProcessArchive(const QString& file, const Settings& settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
 {
 	try
 	{
-		return ProcessArchiveImpl(file, settings, progress, imageStatisticsStream, decoder);
+		return ProcessArchiveImpl(file, settings, encodingDetector, progress, imageStatisticsStream, decoder);
 	}
 	catch (const std::exception& ex)
 	{
@@ -1168,12 +1179,13 @@ QStringList ProcessArchives(Settings& settings)
 	}
 
 	const Decoder decoder;
+	const auto    encodingDetector = IEncodingDetector::Create();
 
 	Util::Progress progress(settings.totalFileCount, "repacking fb2 library");
 
 	QStringList failed;
 	for (auto&& file : sorted | std::views::values | std::views::reverse)
-		if (ProcessArchive(file, settings, progress, imageStatisticsStream.get(), decoder))
+		if (ProcessArchive(file, settings, *encodingDetector, progress, imageStatisticsStream.get(), decoder))
 			failed << std::move(file);
 
 	return failed;

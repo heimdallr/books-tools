@@ -8,6 +8,18 @@ class QIODevice;
 namespace HomeCompa::fb2cut
 {
 
+class IEncodingDetector // NOLINT(cppcoreguidelines-special-member-functions)
+{
+public:
+	using Ptr = std::unique_ptr<IEncodingDetector>;
+	static Ptr Create();
+
+public:
+	virtual ~IEncodingDetector() = default;
+
+	virtual const char* Detect(const QString& text) const = 0;
+};
+
 struct Fb2EncodingParser
 {
 	static QString GetEncoding(QIODevice& input);
@@ -15,8 +27,19 @@ struct Fb2EncodingParser
 
 struct Fb2ImageParser
 {
+	struct ParseResult
+	{
+		bool        result   = false;
+		const char* encoding = "utf-8";
+
+		operator bool() const noexcept
+		{
+			return result;
+		}
+	};
+
 	using OnBinaryFound = std::function<void(QString&&, bool isCover, const QByteArray& data)>;
-	static bool Parse(QIODevice& input, OnBinaryFound binaryCallback);
+	static ParseResult Parse(QIODevice& input, OnBinaryFound binaryCallback, const IEncodingDetector& encodingDetector);
 };
 
 struct Fb2Parser
@@ -106,7 +129,7 @@ struct Fb2Parser
 		"col",
 	};
 
-	static void Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId);
+	static void Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding);
 };
 
 } // namespace HomeCompa::fb2cut

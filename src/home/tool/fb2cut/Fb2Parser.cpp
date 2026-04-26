@@ -10,12 +10,14 @@
 #include <QIODevice>
 #include <QRegularExpression>
 #include <QString>
+#include <QTextCodec>
 #include <QTextStream>
 
 #include "fnd/FindPair.h"
 #include "fnd/IsOneOf.h"
 #include "fnd/algorithm.h"
 
+#include "icu/icu.h"
 #include "lib/book.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/XmlAttributes.h"
@@ -99,6 +101,11 @@ public:
 		Parse();
 	}
 
+	const QString& GetText() const noexcept
+	{
+		return m_text;
+	}
+
 private: // Util::SaxParser
 	bool OnStartElement(const QString&, const QString& path, const Util::XmlAttributes& attributes) override
 	{
@@ -155,6 +162,8 @@ private: // Util::SaxParser
 
 	bool OnCharacters([[maybe_unused]] const QString& path, const QString& value) override
 	{
+		m_text.append(' ').append(value);
+
 		if (m_picId.isEmpty())
 			return true;
 
@@ -174,16 +183,17 @@ private:
 	bool    m_isBinary { false };
 	QString m_coverPage;
 	QString m_picId;
+	QString m_text;
 };
 
 class Fb2ParserImpl final : public Util::SaxParser
 {
 public:
-	Fb2ParserImpl(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId)
+	Fb2ParserImpl(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
 		: SaxParser(input, 512)
 		, m_fileName { std::move(fileName) }
 		, m_replaceId { replaceId }
-		, m_writer(output, Util::XmlWriter::Type::Xml, false)
+		, m_writer(output, Util::XmlWriter::Options { .type = Util::XmlWriter::Type::Xml, .indented = false, .encoding = encoding })
 	{
 		Parse();
 		//		assert(m_tags.empty());
@@ -352,6 +362,49 @@ private:
 	bool                                    m_isCustomInfo { false };
 };
 
+class EncodingDetector final : virtual public IEncodingDetector
+{
+	static constexpr auto                            UTF8 = "utf-8";
+	static constexpr std::pair<const char*, uint8_t> ENCODINGS[] {
+#define ITEM(NUM) { "windows-125" #NUM, 1 << (NUM) },
+		ITEM(0) ITEM(1) ITEM(2) ITEM(3) ITEM(4) ITEM(5) ITEM(6)
+#undef ITEM
+	};
+
+private: // IEncodingDetector
+	const char* Detect(const QString& text) const override
+	{
+		qsizetype counters[std::size(ENCODINGS)] {};
+		for (const auto ch : text)
+		{
+			const auto u = ch.unicode();
+			for (const auto i : std::views::iota(uint8_t { 0 }, static_cast<uint8_t>(std::size(ENCODINGS))))
+				if (m_unicodeTable[u] & (uint8_t { 1 } << i))
+					++counters[i];
+		}
+
+		const auto it = std::ranges::max_element(counters);
+		return *it * 6 < 5 * text.size() ? UTF8 : ENCODINGS[std::distance(std::begin(counters), it)].first;
+	}
+
+private:
+	static std::vector<uint8_t> CreateEncodingTable()
+	{
+		std::vector<uint8_t> result(0x10000, 0);
+		const auto           data = std::views::iota(0x0, 0x100) | std::ranges::to<std::vector<char>>();
+		for (const auto& [encoding, bit] : ENCODINGS)
+		{
+			const auto* codec   = QTextCodec::codecForName(encoding);
+			for (const auto ch : codec->toUnicode(data.data(), static_cast<int>(data.size())))
+				result[ch.unicode()] |= bit;
+		}
+		return result;
+	}
+
+private:
+	const std::vector<uint8_t> m_unicodeTable { CreateEncodingTable() };
+};
+
 } // namespace
 
 QString Fb2EncodingParser::GetEncoding(QIODevice& input)
@@ -359,12 +412,12 @@ QString Fb2EncodingParser::GetEncoding(QIODevice& input)
 	return Fb2EncodingParserImpl(input).GetEncoding();
 }
 
-bool Fb2ImageParser::Parse(QIODevice& input, OnBinaryFound binaryCallback)
+Fb2ImageParser::ParseResult Fb2ImageParser::Parse(QIODevice& input, OnBinaryFound binaryCallback, const IEncodingDetector& encodingDetector)
 {
 	try
 	{
 		const Fb2ImageParserImpl parser(input, std::move(binaryCallback));
-		return true;
+		return { .result = true, .encoding = encodingDetector.Detect(parser.GetText()) };
 	}
 	catch (const std::exception& ex)
 	{
@@ -374,10 +427,15 @@ bool Fb2ImageParser::Parse(QIODevice& input, OnBinaryFound binaryCallback)
 	{
 		PLOGE << "unknown error";
 	}
-	return false;
+	return {};
 }
 
-void Fb2Parser::Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId)
+void Fb2Parser::Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
 {
-	[[maybe_unused]] Fb2ParserImpl parser(std::move(fileName), input, output, replaceId);
+	[[maybe_unused]] Fb2ParserImpl parser(std::move(fileName), input, output, replaceId, encoding);
+}
+
+IEncodingDetector::Ptr IEncodingDetector::Create()
+{
+	return std::make_unique<EncodingDetector>();
 }
