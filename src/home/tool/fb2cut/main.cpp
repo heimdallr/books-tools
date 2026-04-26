@@ -11,6 +11,7 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTextCodec>
 #include <QTranslator>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -177,23 +178,28 @@ public:
 			PLOGV << decoder;
 	}
 
-	std::string Decode(const QString& id, const std::string_view src) const
+	QString Decode(const QString& id, const QByteArray& src) const
 	{
-		return GetDecoder(id).Decode(src);
+		return GetDecoder(id)->toUnicode(src);
 	}
 
 private:
-	const ICU::IDecoder& GetDecoder(const QString& id) const
+	const QTextCodec* GetDecoder(const QString& id) const
 	{
 		std::lock_guard lock(m_decodersGuard);
 
 		const auto it = m_decoders.find(id);
-		return *(it != m_decoders.end() ? it->second : m_decoders.try_emplace(id, ICU::IDecoder::Create(id.toStdString().data())).first->second);
+		if (it != m_decoders.end())
+			return it->second;
+
+		const auto codec = QTextCodec::codecForName(id.toUtf8());
+		PLOGI << id << " codec created";
+		return m_decoders.try_emplace(id, codec).first->second;
 	}
 
 private:
-	mutable std::mutex                                      m_decodersGuard;
-	mutable std::unordered_map<QString, ICU::IDecoder::Ptr> m_decoders;
+	mutable std::mutex                                     m_decodersGuard;
+	mutable std::unordered_map<QString, const QTextCodec*> m_decoders;
 };
 
 QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
@@ -228,7 +234,7 @@ QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
 		if (IsOneOf(encoding, "UTF-8", "UTF8"))
 			return inputFileBody;
 
-		auto result = QString::fromStdString(decoder.Decode(encoding, { inputFileBody.data(), static_cast<size_t>(inputFileBody.size()) }));
+		auto result = decoder.Decode(encoding, inputFileBody.data());
 
 		const auto index = result.indexOf("?>") + 2;
 		return index < 2 ? result : R"(<?xml version="1.0" encoding="utf-8"?>)" + result.mid(index);

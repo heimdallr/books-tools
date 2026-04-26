@@ -84,7 +84,7 @@ else()
 	)
 endif()
 
-set(QtModules Core Gui Widgets Network Svg)
+set(QtModules Core Gui Widgets Network Svg Core5Compat)
 if(NOT WIN32)
         list(APPEND QtModules DBus WaylandClient)
 endif()
