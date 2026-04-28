@@ -394,7 +394,7 @@ private:
 		const auto           data = std::views::iota(0x0, 0x100) | std::ranges::to<std::vector<char>>();
 		for (const auto& [encoding, bit] : ENCODINGS)
 		{
-			const auto* codec   = QTextCodec::codecForName(encoding);
+			const auto* codec = QTextCodec::codecForName(encoding);
 			for (const auto ch : codec->toUnicode(data.data(), static_cast<int>(data.size())))
 				result[ch.unicode()] |= bit;
 		}
