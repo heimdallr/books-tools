@@ -186,7 +186,7 @@ constexpr const char* g_commands[] { g_libaannotations, g_libapics,       g_libb
 
 std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData(DB::IDatabase& db, const std::filesystem::path& sqlPath)
 {
-	auto threadPool = std::make_unique<Util::ThreadPool>();
+	Util::ThreadPool threadPool;
 
 	int currentId     = -1;
 	using PictureList = std::set<QString>;
@@ -216,7 +216,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 		auto dataCopy = std::move(data);
 		data          = {};
 
-		threadPool->enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)]() mutable {
+		threadPool.enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)]() mutable {
 			size_t pictureCount = 0;
 
 			const ScopedCall logGuard(
@@ -277,7 +277,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 							if (picBody.isEmpty())
 								PLOGW << fileSplit.join("/") << " is empty";
 							else
-								zipFiles->AddFile(QString("%1/%2").arg(dstFolder, fileSplit.back()), std::move(picBody), pics->GetFileTime(file));
+								zipFiles->AddFile(QString("%1/%2").arg(dstFolder, fileSplit.back()), picBody, pics->GetFileTime(file));
 						}
 					}
 				}
@@ -325,7 +325,7 @@ order by n.nid
 	}
 
 	write(currentId);
-	threadPool.reset();
+	threadPool.wait();
 
 	return archives;
 }
