@@ -217,23 +217,31 @@ private:
 class FileHashParser final : Util::HashParser::IObserver
 {
 public:
-	FileHashParser(Archive& archive, InpDataProvider& inpDataProvider, Replacement& replacement)
-		: m_sourceLib { archive.sourceLib }
-		, m_inpDataProvider { inpDataProvider }
-		, m_replacement { replacement }
-		, m_folderExt { QFileInfo(archive.filePath).suffix().toLower() }
+	struct ParseStorage
 	{
-		QFile file(archive.hashPath);
-		if (!file.open(QIODevice::ReadOnly))
-			throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
-		Util::HashParser::Parse(file, *this);
+		std::reference_wrapper<Archive>                  archive;
+		QByteArray                                       bytes;
+		std::vector<std::pair<BookItem, BookItem>>       replacement;
+		std::vector<std::pair<UniqueFile::Uid, QString>> data;
+
+		using Ptr = std::unique_ptr<ParseStorage>;
+	};
+
+public:
+	explicit FileHashParser(ParseStorage& parseStorage)
+		: m_parseStorage { parseStorage }
+		, m_folderExt { QFileInfo(parseStorage.archive.get().filePath).suffix().toLower() }
+	{
+		QBuffer buffer(&parseStorage.bytes);
+		buffer.open(QIODevice::ReadOnly);
+		Util::HashParser::Parse(buffer, *this);
+		parseStorage.bytes.clear();
 	}
 
 private: // HashParser::IObserver
 	void OnParseStarted(const QString& sourceLib) override
 	{
-		m_sourceLib = sourceLib;
-		m_inpDataProvider.SetSourceLib(sourceLib);
+		m_parseStorage.archive.get().sourceLib = sourceLib;
 	}
 
 	bool OnBookParsed(
@@ -253,18 +261,16 @@ private: // HashParser::IObserver
 
 		UniqueFile::Uid uid { folder, file };
 		if (!originFolder.isEmpty())
-			m_replacement.try_emplace(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
+			m_parseStorage.replacement.emplace_back(std::make_pair(uid.folder, uid.file), std::make_pair(std::move(originFolder), std::move(originFile)));
 
-		m_inpDataProvider.SetFile(uid, std::move(id));
+		m_parseStorage.data.emplace_back(std::move(uid), std::move(id));
 
 		return true;
 	}
 
 private:
-	QString&         m_sourceLib;
-	InpDataProvider& m_inpDataProvider;
-	Replacement&     m_replacement;
-	const QString    m_folderExt;
+	ParseStorage& m_parseStorage;
+	const QString m_folderExt;
 };
 
 class CompilationHandler final : Util::HashParser::IObserver
@@ -634,7 +640,7 @@ QByteArray CreateReviewAdditional(const InpDataProvider& inpDataProvider)
 
 std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesystem::path& outputFolder, const InpDataProvider& inpDataProvider, const Replacement& replacement)
 {
-	auto threadPool = std::make_unique<Util::ThreadPool>();
+	Util::ThreadPool threadPool;
 
 	const auto reviewsFolder = outputFolder / Inpx::REVIEWS_FOLDER;
 	QDir(reviewsFolder).mkpath(".");
@@ -642,7 +648,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	std::mutex                                   archivesGuard;
 	std::vector<std::tuple<QString, QByteArray>> archives;
 
-	threadPool->enqueue([&] {
+	threadPool.enqueue([&] {
 		auto             archiveName = Platform::PathToString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 		const ScopedCall logGuard(
 			[&] {
@@ -683,7 +689,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	const auto write = [&](const int year, const int month, Data data) {
 		auto archiveName = Platform::PathToString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
 
-		threadPool->enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)]() mutable {
+		threadPool.enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)]() mutable {
 			size_t           counter = 0;
 			const ScopedCall logGuard(
 				[&] {
@@ -786,7 +792,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 		progress.Increment(1, std::format("{:04}-{:02}", year, month));
 	}
 
-	threadPool.reset();
+	threadPool.wait();
 
 	return archives;
 }
@@ -882,15 +888,46 @@ void CreateReview(const std::filesystem::path& outputFolder, const InpDataProvid
 
 Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 {
-	Replacement    replacement;
-	Util::Progress progress(archives.size(), "parsing");
+	Replacement                                    replacement;
+	std::vector<FileHashParser::ParseStorage::Ptr> storage;
 
-	for (auto& archive : archives | std::views::filter([](const auto& item) {
-							 return !item.hashPath.isEmpty();
-						 }))
 	{
-		const FileHashParser parser(archive, inpDataProvider, replacement);
-		progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
+		Util::Progress progress(archives.size(), "parsing");
+
+		Util::ThreadPool threadPool({ .maxQueueSize = std::thread::hardware_concurrency() });
+
+		for (auto& archive : archives | std::views::filter([](const auto& item) {
+								 return !item.hashPath.isEmpty();
+							 }))
+		{
+			auto& storageItem = storage.emplace_back(std::make_unique<FileHashParser::ParseStorage>(archive));
+
+			{
+				QFile file(archive.hashPath);
+				if (!file.open(QIODevice::ReadOnly))
+					throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
+				storageItem->bytes = file.readAll();
+			}
+
+			threadPool.enqueue([&, storageItem = storageItem.get()] {
+				const FileHashParser parser(*storageItem);
+				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
+			});
+		}
+
+		threadPool.wait();
+	}
+	{
+		Util::Progress progress(storage.size(), "store parsed data");
+
+		for (auto&& storageItem : storage)
+		{
+			std::ranges::move(storageItem->replacement, std::inserter(replacement, replacement.end()));
+			inpDataProvider.SetSourceLib(storageItem->archive.get().sourceLib);
+			for (auto&& [uid, id] : storageItem->data)
+				inpDataProvider.SetFile(uid, std::move(id));
+			progress.Increment(1, QString("%1 (%2)").arg(QFileInfo(storageItem->archive.get().hashPath).fileName()).arg(storageItem->data.size()).toStdString());
+		}
 	}
 
 	return replacement;
