@@ -19,6 +19,7 @@
 #include "logging/init.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/bookhash/hashfb2.h"
+#include "util/executor/ThreadPool.h"
 #include "util/files.h"
 #include "util/progress.h"
 #include "util/xml/Initializer.h"
@@ -53,143 +54,6 @@ struct Options
 	unsigned int maxThreadCount { std::thread::hardware_concurrency() };
 };
 
-class Worker
-{
-	NON_COPY_MOVABLE(Worker)
-
-public:
-	class IObserver // NOLINT(cppcoreguidelines-special-member-functions)
-	{
-	public:
-		virtual ~IObserver()                                       = default;
-		virtual void OnFinished(std::vector<BookHashItem> results) = 0;
-	};
-
-public:
-	Worker(IObserver& observer, std::condition_variable_any& queueCondition, std::mutex& queueGuard, std::queue<BookHashItem>& queue, std::atomic<unsigned int>& queueSize, Progress& progress)
-		: m_observer { observer }
-		, m_queueCondition { queueCondition }
-		, m_queueGuard { queueGuard }
-		, m_queue { queue }
-		, m_queueSize { queueSize }
-		, m_progress { progress }
-	{
-	}
-
-	~Worker()
-	{
-		m_thread = {};
-		m_observer.OnFinished(std::move(m_results));
-	}
-
-private:
-	void Work(std::stop_token stopToken)
-	{
-		QCryptographicHash md5 { QCryptographicHash::Md5 };
-
-		PLOGV << "Worker started";
-		while (!stopToken.stop_requested() || m_queueSize)
-		{
-			auto bookTaskItemOpt = Dequeue(stopToken);
-			if (!bookTaskItemOpt)
-				continue;
-
-			auto& bookTaskItem = *bookTaskItemOpt;
-			ParseFb2Hash(bookTaskItem, md5);
-			const auto& result = m_results.emplace_back(std::move(bookTaskItem));
-
-			m_progress.Increment(1, result.file.toStdString());
-		}
-		PLOGV << "Worker finished";
-	}
-
-	std::optional<BookHashItem> Dequeue(const std::stop_token& stopToken) const
-	{
-		std::unique_lock queueLock(m_queueGuard);
-		m_queueCondition.wait(queueLock, stopToken, [&] {
-			return !m_queue.empty() || stopToken.stop_requested();
-		});
-
-		if (m_queue.empty())
-			return std::nullopt;
-
-		auto bookTaskItem = std::move(m_queue.front());
-		m_queue.pop();
-		--m_queueSize;
-		m_queueCondition.notify_all();
-
-		return bookTaskItem;
-	}
-
-private:
-	IObserver&                   m_observer;
-	std::condition_variable_any& m_queueCondition;
-	std::mutex&                  m_queueGuard;
-	std::queue<BookHashItem>&    m_queue;
-	std::atomic<unsigned int>&   m_queueSize;
-	std::jthread                 m_thread { std::bind_front(&Worker::Work, this) };
-	Progress&                    m_progress;
-	std::vector<BookHashItem>    m_results;
-};
-
-class TaskProcessor final : public Worker::IObserver
-{
-public:
-	TaskProcessor(std::condition_variable_any& queueCondition, std::mutex& queueGuard, const unsigned int poolSize, Progress& progress)
-		: m_queueCondition { queueCondition }
-		, m_queueGuard { queueGuard }
-		, m_workers { std::views::iota(0u, poolSize) | std::views::transform([&](const auto) {
-						  return std::make_unique<Worker>(*this, queueCondition, queueGuard, m_queue, m_queueSize, progress);
-					  })
-		              | std::ranges::to<std::vector<std::unique_ptr<Worker>>>() }
-	{
-	}
-
-public:
-	void Enqueue(BookHashItem bookTaskItem)
-	{
-		{
-			std::unique_lock lock(m_queueGuard);
-			m_queue.emplace(std::move(bookTaskItem));
-		}
-		if (++m_queueSize > 1)
-		{
-			PLOGV << "Queue size: " << m_queueSize;
-		}
-
-		m_queueCondition.notify_all();
-	}
-
-	unsigned int GetQueueSize() const
-	{
-		return m_queueSize;
-	}
-
-	std::vector<BookHashItem>& Wait()
-	{
-		m_workers.clear();
-		PLOGV << "sorting results";
-		std::ranges::sort(m_results, {}, [](const auto& item) {
-			return item.file;
-		});
-		return m_results;
-	}
-
-private: // Worker::IObserver
-	void OnFinished(std::vector<BookHashItem> results) override
-	{
-		std::ranges::move(std::move(results), std::back_inserter(m_results));
-	}
-
-private:
-	std::condition_variable_any&         m_queueCondition;
-	std::mutex&                          m_queueGuard;
-	std::queue<BookHashItem>             m_queue;
-	std::atomic<unsigned int>            m_queueSize { 0 };
-	std::vector<std::unique_ptr<Worker>> m_workers;
-	std::vector<BookHashItem>            m_results;
-};
-
 void ProcessArchive(const Options& options, const QString& filePath, Progress& progress)
 {
 	PLOGI << "process " << filePath;
@@ -203,30 +67,29 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 
 	const auto fileList = bookHashItemProvider.GetFiles();
 
-	std::condition_variable_any queueCondition;
-	std::mutex                  queueGuard;
-	TaskProcessor               processor(queueCondition, queueGuard, std::min(options.maxThreadCount, static_cast<unsigned int>(fileList.size())), progress);
+	std::vector<BookHashItem> bookHashItems;
+	bookHashItems.reserve(static_cast<size_t>(fileList.size()));
 
+	ThreadPool<QCryptographicHash> threadPool({ .threadCount = options.maxThreadCount, .maxQueueSize = static_cast<size_t>(options.maxThreadCount) * 2, .contextGetter = [](size_t) {
+												   return QCryptographicHash { QCryptographicHash::Md5 };
+											   } });
 	for (const auto& file : fileList)
 	{
-		auto bookTaskItem = bookHashItemProvider.Get(file);
-
-		{
-			std::unique_lock lockStart(queueGuard);
-			queueCondition.wait(lockStart, [&]() {
-				return processor.GetQueueSize() < options.maxThreadCount * 2;
-			});
-		}
-
-		processor.Enqueue(std::move(bookTaskItem));
+		auto& bookTaskItem = bookHashItems.emplace_back(bookHashItemProvider.Get(file));
+		threadPool.enqueue([&](QCryptographicHash& md5) {
+			ParseFb2Hash(bookTaskItem, md5);
+			progress.Increment(1, bookTaskItem.file.toStdString());
+		});
 	}
+
+	threadPool.wait();
 
 	XmlWriter  writer(output);
 	const auto booksGuard = writer.Guard("books");
 	booksGuard->WriteAttribute("source", options.sourceLib);
 
 	PLOGV << "writing results";
-	for (const auto& file : processor.Wait())
+	for (const auto& file : bookHashItems)
 	{
 		const auto bookGuard = writer.Guard("book");
 		bookGuard->WriteAttribute("hash", file.parseResult.id)

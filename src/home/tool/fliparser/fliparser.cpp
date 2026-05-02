@@ -224,8 +224,6 @@ public:
 		QByteArray                                       bytes;
 		std::vector<std::pair<BookItem, BookItem>>       replacement;
 		std::vector<std::pair<UniqueFile::Uid, QString>> data;
-
-		using Ptr = std::unique_ptr<ParseStorage>;
 	};
 
 public:
@@ -290,8 +288,6 @@ public:
 		QByteArray                            bytes;
 		std::vector<QJsonObject>              compilations;
 		std::vector<DataItem>                 data;
-
-		using Ptr = std::unique_ptr<ParseStorage>;
 	};
 
 public:
@@ -643,7 +639,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	std::mutex                                   archivesGuard;
 	std::vector<std::tuple<QString, QByteArray>> archives;
 
-	threadPool.enqueue([&] {
+	threadPool.enqueue([&](auto) {
 		auto             archiveName = Platform::PathToString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 		const ScopedCall logGuard(
 			[&] {
@@ -684,7 +680,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	const auto write = [&](const int year, const int month, Data data) {
 		auto archiveName = Platform::PathToString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
 
-		threadPool.enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)]() mutable {
+		threadPool.enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)](auto) mutable {
 			size_t           counter = 0;
 			const ScopedCall logGuard(
 				[&] {
@@ -861,7 +857,8 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	if (sectionToBook.empty())
 		return;
 
-	std::vector<CompilationHandler::ParseStorage::Ptr> storage;
+	std::vector<CompilationHandler::ParseStorage> storage;
+	storage.reserve(archives.size());
 
 	{
 		Util::Progress   progress(archives.size(), "parsing");
@@ -871,17 +868,17 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 									   return !item.hashPath.isEmpty();
 								   }) | std::views::reverse)
 		{
-			auto& storageItem = storage.emplace_back(std::make_unique<CompilationHandler::ParseStorage>(archive));
+			auto& storageItem = storage.emplace_back(archive);
 
 			{
 				QFile file(archive.hashPath);
 				if (!file.open(QIODevice::ReadOnly))
 					throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
-				storageItem->bytes = file.readAll();
+				storageItem.bytes = file.readAll();
 			}
 
-			threadPool.enqueue([&, storageItem = storageItem.get()] {
-				[[maybe_unused]] const CompilationHandler compilationHandler(inpDataProvider, sectionToBook, *storageItem);
+			threadPool.enqueue([&](auto) {
+				[[maybe_unused]] const CompilationHandler compilationHandler(inpDataProvider, sectionToBook, storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});
 		}
@@ -897,15 +894,15 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 		for (auto& storageItem : storage)
 		{
 			annotationCollector.StartFolder();
-			for (const auto& [folder, file, annotation] : storageItem->data)
+			for (const auto& [folder, file, annotation] : storageItem.data)
 				annotationCollector.Add(folder, file, annotation);
 
-			for (auto&& obj : storageItem->compilations)
+			for (auto&& obj : storageItem.compilations)
 				jsonArray.append(std::move(obj));
 
-			progress.Increment(1, QString("%1 (%2, %3)").arg(QFileInfo(storageItem->archive.get().hashPath).fileName()).arg(storageItem->data.size()).arg(storageItem->compilations.size()).toStdString());
-			totalData         += storageItem->data.size();
-			totalCompilations += storageItem->compilations.size();
+			progress.Increment(1, QString("%1 (%2, %3)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.data.size()).arg(storageItem.compilations.size()).toStdString());
+			totalData         += storageItem.data.size();
+			totalCompilations += storageItem.compilations.size();
 		}
 	}
 
@@ -941,8 +938,9 @@ void CreateReview(const std::filesystem::path& outputFolder, const InpDataProvid
 
 Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 {
-	Replacement                                    replacement;
-	std::vector<FileHashParser::ParseStorage::Ptr> storage;
+	Replacement                               replacement;
+	std::vector<FileHashParser::ParseStorage> storage;
+	storage.reserve(archives.size());
 
 	{
 		Util::Progress   progress(archives.size(), "parsing");
@@ -952,17 +950,17 @@ Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 								 return !item.hashPath.isEmpty();
 							 }))
 		{
-			auto& storageItem = storage.emplace_back(std::make_unique<FileHashParser::ParseStorage>(archive));
+			auto& storageItem = storage.emplace_back(archive);
 
 			{
 				QFile file(archive.hashPath);
 				if (!file.open(QIODevice::ReadOnly))
 					throw std::invalid_argument(std::format("Cannot read from {}", archive.hashPath));
-				storageItem->bytes = file.readAll();
+				storageItem.bytes = file.readAll();
 			}
 
-			threadPool.enqueue([&, storageItem = storageItem.get()] {
-				[[maybe_unused]] const FileHashParser parser(*storageItem);
+			threadPool.enqueue([&](auto) {
+				[[maybe_unused]] const FileHashParser parser(storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});
 		}
@@ -974,11 +972,11 @@ Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 
 		for (auto&& storageItem : storage)
 		{
-			std::ranges::move(storageItem->replacement, std::inserter(replacement, replacement.end()));
-			inpDataProvider.SetSourceLib(storageItem->archive.get().sourceLib);
-			for (auto&& [uid, id] : storageItem->data)
+			std::ranges::move(storageItem.replacement, std::inserter(replacement, replacement.end()));
+			inpDataProvider.SetSourceLib(storageItem.archive.get().sourceLib);
+			for (auto&& [uid, id] : storageItem.data)
 				inpDataProvider.SetFile(uid, std::move(id));
-			progress.Increment(1, QString("%1 (%2)").arg(QFileInfo(storageItem->archive.get().hashPath).fileName()).arg(storageItem->data.size()).toStdString());
+			progress.Increment(1, QString("%1 (%2)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.data.size()).toStdString());
 		}
 	}
 

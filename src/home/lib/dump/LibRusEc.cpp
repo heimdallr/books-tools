@@ -225,7 +225,7 @@ left join libseq ls on ls.bid = b.BookID
 left join libseqs s on s.sid = ls.sid
 )");
 
-		PLOGV << "records selection started";
+		PLOGV << GetName() << " records selection started";
 
 		for (query->Execute(); !query->Eof(); query->Next())
 			functor(*query);

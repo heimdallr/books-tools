@@ -216,7 +216,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 		auto dataCopy = std::move(data);
 		data          = {};
 
-		threadPool.enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)]() mutable {
+		threadPool.enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)](auto) mutable {
 			size_t pictureCount = 0;
 
 			const ScopedCall logGuard(
@@ -417,7 +417,7 @@ left join libseqname s on s.SeqID = ls.SeqID
 left join libfilename f on f.BookId=b.BookID
 )");
 
-		PLOGV << "records selection started";
+		PLOGV << GetName() << " records selection started";
 
 		for (query->Execute(); !query->Eof(); query->Next())
 			functor(*query);

@@ -76,7 +76,7 @@ private:
 	std::unordered_map<QString, Book*> m_libIdToBook;
 };
 
-class LIB_EXPORT UniqueFileStorage final : Util::HashParser::IObserver
+class LIB_EXPORT UniqueFileStorage
 {
 	struct Dup
 	{
@@ -129,19 +129,6 @@ public:
 	void                                      Save(const QString& folder, bool moveDuplicates);
 	void                                      SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
 	void                                      SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
-
-private:
-	void OnParseStarted(const QString& sourceLib) override;
-	bool OnBookParsed(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-			Util::HashParser::HashImageItem cover,
-		Util::HashParser::HashImageItems    images,
-		Util::HashParser::Section::Ptr      section,
-		Util::TextHistogram                 textHistogram,
-		QStringList                         annotation
-	) override;
 
 private:
 	const QString                                m_hashDir;
