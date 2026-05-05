@@ -3,6 +3,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+#include "fnd/IsOneOf.h"
+
 #include "database/interface/IQuery.h"
 
 #include "dump/IDump.h"
@@ -76,34 +78,27 @@ InpData CreateInpData(const IDump& dump)
 	dump.CreateInpData([&](const DB::IQuery& query) {
 		QString libId = query.Get<const char*>(7);
 
-		QString type = query.Get<const char*>(9);
-		if (type != "fb2")
-			for (const auto* typoType : { "fd2", "fb", "???", "fb 2", "fbd" })
-				if (type == typoType)
-				{
-					type = "fb2";
-					break;
-				}
-
 		QString fileName = query.Get<const char*>(5);
+		auto    type     = query.Get<QString>(9).toLower();
 
-		auto index = fileName.isEmpty() ? libId + "." + type : fileName;
+		if (fileName.isEmpty())
+		{
+			fileName = libId;
+			if (type != "fb2" && IsOneOf(type, "fd2", "fb", "???", "fb 2"))
+				type = "fb2";
+		}
+		else
+		{
+			const QFileInfo fileInfo(fileName);
+			fileName = fileInfo.completeBaseName();
+			type     = fileInfo.suffix().toLower();
+		}
+
+		auto index = fileName + "." + type;
 
 		auto it = inpData.find(index);
 		if (it == inpData.end())
 		{
-			if (fileName.isEmpty())
-			{
-				fileName = libId;
-			}
-			else
-			{
-				QFileInfo fileInfo(fileName);
-				fileName = fileInfo.completeBaseName();
-				if (const auto ext = fileInfo.suffix().toLower(); ext == "fb2")
-					type = "fb2";
-			}
-
 			const auto* deleted = query.Get<const char*>(8);
 
 			it = inpData
