@@ -48,6 +48,7 @@ QString Book::GetUid() const
 namespace HomeCompa::FliLib
 {
 
+//"AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;INSNO;LANG;LIBRATE;KEYWORDS;YEAR;SOURCELIB"
 QByteArray& operator<<(QByteArray& bytes, const Book& book)
 {
 	const auto rate      = std::llround(book.rate / book.rateCount);
@@ -78,6 +79,8 @@ QByteArray& operator<<(QByteArray& bytes, const Book& book)
 			.append(book.ext.toUtf8())
 			.append('\04')
 			.append(book.date.toUtf8())
+			.append('\04')
+			.append(QString::number(book.insNo).toUtf8())
 			.append('\04')
 			.append(book.lang.toUtf8())
 			.append('\04')

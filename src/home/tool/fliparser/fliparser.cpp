@@ -567,6 +567,8 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				book->series.emplace_back();
 			}
 
+			book->insNo = zip.GetFileIndex(bookFile) + 1;
+
 			file << *book;
 			++counter;
 
