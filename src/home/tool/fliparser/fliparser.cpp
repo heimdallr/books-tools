@@ -62,6 +62,7 @@ constexpr auto SKIP_CONTENTS                = "skip-contents";
 constexpr auto SKIP_REVIEWS                 = "skip-reviews";
 constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
 constexpr auto SKIP_ANNOTATIONS             = "skip-annotations";
+constexpr auto DELETED                      = "deleted";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -77,6 +78,7 @@ struct Settings
 	std::filesystem::path collectionInfoTemplateFile;
 	QString               sourceLib;
 	ptrdiff_t             maxSeriesPerBook { std::numeric_limits<ptrdiff_t>::max() };
+	bool                  isDeleted { false };
 };
 
 struct FileInfo
@@ -457,9 +459,9 @@ Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, c
 	);
 }
 
-Book ParseFile(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime, const QString& originBaseName = {}, const QString& originSuffix = {})
+Book ParseFile(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime, const bool isDeleted, const QString& originBaseName = {}, const QString& originSuffix = {})
 {
-	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, true).line);
+	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, isDeleted).line);
 	if (!originBaseName.isEmpty())
 		parsedBook.libId = parsedBook.file = originBaseName;
 	if (!originSuffix.isEmpty())
@@ -467,39 +469,45 @@ Book ParseFile(const QString& folder, const Zip& zip, const QString& fileName, c
 	return parsedBook;
 }
 
-Book ParseZip(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime)
+Book ParseZip(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime, const bool isDeleted)
 {
 	const Zip  subZip(zip.Read(fileName)->GetStream());
 	const auto subZipFiles = subZip.GetFileNameList();
-	const auto it          = std::ranges::find(subZipFiles, "fbd", [](const QString& item) {
-		return QFileInfo(item).suffix().toLower();
+	if (subZipFiles.size() == 1 && subZipFiles.front().endsWith(".fb2", Qt::CaseInsensitive))
+	{
+		const QFileInfo fileInfo(fileName);
+		return ParseFile(folder, subZip, subZipFiles.front(), zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
+	}
+
+	const auto it = std::ranges::find_if(subZipFiles, [](const QString& item) {
+		return item.endsWith(".fbd", Qt::CaseInsensitive);
 	});
 	if (it == subZipFiles.end())
 		return {};
 
 	const QFileInfo fileInfo(fileName);
-	return ParseFile(folder, subZip, *it, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+	return ParseFile(folder, subZip, *it, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 }
 
-Book ParseFbd(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime)
+Book ParseFbd(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime, const bool isDeleted)
 {
 	const QFileInfo fileInfo(fileName);
 	if (const auto fbdFileName = fileName + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
-		return ParseFile(folder, zip, fbdFileName, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+		return ParseFile(folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 	if (const auto fbdFileName = fileInfo.completeBaseName() + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
-		return ParseFile(folder, zip, fbdFileName, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+		return ParseFile(folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 	return {};
 }
 
-Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime)
+Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, const bool isDeleted)
 {
 	const auto hash = GetFileHash(zip, fileName).hash;
 	PLOGV << "parse " << fileName << ", hash: " << hash;
 
-	Book parsedBook = fileName.endsWith(".fb2", Qt::CaseInsensitive) ? ParseFile(folder, zip, fileName, zipDateTime)
-	                : fileName.endsWith(".zip", Qt::CaseInsensitive) ? ParseZip(folder, zip, fileName, zipDateTime)
+	Book parsedBook = fileName.endsWith(".fb2", Qt::CaseInsensitive) ? ParseFile(folder, zip, fileName, zipDateTime, isDeleted)
+	                : fileName.endsWith(".zip", Qt::CaseInsensitive) ? ParseZip(folder, zip, fileName, zipDateTime, isDeleted)
 	                : fileName.endsWith(".fbd", Qt::CaseInsensitive) ? Book {}
-	                                                                 : ParseFbd(folder, zip, fileName, zipDateTime);
+	                                                                 : ParseFbd(folder, zip, fileName, zipDateTime, isDeleted);
 
 	if (parsedBook.title.isEmpty())
 		return nullptr;
@@ -560,7 +568,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				book = GetBookCustom(bookFile, inpDataProvider, zip, unIndexed);
 				if (!book)
 				{
-					book = ParseBook(bookFile, inpDataProvider, zipFileInfo.fileName(), zip, zipFileInfo.birthTime());
+					book = ParseBook(bookFile, inpDataProvider, zipFileInfo.fileName(), zip, zipFileInfo.birthTime(), settings.isDeleted);
 					if (!book)
 					{
 						PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
@@ -1088,6 +1096,7 @@ int main(int argc, char* argv[])
 			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template", PATH },
 			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
 			{ MAX_SERIES, "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
+			{ DELETED, "Mark books missing from the dump as deleted" },
 			{ SKIP_CONTENTS, "Skip contents" },
 			{ SKIP_REVIEWS, "Skip size readers reviews" },
 			{ SKIP_COMPILATIONS, "Skip compilations info" },
@@ -1120,6 +1129,8 @@ int main(int argc, char* argv[])
 
 		if (parser.isSet(MAX_SERIES))
 			settings.maxSeriesPerBook = parser.value(MAX_SERIES).toLongLong();
+
+		settings.isDeleted = parser.isSet(DELETED);
 
 		auto archives = GetArchives(parser.positionalArguments());
 		Total(archives);
