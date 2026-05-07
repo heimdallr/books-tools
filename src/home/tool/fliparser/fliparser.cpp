@@ -457,15 +457,50 @@ Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, c
 	);
 }
 
+Book ParseFile(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime, const QString& originBaseName = {}, const QString& originSuffix = {})
+{
+	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, true).line);
+	if (!originBaseName.isEmpty())
+		parsedBook.libId = parsedBook.file = originBaseName;
+	if (!originSuffix.isEmpty())
+		parsedBook.ext = originSuffix;
+	return parsedBook;
+}
+
+Book ParseZip(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime)
+{
+	const Zip  subZip(zip.Read(fileName)->GetStream());
+	const auto subZipFiles = subZip.GetFileNameList();
+	const auto it          = std::ranges::find(subZipFiles, "fbd", [](const QString& item) {
+		return QFileInfo(item).suffix().toLower();
+	});
+	if (it == subZipFiles.end())
+		return {};
+
+	const QFileInfo fileInfo(fileName);
+	return ParseFile(folder, subZip, *it, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+}
+
+Book ParseFbd(const QString& folder, const Zip& zip, const QString& fileName, const QDateTime& zipDateTime)
+{
+	const QFileInfo fileInfo(fileName);
+	if (const auto fbdFileName = fileName + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
+		return ParseFile(folder, zip, fbdFileName, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+	if (const auto fbdFileName = fileInfo.completeBaseName() + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
+		return ParseFile(folder, zip, fbdFileName, zipDateTime, fileInfo.completeBaseName(), fileInfo.suffix());
+	return {};
+}
+
 Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime)
 {
-	if (!fileName.endsWith(".fb2", Qt::CaseInsensitive))
-		return nullptr;
-
 	const auto hash = GetFileHash(zip, fileName).hash;
 	PLOGV << "parse " << fileName << ", hash: " << hash;
 
-	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, true).line);
+	Book parsedBook = fileName.endsWith(".fb2", Qt::CaseInsensitive) ? ParseFile(folder, zip, fileName, zipDateTime)
+	                : fileName.endsWith(".zip", Qt::CaseInsensitive) ? ParseZip(folder, zip, fileName, zipDateTime)
+	                : fileName.endsWith(".fbd", Qt::CaseInsensitive) ? Book {}
+	                                                                 : ParseFbd(folder, zip, fileName, zipDateTime);
+
 	if (parsedBook.title.isEmpty())
 		return nullptr;
 
