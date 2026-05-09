@@ -32,16 +32,16 @@ struct Book
 	QString             file;
 	QString             size;
 	QString             libId;
-	bool                deleted;
+	bool                deleted { false };
 	QString             ext;
 	QString             date;
 	QString             lang;
-	double              rate;
-	int                 rateCount;
+	double              rate { 0.0 };
+	int                 rateCount { 1 };
 	QString             keywords;
 	QString             year;
 	QString             sourceLib;
-	size_t              insNo;
+	size_t              insNo { 0 };
 
 	QString id;
 	QString folder;

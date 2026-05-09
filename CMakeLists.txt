@@ -154,6 +154,8 @@ include(${FOUNDATION_ROOT}/icu/icu.cmake)
 include(${FOUNDATION_ROOT}/platform/platform.cmake)
 include(${FOUNDATION_ROOT}/platformgui/platformgui.cmake)
 
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/src/home/resources/locales)
+
 file(WRITE "${CMAKE_BINARY_DIR}/var/7z" "${7zip_BIN_DIR}/")
 file(WRITE "${CMAKE_BINARY_DIR}/var/version" ${PRODUCT_VERSION})
 file(WRITE "${CMAKE_BINARY_DIR}/var/os" ${CMAKE_HOST_SYSTEM_NAME})
