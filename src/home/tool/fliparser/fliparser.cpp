@@ -30,6 +30,7 @@
 #include "logging/init.h"
 #include "util/EpubParser.h"
 #include "util/Fb2InpxParser.h"
+#include "util/GenresLocalization.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/bookhash/hashparser.h"
 #include "util/executor/ThreadPool.h"
@@ -65,6 +66,7 @@ constexpr auto SKIP_REVIEWS                 = "skip-reviews";
 constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
 constexpr auto SKIP_ANNOTATIONS             = "skip-annotations";
 constexpr auto DELETED                      = "deleted";
+constexpr auto OUTPUT_INPX                  = "output-inpx";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -570,7 +572,7 @@ Book ParseFbd(
 	const ScopedCall parserNameGuard([&] {
 		parserName = "fbd";
 	});
-	const QFileInfo fileInfo(fileName);
+	const QFileInfo  fileInfo(fileName);
 	if (const auto fbdFileName = fileName + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
 		return ParseFb2(parserName, folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 	if (const auto fbdFileName = fileInfo.completeBaseName() + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
@@ -1282,6 +1284,7 @@ int main(int argc, char* argv[])
 			{ SKIP_COMPILATIONS, "Skip compilations info" },
 			{ SKIP_ANNOTATIONS, "Skip annotations" },
 			{ INPX_ONLY, "Skip all except inpx" },
+			{ OUTPUT_INPX, "Output inpx file", PATH },
     }
 	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -1291,6 +1294,7 @@ int main(int argc, char* argv[])
 	Log::LoggingInitializer                          logging(parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath);
 	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
 	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	Util::GenreFixerInitializer                      genreFixerInitializer;
 	try
 	{
 		PLOGI << QString("%1 started").arg(APP_ID);
