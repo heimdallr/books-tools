@@ -446,17 +446,28 @@ private:
 		m_client.OnWorkFinished(std::move(m_imageStatistics), std::move(m_covers), std::move(m_images));
 	}
 
-	bool ProcessFile(const QString& inputFilePath, const QByteArray& inputFileBody, const QDateTime& dateTime)
+	QByteArray ValidateFileBody(const QString& inputFilePath, const QByteArray& inputFileBody) const
 	{
-		const ScopedCall logGuard([&] {
-			m_progress.Increment(1, inputFilePath.toStdString());
-		});
-		auto             fixedInputFileBody = Decode(m_decoder, inputFileBody);
+		if (!inputFilePath.endsWith(".fb2", Qt::CaseInsensitive))
+			return inputFileBody;
+
+		auto fixedInputFileBody = Decode(m_decoder, inputFileBody);
 		if (const auto errorText = Validate(m_validator, fixedInputFileBody); !errorText.isEmpty())
 		{
 			PLOGW << errorText << " trying to fix";
 			fixedInputFileBody = FixInputFile(fixedInputFileBody);
 		}
+
+		return fixedInputFileBody;
+	}
+
+	bool ProcessFile(const QString& inputFilePath, const QByteArray& inputFileBody, const QDateTime& dateTime)
+	{
+		const ScopedCall logGuard([&] {
+			m_progress.Increment(1, inputFilePath.toStdString());
+		});
+
+		auto fixedInputFileBody = ValidateFileBody(inputFilePath, inputFileBody);
 
 		QBuffer input(&fixedInputFileBody);
 		input.open(QIODevice::ReadOnly);
@@ -467,15 +478,18 @@ private:
 		auto bodyOutput = ParseFile(inputFilePath, input, dateTime);
 
 		if (bodyOutput.isEmpty())
-			return WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), "fb2", inputFileBody), false;
+			return WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), fileInfo.suffix(), inputFileBody), false;
 
-#ifndef NDEBUG
-		WriteError(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2");
-#endif
-		if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
+		if (fileInfo.suffix().compare("fb2", Qt::CaseInsensitive))
 		{
-			WriteError(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, "fb2");
-			return WriteError(fileInfo.completeBaseName(), inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, "fb2"), true;
+#ifndef NDEBUG
+			WriteError(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
+#endif
+			if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
+			{
+				WriteError(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
+				return WriteError(fileInfo.completeBaseName(), inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, fileInfo.suffix()), true;
+			}
 		}
 
 		if (!m_settings.saveFb2)
@@ -499,10 +513,6 @@ private:
 	{
 		const QFileInfo fileInfo(inputFilePath);
 		const auto      completeFileName = fileInfo.completeBaseName();
-
-		QByteArray bodyOutput;
-		QBuffer    output(&bodyOutput);
-		output.open(QIODevice::WriteOnly);
 
 		static constexpr const char* passThruBinTypes[] = { "zip", "rar", "txt", "pdf" };
 
@@ -619,6 +629,10 @@ private:
 			return {};
 
 		input.seek(0);
+
+		QByteArray bodyOutput;
+		QBuffer    output(&bodyOutput);
+		output.open(QIODevice::WriteOnly);
 		Fb2Parser::Parse(inputFilePath, input, output, idToNum, parseResult.encoding);
 		return bodyOutput;
 	}
