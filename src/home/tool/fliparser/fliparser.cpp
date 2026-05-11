@@ -67,6 +67,7 @@ constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
 constexpr auto SKIP_ANNOTATIONS             = "skip-annotations";
 constexpr auto DELETED                      = "deleted";
 constexpr auto OUTPUT_INPX                  = "output-inpx";
+constexpr auto COLLECTION_INFO_DATE_FORMAT  = "collection-info-date-format";
 
 constexpr auto APP_ID = "fliparser";
 
@@ -80,6 +81,8 @@ struct Settings
 {
 	std::filesystem::path outputFolder;
 	std::filesystem::path collectionInfoTemplateFile;
+	std::filesystem::path inpxPath;
+	QString               collectionInfoDateFormat { "yyyy-MM-dd" };
 	QString               sourceLib;
 	ptrdiff_t             maxSeriesPerBook { std::numeric_limits<ptrdiff_t>::max() };
 	bool                  isDeleted { false };
@@ -701,10 +704,6 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		return item.level;
 	};
 
-	const auto inpxFileName = settings.outputFolder / (QFileInfo(archives.front().filePath).dir().dirName() + ".inpx").toStdString();
-	if (exists(inpxFileName))
-		remove(inpxFileName);
-
 	auto      zipFileController = Zip::CreateZipFileController();
 	QDateTime maxTime;
 
@@ -817,10 +816,19 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		if (!QFile::exists(settings.collectionInfoTemplateFile))
 			return {};
 
-		if (QFile file(settings.collectionInfoTemplateFile); file.open(QIODevice::ReadOnly))
-			return QString::fromUtf8(file.readAll()).arg(maxTime.toString("yyyy-MM-dd"), maxTime.toString("yyyyMMdd"));
+		QFile file(settings.collectionInfoTemplateFile);
+		if (!file.open(QIODevice::ReadOnly))
+			return {};
 
-		return {};
+		auto str = QString::fromUtf8(file.readAll());
+		if (str.contains("%1"))
+			str = str.arg(maxTime.toString(settings.collectionInfoDateFormat));
+		if (str.contains("%2"))
+			str = str.arg(maxTime.toString("yyyyMMdd"));
+		if (str.contains("%3"))
+			str = str.arg(totalCounter);
+
+		return str;
 	}();
 
 	zipFileController->AddFile(Inpx::STRUCTURE_INFO, Inpx::INP_FIELDS_DESCRIPTION, QDateTime::currentDateTime());
@@ -829,7 +837,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		zipFileController->AddFile(Inpx::COLLECTION_INFO, collectionInfo.toUtf8(), QDateTime::currentDateTime());
 
 	{
-		Zip inpx(Platform::PathToString(inpxFileName), ZipDetails::Format::Zip);
+		Zip inpx(Platform::PathToString(settings.inpxPath), ZipDetails::Format::Zip);
 		inpx.Write(*zipFileController);
 	}
 }
@@ -1285,6 +1293,7 @@ int main(int argc, char* argv[])
 			{ SKIP_ANNOTATIONS, "Skip annotations" },
 			{ INPX_ONLY, "Skip all except inpx" },
 			{ OUTPUT_INPX, "Output inpx file", PATH },
+			{ COLLECTION_INFO_DATE_FORMAT, "Date format for collection.info", QString("[%1]").arg(settings.collectionInfoDateFormat) },
     }
 	);
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
@@ -1318,6 +1327,23 @@ int main(int argc, char* argv[])
 
 		auto archives = GetArchives(parser.positionalArguments());
 		Total(archives);
+
+		if (parser.isSet(OUTPUT_INPX))
+		{
+			settings.inpxPath = Platform::StringToPath(parser.value(OUTPUT_INPX));
+		}
+		else
+		{
+			const auto outputDir = QFileInfo(archives.front().filePath).dir().dirName();
+			settings.inpxPath    = Platform::StringToPath((outputDir.isEmpty() ? QString("inpx") : outputDir) + ".inpx");
+		}
+		if (!settings.inpxPath.has_parent_path())
+			settings.inpxPath = settings.outputFolder / settings.inpxPath;
+		if (exists(settings.inpxPath))
+			remove(settings.inpxPath);
+
+		if (parser.isSet(COLLECTION_INFO_DATE_FORMAT))
+			settings.collectionInfoDateFormat = parser.value(COLLECTION_INFO_DATE_FORMAT);
 
 		const auto inpDataProvider = std::make_shared<InpDataProvider>(parser.value(DUMP));
 		const auto replacement     = ReadHash(*inpDataProvider, archives);
