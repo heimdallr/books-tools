@@ -20,7 +20,6 @@
 #include <plog/Util.h>
 
 #include "fnd/FindPair.h"
-#include "fnd/IsOneOf.h"
 #include "fnd/NonCopyMovable.h"
 #include "fnd/ScopedCall.h"
 #include "fnd/algorithm.h"
@@ -39,7 +38,7 @@
 #include "util/xml/Initializer.h"
 #include "util/xml/Validator.h"
 
-#include "Fb2Parser.h"
+#include "IParser.h"
 #include "log.h"
 #include "settings.h"
 #include "zip.h"
@@ -85,8 +84,6 @@ constexpr auto PATH        = "path";
 constexpr auto COMMANDLINE = "list of options";
 constexpr auto SIZE        = "size [INT_MAX,INT_MAX]";
 
-const std::vector<QString> FB2_TAGS { std::begin(Fb2Parser::FB2_TAGS), std::end(Fb2Parser::FB2_TAGS) };
-
 struct DataItem
 {
 	QString    fileName;
@@ -119,31 +116,6 @@ struct ImageStatisticsItem
 
 using ImageStatistics = std::vector<ImageStatisticsItem>;
 
-void WriteErrorImpl(const QDir& dir, std::mutex& guard, const QString& name, const QString& ext, const QByteArray& body)
-{
-	std::scoped_lock lock(guard);
-
-	const auto filePath = dir.filePath(QString("error/%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
-	const QDir imgDir   = QFileInfo(filePath).dir();
-	if (!imgDir.exists() && !imgDir.mkpath("."))
-	{
-		PLOGE << QString("Cannot create folder %1").arg(imgDir.path());
-		return;
-	}
-
-	QFile file(filePath);
-	if (!file.open(QIODevice::WriteOnly))
-	{
-		PLOGE << QString("Cannot write to %1").arg(filePath);
-		return;
-	}
-
-	if (file.write(body) != body.size())
-	{
-		PLOGE << QString("%1 written with errors").arg(filePath);
-	}
-}
-
 std::pair<QImage, QString> ToImage(QByteArray& body)
 {
 	QBuffer buffer(&body);
@@ -154,214 +126,6 @@ std::pair<QImage, QString> ToImage(QByteArray& body)
 		result.second = imageReader.errorString();
 
 	return result;
-}
-
-QString Validate(const Util::XmlValidator& validator, QByteArray& body)
-{
-	QBuffer buffer(&body);
-	buffer.open(QIODevice::ReadOnly);
-	return validator.Validate(buffer);
-}
-
-class Decoder
-{
-	NON_COPY_MOVABLE(Decoder)
-
-public:
-	Decoder() = default;
-
-	~Decoder()
-	{
-		for (const auto& decoder : m_decoders | std::views::keys)
-			PLOGV << decoder;
-	}
-
-	QString Decode(const QString& id, const QByteArray& src) const
-	{
-		return GetDecoder(id)->toUnicode(src);
-	}
-
-private:
-	const QTextCodec* GetDecoder(const QString& id) const
-	{
-		std::lock_guard lock(m_decodersGuard);
-
-		const auto it = m_decoders.find(id);
-		if (it != m_decoders.end())
-			return it->second;
-
-		const auto codec = QTextCodec::codecForName(id.toUtf8());
-		PLOGI << id << " codec created";
-		return m_decoders.try_emplace(id, codec).first->second;
-	}
-
-private:
-	mutable std::mutex                                     m_decodersGuard;
-	mutable std::unordered_map<QString, const QTextCodec*> m_decoders;
-};
-
-QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
-{
-	if (inputFileBody.size() < 100)
-		return {};
-
-	auto str = [&]() -> QString {
-		const auto encoding = [&inputFileBody]() -> QString {
-			static constexpr std::pair<const char*, const char*> UTF16[] {
-				{ "\xff\xfe", "UTF16LE" },
-				{ "\xfe\xff", "UTF16BE" },
-			};
-			const auto it = std::ranges::find_if(UTF16, [&](const auto& item) {
-				return inputFileBody.startsWith(item.first);
-			});
-
-			if (it != std::end(UTF16))
-				return it->second;
-
-			QBuffer buf(&inputFileBody);
-			buf.open(QIODevice::ReadOnly);
-			return Fb2EncodingParser::GetEncoding(buf).toUpper();
-		}();
-
-		if (encoding.isEmpty())
-		{
-			PLOGW << "encoding not found";
-			return inputFileBody;
-		}
-
-		if (IsOneOf(encoding, "UTF-8", "UTF8"))
-			return inputFileBody;
-
-		auto result = decoder.Decode(encoding, inputFileBody.data());
-
-		const auto index = result.indexOf("?>") + 2;
-		return index < 2 ? result : R"(<?xml version="1.0" encoding="utf-8"?>)" + result.mid(index);
-	}();
-
-	if (str.isEmpty())
-		return {};
-
-	const auto addEnd = [&](const qsizetype index) {
-		str.resize(index);
-		str.append("</FictionBook>");
-	};
-	if (const auto endIndex = str.indexOf("</FictionBook>"); endIndex > 0)
-	{
-		str.resize(endIndex + 14);
-	}
-	else if (const auto binaryIndex = str.lastIndexOf("<binary"); binaryIndex > 0)
-	{
-		addEnd(binaryIndex);
-	}
-	else if (const auto bodyIndex = str.lastIndexOf("</body>"); bodyIndex > 0)
-	{
-		addEnd(bodyIndex + 7);
-	}
-	return str.toUtf8();
-}
-
-QByteArray FixInputFile(const QByteArray& inputFileBody)
-{
-	auto str = QString::fromUtf8(inputFileBody);
-
-	str.replace(
-		QRegularExpression(R"(<([0-9a-zA-Z]+([0-9a-zA-Z]*[-\._+])*[0-9a-zA-Z]+@[0-9a-zA-Z]+([-\.][0-9a-zA-Z]+)*([0-9a-zA-Z]*[\.])[a-zA-Z]{2,6})>)", QRegularExpression::CaseInsensitiveOption),
-		R"("\1")"
-	);
-	str.replace(QRegularExpression(R"(<section id=n(\d)>)", QRegularExpression::CaseInsensitiveOption), R"(<section id="n\1">)");
-
-	{
-		const QString         customInfo = "custom-info";
-		const QString         br         = "br";
-		constexpr const char* specials[] { "amp;", "apos;", "gt;", "lt;", "quot;" };
-		const auto            index = str.indexOf(R"(?>)");
-		QString               buf   = str.first(index + 3);
-		buf.reserve(str.length());
-		bool lineBreak    = false;
-		bool isCustomInfo = false;
-		for (qsizetype i = buf.length(), sz = str.length(); i < sz; ++i)
-		{
-			const auto ch = str[i];
-
-			if (IsOneOf(ch, '\x0d', '\x0a'))
-			{
-				if (lineBreak)
-					continue;
-
-				buf.append("\x0d\x0a");
-				lineBreak = true;
-				continue;
-			}
-
-			lineBreak = false;
-
-			if (ch == QChar { '&' } && std::ranges::none_of(specials, [&](const char* special) {
-					return QStringView(str.constData() + i + 1, static_cast<qsizetype>(strlen(special))) == special;
-				}))
-			{
-				buf.append("&amp;");
-				continue;
-			}
-
-			if (ch == QChar { '<' } && str[i + 1] != '/')
-			{
-				const auto it = std::ranges::find_if(FB2_TAGS, [&](const QString& tag) {
-					const auto  tagLength = tag.length();
-					QStringView s(str.constData() + i + 1, tagLength);
-					const auto  nextCh = str[i + 1 + tagLength];
-					return s.compare(tag, Qt::CaseInsensitive) == 0 && IsOneOf(nextCh, ' ', '>', '/', '\x0d', '\x0a');
-				});
-				if (!isCustomInfo && it == std::end(FB2_TAGS))
-				{
-					buf.append("&lt;");
-					continue;
-				}
-
-				if (br == *it)
-				{
-					i += 2;
-					continue;
-				}
-
-				if (customInfo == *it)
-					isCustomInfo = true;
-			}
-
-			if (ch == QChar { '>' } && !IsOneOf(str[i - 1], '/', '"'))
-			{
-				const auto it = std::ranges::find_if(FB2_TAGS, [&](const QString& tag) {
-					const auto  tagLength = tag.length();
-					QStringView s(str.constData() + i - tagLength, tagLength);
-					const auto  prevCh = str[i - tagLength - 1];
-					return IsOneOf(prevCh, '<', '/') && s.compare(tag, Qt::CaseInsensitive) == 0;
-				});
-				if (!isCustomInfo && it == std::end(FB2_TAGS))
-				{
-					buf.append("&gt;");
-					continue;
-				}
-
-				if (br == *it)
-					continue;
-
-				if (customInfo == *it)
-					isCustomInfo = false;
-			}
-
-			if (const auto value = ch.unicode(); value >= char16_t { 32 })
-				buf.append(ch);
-			else if (value == '\x0d')
-				buf.append("\x0d\x0a");
-		}
-
-		str = std::move(buf);
-	}
-
-	str.replace(QRegularExpression(R"(</[^a-z]+?>)", QRegularExpression::CaseInsensitiveOption), "");
-	str.replace("<p ", "<p> ");
-	str.replace(" /p>", "</p> ");
-
-	return str.toUtf8();
 }
 
 class Worker
@@ -446,51 +210,21 @@ private:
 		m_client.OnWorkFinished(std::move(m_imageStatistics), std::move(m_covers), std::move(m_images));
 	}
 
-	QByteArray ValidateFileBody(const QString& inputFilePath, const QByteArray& inputFileBody) const
-	{
-		if (!inputFilePath.endsWith(".fb2", Qt::CaseInsensitive))
-			return inputFileBody;
-
-		auto fixedInputFileBody = Decode(m_decoder, inputFileBody);
-		if (const auto errorText = Validate(m_validator, fixedInputFileBody); !errorText.isEmpty())
-		{
-			PLOGW << errorText << " trying to fix";
-			fixedInputFileBody = FixInputFile(fixedInputFileBody);
-		}
-
-		return fixedInputFileBody;
-	}
-
 	bool ProcessFile(const QString& inputFilePath, const QByteArray& inputFileBody, const QDateTime& dateTime)
 	{
 		const ScopedCall logGuard([&] {
 			m_progress.Increment(1, inputFilePath.toStdString());
 		});
 
-		auto fixedInputFileBody = ValidateFileBody(inputFilePath, inputFileBody);
-
-		QBuffer input(&fixedInputFileBody);
-		input.open(QIODevice::ReadOnly);
+		const auto parser = IParser::Create(inputFilePath, inputFileBody, m_encodingDetector, m_decoder, m_validator);
 
 		const QFileInfo fileInfo(inputFilePath);
 		const auto      outputFilePath = m_settings.dstDir.filePath(fileInfo.fileName());
 
-		auto bodyOutput = ParseFile(inputFilePath, input, dateTime);
+		auto bodyOutput = ParseFile(inputFilePath, *parser, dateTime);
 
 		if (bodyOutput.isEmpty())
-			return WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), fileInfo.suffix(), inputFileBody), false;
-
-		if (fileInfo.suffix().compare("fb2", Qt::CaseInsensitive))
-		{
-#ifndef NDEBUG
-			WriteError(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
-#endif
-			if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
-			{
-				WriteError(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
-				return WriteError(fileInfo.completeBaseName(), inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, fileInfo.suffix()), true;
-			}
-		}
+			return WriteErrorFile(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), fileInfo.suffix(), inputFileBody), false;
 
 		if (!m_settings.saveFb2)
 			return false;
@@ -509,7 +243,7 @@ private:
 		return !bodyFile.setFileTime(dateTime, QFile::FileTime::FileBirthTime);
 	}
 
-	QByteArray ParseFile(const QString& inputFilePath, QIODevice& input, const QDateTime& dateTime)
+	QByteArray ParseFile(const QString& inputFilePath, const IParser& parser, const QDateTime& dateTime)
 	{
 		const QFileInfo fileInfo(inputFilePath);
 		const auto      completeFileName = fileInfo.completeBaseName();
@@ -528,7 +262,7 @@ private:
 		};
 
 		std::unordered_map<QString, int> uniqueData;
-		std::unordered_map<QString, int> idToNum;
+		IParser::ImageMapper             idToNum;
 
 		auto binaryCallback = [&](QString&& name, const bool isCover, QByteArray body) {
 			ImageStatisticsItem::PixelSchema pixelSchema = ImageStatisticsItem::PixelSchema::Unknown;
@@ -624,17 +358,7 @@ private:
 			(isCover ? m_covers : m_images).emplace_back(std::move(imageItem));
 		};
 
-		const auto parseResult = Fb2ImageParser::Parse(input, std::move(binaryCallback), m_encodingDetector);
-		if (!parseResult)
-			return {};
-
-		input.seek(0);
-
-		QByteArray bodyOutput;
-		QBuffer    output(&bodyOutput);
-		output.open(QIODevice::WriteOnly);
-		Fb2Parser::Parse(inputFilePath, input, output, idToNum, parseResult.encoding);
-		return bodyOutput;
+		return parser.Parse(std::move(binaryCallback), idToNum);
 	}
 
 	QImage ReadImage(QByteArray& body, const ImageSettings& settings, const QString& imageFile, const char*& fail, const bool needSaveBody) const
@@ -737,7 +461,7 @@ private:
 		PLOGW << errorText;
 		if (needSaveBody)
 		{
-			WriteErrorImpl(m_settings.dstDir, m_fileSystemGuard, file, ext, body);
+			WriteErrorFile(m_settings.dstDir, m_fileSystemGuard, file, ext, body);
 			m_hasError = true;
 		}
 	}

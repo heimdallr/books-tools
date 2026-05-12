@@ -1,21 +1,17 @@
-#include "Fb2Parser.h"
-
 #include <QCryptographicHash>
 
 #include <set>
 #include <stack>
 #include <unordered_set>
 
-#include <QFile>
+#include <QBuffer>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QRegularExpression>
 #include <QString>
-#include <QTextCodec>
-#include <QTextStream>
 
 #include "fnd/FindPair.h"
 #include "fnd/IsOneOf.h"
-#include "fnd/algorithm.h"
 
 #include "icu/icu.h"
 #include "lib/book.h"
@@ -23,6 +19,7 @@
 #include "util/xml/XmlAttributes.h"
 #include "util/xml/XmlWriter.h"
 
+#include "IParser.h"
 #include "log.h"
 
 #include "config/version.h"
@@ -47,58 +44,299 @@ constexpr auto PROGRAM_USED    = "FictionBook/description/document-info/program-
 constexpr auto CUSTOM_INFO = "custom-info";
 constexpr auto BR          = "br";
 
-const std::unordered_set<QString> FB2_TAGS_CACHE { std::begin(Fb2Parser::FB2_TAGS), std::end(Fb2Parser::FB2_TAGS) };
-
-const std::pair<QString, QString> REPLACE_CHAR[] {
-	{  "&lt;",  "<" },
-    {  "&gt;",  ">" },
-    {  "amp;",  "&" },
-    { "apos;",  "'" },
-    { "quot;", "\"" },
+constexpr const char* FB2_TAGS[] {
+	"p",
+	"fictionbook",
+	"description",
+	"body",
+	"binary",
+	"title-info",
+	"src-title-info",
+	"document-info",
+	"publish-info",
+	"custom-info",
+	"genre",
+	"author",
+	"first-name",
+	"last-name",
+	"middle-name",
+	"nickname",
+	"nick-name",
+	"nick",
+	"email",
+	"home-page",
+	"book-title",
+	"annotation",
+	"poem",
+	"cite",
+	"subtitle",
+	"empty-line",
+	"keywords",
+	"date",
+	"coverpage",
+	"image",
+	"lang",
+	"src-lang",
+	"translator",
+	"sequence",
+	"program-used",
+	"src-url",
+	"src-ocr",
+	"id",
+	"version",
+	"history",
+	"book-author",
+	"book-name",
+	"publisher",
+	"city",
+	"year",
+	"isbn",
+	"title",
+	"epigraph",
+	"section",
+	"v",
+	"a",
+	"text-author",
+	"strong",
+	"emphasis",
+	"sub",
+	"sup",
+	"strikethrough",
+	"code",
+	"stanza",
+	"i",
+	"b",
+	"u",
+	"table",
+	"tr",
+	"td",
+	"th",
+	"img",
+	"pre",
+	"style",
+	"center",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"br",
+	"stylesheet",
+	"username",
+	"em",
+	"ol",
+	"li",
+	"col",
 };
 
-class Fb2EncodingParserImpl final : public Util::SaxParser
+const std::unordered_set<QString> FB2_TAGS_CACHE { std::begin(FB2_TAGS), std::end(FB2_TAGS) };
+
+QByteArray FixInputFile(const QByteArray& inputFileBody)
+{
+	auto str = QString::fromUtf8(inputFileBody);
+
+	str.replace(
+		QRegularExpression(R"(<([0-9a-zA-Z]+([0-9a-zA-Z]*[-\._+])*[0-9a-zA-Z]+@[0-9a-zA-Z]+([-\.][0-9a-zA-Z]+)*([0-9a-zA-Z]*[\.])[a-zA-Z]{2,6})>)", QRegularExpression::CaseInsensitiveOption),
+		R"("\1")"
+	);
+	str.replace(QRegularExpression(R"(<section id=n(\d)>)", QRegularExpression::CaseInsensitiveOption), R"(<section id="n\1">)");
+
+	{
+		const QString         customInfo = "custom-info";
+		const QString         br         = "br";
+		constexpr const char* specials[] { "amp;", "apos;", "gt;", "lt;", "quot;" };
+		const auto            index = str.indexOf(R"(?>)");
+		QString               buf   = str.first(index + 3);
+		buf.reserve(str.length());
+		bool lineBreak    = false;
+		bool isCustomInfo = false;
+		for (qsizetype i = buf.length(), sz = str.length(); i < sz; ++i)
+		{
+			const auto ch = str[i];
+
+			if (IsOneOf(ch, '\x0d', '\x0a'))
+			{
+				if (lineBreak)
+					continue;
+
+				buf.append("\x0d\x0a");
+				lineBreak = true;
+				continue;
+			}
+
+			lineBreak = false;
+
+			if (ch == QChar { '&' } && std::ranges::none_of(specials, [&](const char* special) {
+					return QStringView(str.constData() + i + 1, static_cast<qsizetype>(strlen(special))) == special;
+				}))
+			{
+				buf.append("&amp;");
+				continue;
+			}
+
+			if (ch == QChar { '<' } && str[i + 1] != '/')
+			{
+				const auto it = std::ranges::find_if(FB2_TAGS, [&](const QString& tag) {
+					const auto  tagLength = tag.length();
+					QStringView s(str.constData() + i + 1, tagLength);
+					const auto  nextCh = str[i + 1 + tagLength];
+					return s.compare(tag, Qt::CaseInsensitive) == 0 && IsOneOf(nextCh, ' ', '>', '/', '\x0d', '\x0a');
+				});
+				if (!isCustomInfo && it == std::end(FB2_TAGS))
+				{
+					buf.append("&lt;");
+					continue;
+				}
+
+				if (br == *it)
+				{
+					i += 2;
+					continue;
+				}
+
+				if (customInfo == *it)
+					isCustomInfo = true;
+			}
+
+			if (ch == QChar { '>' } && !IsOneOf(str[i - 1], '/', '"'))
+			{
+				const auto it = std::ranges::find_if(FB2_TAGS, [&](const QString& tag) {
+					const auto  tagLength = tag.length();
+					QStringView s(str.constData() + i - tagLength, tagLength);
+					const auto  prevCh = str[i - tagLength - 1];
+					return IsOneOf(prevCh, '<', '/') && s.compare(tag, Qt::CaseInsensitive) == 0;
+				});
+				if (!isCustomInfo && it == std::end(FB2_TAGS))
+				{
+					buf.append("&gt;");
+					continue;
+				}
+
+				if (br == *it)
+					continue;
+
+				if (customInfo == *it)
+					isCustomInfo = false;
+			}
+
+			if (const auto value = ch.unicode(); value >= char16_t { 32 })
+				buf.append(ch);
+			else if (value == '\x0d')
+				buf.append("\x0d\x0a");
+		}
+
+		str = std::move(buf);
+	}
+
+	str.replace(QRegularExpression(R"(</[^a-z]+?>)", QRegularExpression::CaseInsensitiveOption), "");
+	str.replace("<p ", "<p> ");
+	str.replace(" /p>", "</p> ");
+
+	return str.toUtf8();
+}
+
+QByteArray Decode(const Decoder& decoder, QByteArray inputFileBody)
+{
+	if (inputFileBody.size() < 100)
+		return {};
+
+	auto str = [&]() -> QString {
+		const auto encoding = [&inputFileBody]() -> QString {
+			static constexpr std::pair<const char*, const char*> UTF16[] {
+				{ "\xff\xfe", "UTF16LE" },
+				{ "\xfe\xff", "UTF16BE" },
+			};
+			const auto it = std::ranges::find_if(UTF16, [&](const auto& item) {
+				return inputFileBody.startsWith(item.first);
+			});
+
+			if (it != std::end(UTF16))
+				return it->second;
+
+			QBuffer buf(&inputFileBody);
+			buf.open(QIODevice::ReadOnly);
+			return Fb2EncodingParser::GetEncoding(buf).toUpper();
+		}();
+
+		if (encoding.isEmpty())
+		{
+			PLOGW << "encoding not found";
+			return inputFileBody;
+		}
+
+		if (IsOneOf(encoding, "UTF-8", "UTF8"))
+			return inputFileBody;
+
+		auto result = decoder.Decode(encoding, inputFileBody.data());
+
+		const auto index = result.indexOf("?>") + 2;
+		return index < 2 ? result : R"(<?xml version="1.0" encoding="utf-8"?>)" + result.mid(index);
+	}();
+
+	if (str.isEmpty())
+		return {};
+
+	const auto addEnd = [&](const qsizetype index) {
+		str.resize(index);
+		str.append("</FictionBook>");
+	};
+	if (const auto endIndex = str.indexOf("</FictionBook>"); endIndex > 0)
+	{
+		str.resize(endIndex + 14);
+	}
+	else if (const auto binaryIndex = str.lastIndexOf("<binary"); binaryIndex > 0)
+	{
+		addEnd(binaryIndex);
+	}
+	else if (const auto bodyIndex = str.lastIndexOf("</body>"); bodyIndex > 0)
+	{
+		addEnd(bodyIndex + 7);
+	}
+	return str.toUtf8();
+}
+
+QByteArray ValidateFileBody(const QString& inputFilePath, const QByteArray& inputFileBody, const Decoder& decoder, const Util::XmlValidator& validator)
+{
+	if (!inputFilePath.endsWith(".fb2", Qt::CaseInsensitive))
+		return inputFileBody;
+
+	auto fixedInputFileBody = Decode(decoder, inputFileBody);
+	if (const auto errorText = Validate(validator, fixedInputFileBody); !errorText.isEmpty())
+	{
+		PLOGW << errorText << " trying to fix";
+		fixedInputFileBody = FixInputFile(fixedInputFileBody);
+	}
+
+	return fixedInputFileBody;
+}
+
+class Fb2ImageParser final : public Util::SaxParser
 {
 public:
-	explicit Fb2EncodingParserImpl(QIODevice& input)
-		: SaxParser(input)
+	struct ParseResult
 	{
-		Parse();
-	}
+		bool        result   = false;
+		const char* encoding = "utf-8";
 
-	QString GetEncoding() const
-	{
-		return m_encoding;
-	}
+		operator bool() const noexcept
+		{
+			return result;
+		}
+	};
 
-private: // SaxParser
-	bool OnXMLDecl(const QString& /*versionStr*/, const QString& encodingStr, const QString& /*standaloneStr*/, const QString& /*actualEncodingStr*/) override
-	{
-		m_encoding = encodingStr;
-		return false;
-	}
-
-	bool OnFatalError(size_t /*line*/, size_t /*column*/, const QString& text) override
-	{
-		QRegularExpression rx("unable to create converter for '(.+?)' encoding");
-		if (const auto match = rx.match(text); match.hasMatch())
-			m_encoding = match.captured(1);
-
-		return false;
-	}
-
-private:
-	QString m_encoding;
-};
-
-class Fb2ImageParserImpl final : public Util::SaxParser
-{
 public:
-	Fb2ImageParserImpl(QIODevice& input, Fb2ImageParser::OnBinaryFound binaryCallback)
+	static ParseResult Parse(QIODevice& input, IParser::OnBinaryFound binaryCallback, const IEncodingDetector& encodingDetector)
+	{
+		const Fb2ImageParser parser(input, std::move(binaryCallback));
+		return { .result = true, .encoding = encodingDetector.Detect(parser.GetText()) };
+	}
+
+public:
+	Fb2ImageParser(QIODevice& input, IParser::OnBinaryFound binaryCallback)
 		: SaxParser(input, 512)
 		, m_binaryCallback { std::move(binaryCallback) }
 	{
-		Parse();
+		SaxParser::Parse();
 	}
 
 	const QString& GetText() const noexcept
@@ -178,7 +416,7 @@ private: // Util::SaxParser
 	}
 
 private:
-	Fb2ImageParser::OnBinaryFound m_binaryCallback;
+	IParser::OnBinaryFound m_binaryCallback;
 
 	bool    m_isBinary { false };
 	QString m_coverPage;
@@ -186,16 +424,30 @@ private:
 	QString m_text;
 };
 
-class Fb2ParserImpl final : public Util::SaxParser
+const std::pair<QString, QString> REPLACE_CHAR[] {
+	{  "&lt;",  "<" },
+    {  "&gt;",  ">" },
+    {  "amp;",  "&" },
+    { "apos;",  "'" },
+    { "quot;", "\"" },
+};
+
+class Fb2TextParser final : public Util::SaxParser
 {
 public:
-	Fb2ParserImpl(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
+	static void Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
+	{
+		[[maybe_unused]] const Fb2TextParser parser(std::move(fileName), input, output, replaceId, encoding);
+	}
+
+public:
+	Fb2TextParser(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
 		: SaxParser(input, 512)
 		, m_fileName { std::move(fileName) }
 		, m_replaceId { replaceId }
 		, m_writer(output, Util::XmlWriter::Options { .type = Util::XmlWriter::Type::Xml, .indented = false, .encoding = encoding })
 	{
-		Parse();
+		SaxParser::Parse();
 		//		assert(m_tags.empty());
 		if (!m_tags.empty())
 			m_writer.WriteStartElement(QString::number(output.pos()));
@@ -362,80 +614,78 @@ private:
 	bool                                    m_isCustomInfo { false };
 };
 
-class EncodingDetector final : virtual public IEncodingDetector
+class Fb2Parser final : public IParser
 {
-	static constexpr auto                            UTF8 = "utf-8";
-	static constexpr std::pair<const char*, uint8_t> ENCODINGS[] {
-#define ITEM(NUM) { "windows-125" #NUM, 1 << (NUM) },
-		ITEM(0) ITEM(1) ITEM(2) ITEM(3) ITEM(4) ITEM(5) ITEM(6)
-#undef ITEM
-	};
-
-private: // IEncodingDetector
-	const char* Detect(const QString& text) const override
+public:
+	Fb2Parser(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
+		: m_inputFilePath { std::move(inputFilePath) }
+		, m_inputFileBody { std::move(inputFileBody) }
+		, m_encodingDetector { encodingDetector }
+		, m_decoder { decoder }
+		, m_validator(validator)
 	{
-		qsizetype counters[std::size(ENCODINGS)] {};
-		for (const auto ch : text)
-		{
-			const auto u = ch.unicode();
-			for (const auto i : std::views::iota(uint8_t { 0 }, static_cast<uint8_t>(std::size(ENCODINGS))))
-				if (m_unicodeTable[u] & (uint8_t { 1 } << i))
-					++counters[i];
-		}
+	}
 
-		const auto it = std::ranges::max_element(counters);
-		return *it * 6 < 5 * text.size() ? UTF8 : ENCODINGS[std::distance(std::begin(counters), it)].first;
+private: // IParser
+	QByteArray Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) const override
+	{
+		try
+		{
+			auto    fixedInputFileBody = ValidateFileBody(m_inputFilePath, m_inputFileBody, m_decoder, m_validator);
+			QBuffer input(&fixedInputFileBody);
+			input.open(QIODevice::ReadOnly);
+
+			const auto parseResult = Fb2ImageParser::Parse(input, std::move(binaryCallback), m_encodingDetector);
+			if (!parseResult)
+				return {};
+
+			input.seek(0);
+
+			QByteArray bodyOutput;
+			QBuffer    output(&bodyOutput);
+			output.open(QIODevice::WriteOnly);
+			Fb2TextParser::Parse(m_inputFilePath, input, output, idToNum, parseResult.encoding);
+
+			const QFileInfo fileInfo(m_inputFilePath);
+
+#ifndef NDEBUG
+//			WriteErrorFile(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
+#endif
+//			if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
+//			{
+//				WriteErrorFile(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
+//				return WriteErrorFile(fileInfo.completeBaseName(), m_inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, fileInfo.suffix()), true;
+//			}
+
+			return bodyOutput;
+		}
+		catch (const std::exception& ex)
+		{
+			PLOGE << ex.what();
+		}
+		catch (...)
+		{
+			PLOGE << "unknown error";
+		}
+		return {};
 	}
 
 private:
-	static std::vector<uint8_t> CreateEncodingTable()
-	{
-		std::vector<uint8_t> result(0x10000, 0);
-		const auto           data = std::views::iota(0x0, 0x100) | std::ranges::to<std::vector<char>>();
-		for (const auto& [encoding, bit] : ENCODINGS)
-		{
-			const auto* codec = QTextCodec::codecForName(encoding);
-			for (const auto ch : codec->toUnicode(data.data(), static_cast<int>(data.size())))
-				result[ch.unicode()] |= bit;
-		}
-		return result;
-	}
-
-private:
-	const std::vector<uint8_t> m_unicodeTable { CreateEncodingTable() };
+	const QString             m_inputFilePath;
+	QByteArray                m_inputFileBody;
+	const IEncodingDetector&  m_encodingDetector;
+	const Decoder&            m_decoder;
+	const Util::XmlValidator& m_validator;
 };
 
 } // namespace
 
-QString Fb2EncodingParser::GetEncoding(QIODevice& input)
+namespace HomeCompa::fb2cut
 {
-	return Fb2EncodingParserImpl(input).GetEncoding();
+
+std::unique_ptr<IParser> CreateFb2Parser(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
+{
+	return std::make_unique<Fb2Parser>(std::move(inputFilePath), std::move(inputFileBody), encodingDetector, decoder, validator);
 }
 
-Fb2ImageParser::ParseResult Fb2ImageParser::Parse(QIODevice& input, OnBinaryFound binaryCallback, const IEncodingDetector& encodingDetector)
-{
-	try
-	{
-		const Fb2ImageParserImpl parser(input, std::move(binaryCallback));
-		return { .result = true, .encoding = encodingDetector.Detect(parser.GetText()) };
-	}
-	catch (const std::exception& ex)
-	{
-		PLOGE << ex.what();
-	}
-	catch (...)
-	{
-		PLOGE << "unknown error";
-	}
-	return {};
-}
-
-void Fb2Parser::Parse(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
-{
-	[[maybe_unused]] Fb2ParserImpl parser(std::move(fileName), input, output, replaceId, encoding);
-}
-
-IEncodingDetector::Ptr IEncodingDetector::Create()
-{
-	return std::make_unique<EncodingDetector>();
 }
