@@ -6,6 +6,7 @@
 
 #include <QBuffer>
 #include <QCommandLineParser>
+#include <QDirIterator>
 #include <QGuiApplication>
 #include <QImageReader>
 #include <QProcess>
@@ -27,7 +28,6 @@
 #include "jxl/jxl.h"
 #include "lib/ImageItem.h"
 #include "lib/book.h"
-#include "lib/dump/Factory.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/ISettings.h"
@@ -204,7 +204,11 @@ private:
 			if (body.isEmpty())
 				break;
 
-			m_hasError = ProcessFile(name, body, dateTime) || m_hasError;
+			if (ProcessFile(name, body, dateTime))
+			{
+				m_hasError = true;
+				PLOGE << "processed with error: " << name;
+			}
 		}
 
 		m_client.OnWorkFinished(std::move(m_imageStatistics), std::move(m_covers), std::move(m_images));
@@ -216,36 +220,63 @@ private:
 			m_progress.Increment(1, inputFilePath.toStdString());
 		});
 
-		const auto parser = IParser::Create(inputFilePath, inputFileBody, m_encodingDetector, m_decoder, m_validator);
-
 		const QFileInfo fileInfo(inputFilePath);
-		const auto      outputFilePath = m_settings.dstDir.filePath(fileInfo.fileName());
+		const auto      parser = [&]() -> std::unique_ptr<IParser> {
+			QString errorText;
+			try
+			{
+				auto result = IParser::Create(inputFilePath, inputFileBody, m_encodingDetector, m_decoder, m_validator);
+				if (!result)
+				{
+					PLOGD << "no parsers found for " << inputFilePath;
+				}
+				return result;
+			}
+			catch (const std::exception& ex)
+			{
+				errorText = ex.what();
+			}
+			catch (...)
+			{
+				errorText = "unknown error";
+			}
+			WriteError(inputFilePath, inputFileBody, errorText, true, fileInfo.suffix());
+			return {};
+		}();
 
-		auto bodyOutput = ParseFile(inputFilePath, *parser, dateTime);
+		if (!parser)
+			return false;
 
-		if (bodyOutput.isEmpty())
-			return WriteErrorFile(m_settings.dstDir, m_fileSystemGuard, fileInfo.completeBaseName(), fileInfo.suffix(), inputFileBody), false;
+		auto [name, body] = ParseFile(*parser, dateTime);
+
+		if (body.isEmpty())
+			return WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix()), false;
 
 		if (!m_settings.saveFb2)
 			return false;
 
 		std::scoped_lock fileSystemLock(m_fileSystemGuard);
-		QFile            bodyFile(outputFilePath);
+		const auto       outputFilePath = m_settings.dstDir.filePath(name);
+		const QFileInfo  outputFileInfo(outputFilePath);
+		if (auto dir = outputFileInfo.dir(); !dir.exists())
+			dir.mkpath(".");
+
+		QFile bodyFile(outputFilePath);
 		if (!bodyFile.open(QIODevice::WriteOnly))
 		{
 			PLOGW << QString("Cannot write body to %1").arg(outputFilePath);
 			return true;
 		}
 
-		if (bodyFile.write(bodyOutput) != bodyOutput.size())
+		if (bodyFile.write(body) != body.size())
 			return true;
 
 		return !bodyFile.setFileTime(dateTime, QFile::FileTime::FileBirthTime);
 	}
 
-	QByteArray ParseFile(const QString& inputFilePath, const IParser& parser, const QDateTime& dateTime)
+	IParser::OutputFile ParseFile(IParser& parser, const QDateTime& dateTime)
 	{
-		const QFileInfo fileInfo(inputFilePath);
+		const QFileInfo fileInfo(parser.GetInputFileName());
 		const auto      completeFileName = fileInfo.completeBaseName();
 
 		static constexpr const char* passThruBinTypes[] = { "zip", "rar", "txt", "pdf" };
@@ -358,7 +389,22 @@ private:
 			(isCover ? m_covers : m_images).emplace_back(std::move(imageItem));
 		};
 
-		return parser.Parse(std::move(binaryCallback), idToNum);
+		QString errorText;
+		try
+		{
+			return parser.Parse(std::move(binaryCallback), idToNum);
+		}
+		catch (const std::exception& ex)
+		{
+			errorText = ex.what();
+		}
+		catch (...)
+		{
+			errorText = "unknown error";
+		}
+
+		WriteError(fileInfo.filePath(), parser.GetInputFileBody(), errorText, true, fileInfo.suffix());
+		return {};
 	}
 
 	QImage ReadImage(QByteArray& body, const ImageSettings& settings, const QString& imageFile, const char*& fail, const bool needSaveBody) const
@@ -458,7 +504,7 @@ private:
 
 	void WriteError(const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext) const
 	{
-		PLOGW << errorText;
+		PLOGW << file << ": " << errorText;
 		if (needSaveBody)
 		{
 			WriteErrorFile(m_settings.dstDir, m_fileSystemGuard, file, ext, body);
@@ -751,17 +797,27 @@ bool ArchiveFb2(const Settings& settings)
 		return ArchiveFb2External(settings);
 
 	auto zipFiles = Zip::CreateZipFileController();
-	for (const auto& file : settings.dstDir.entryList({ "*.fb2" }))
-		zipFiles->AddFile(settings.dstDir.filePath(file));
+	for (QDirIterator it(settings.dstDir.path(), QStringList() << "*", QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
+	{
+		const auto file = it.next();
+		QFile      stream(file);
+		if (!stream.open(QIODevice::ReadOnly))
+		{
+			PLOGW << "cannot read " << file;
+			return false;
+		}
+
+		zipFiles->AddFile(settings.dstDir.relativeFilePath(file), stream.readAll(), QFileInfo(file).birthTime());
+	}
 
 	if (zipFiles->GetCount() == 0)
 	{
-		PLOGW << "No fb2 files found";
+		PLOGW << "No text files found";
 		return false;
 	}
 
 	const auto dstArchiveFileName = QString("%1.%2").arg(settings.dstDir.path(), Zip::FormatToString(settings.format));
-	PLOGI << "archive " << zipFiles->GetCount() << " fb2: " << dstArchiveFileName;
+	PLOGI << "archive " << dstArchiveFileName << ", total: " << zipFiles->GetCount();
 
 	QFile::remove(dstArchiveFileName);
 
@@ -774,8 +830,7 @@ bool ArchiveFb2(const Settings& settings)
 
 	const auto result = zip.Write(*zipFiles);
 	if (result)
-		for (const auto& file : settings.dstDir.entryList({ "*.fb2" }))
-			QFile::remove(settings.dstDir.filePath(file));
+		QDir(settings.dstDir).removeRecursively();
 
 	return !result;
 }

@@ -13,6 +13,7 @@ AddTarget(fb2cut	app_console
 		fljxl
 		lib
 		logging
+		platform
 		util
 		zip
 )

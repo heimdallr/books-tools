@@ -301,10 +301,12 @@ QByteArray ValidateFileBody(const QString& inputFilePath, const QByteArray& inpu
 		return inputFileBody;
 
 	auto fixedInputFileBody = Decode(decoder, inputFileBody);
-	if (const auto errorText = Validate(validator, fixedInputFileBody); !errorText.isEmpty())
+	if (auto errorText = Validate(validator, fixedInputFileBody); !errorText.isEmpty())
 	{
 		PLOGW << errorText << " trying to fix";
 		fixedInputFileBody = FixInputFile(fixedInputFileBody);
+		if (errorText = Validate(validator, fixedInputFileBody); !errorText.isEmpty())
+			throw std::invalid_argument(errorText.toStdString());
 	}
 
 	return fixedInputFileBody;
@@ -627,47 +629,44 @@ public:
 	}
 
 private: // IParser
-	QByteArray Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) const override
+	OutputFile Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) override
 	{
-		try
-		{
-			auto    fixedInputFileBody = ValidateFileBody(m_inputFilePath, m_inputFileBody, m_decoder, m_validator);
-			QBuffer input(&fixedInputFileBody);
-			input.open(QIODevice::ReadOnly);
+		auto    fixedInputFileBody = ValidateFileBody(m_inputFilePath, m_inputFileBody, m_decoder, m_validator);
+		QBuffer input(&fixedInputFileBody);
+		input.open(QIODevice::ReadOnly);
 
-			const auto parseResult = Fb2ImageParser::Parse(input, std::move(binaryCallback), m_encodingDetector);
-			if (!parseResult)
-				return {};
+		const auto parseResult = Fb2ImageParser::Parse(input, std::move(binaryCallback), m_encodingDetector);
+		if (!parseResult)
+			return {};
 
-			input.seek(0);
+		input.seek(0);
 
-			QByteArray bodyOutput;
-			QBuffer    output(&bodyOutput);
-			output.open(QIODevice::WriteOnly);
-			Fb2TextParser::Parse(m_inputFilePath, input, output, idToNum, parseResult.encoding);
+		QByteArray bodyOutput;
+		QBuffer    output(&bodyOutput);
+		output.open(QIODevice::WriteOnly);
+		Fb2TextParser::Parse(m_inputFilePath, input, output, idToNum, parseResult.encoding);
 
-			const QFileInfo fileInfo(m_inputFilePath);
-
+//			const QFileInfo fileInfo(m_inputFilePath);
 #ifndef NDEBUG
 //			WriteErrorFile(fileInfo.completeBaseName() + "_fix", fixedInputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
 #endif
-//			if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
-//			{
-//				WriteErrorFile(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
-//				return WriteErrorFile(fileInfo.completeBaseName(), m_inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, fileInfo.suffix()), true;
-//			}
+		//			if (const auto errorText = Validate(m_validator, bodyOutput); !errorText.isEmpty())
+		//			{
+		//				WriteErrorFile(fileInfo.completeBaseName() + "_out", bodyOutput, QString("Validation %1 failed: %2").arg(outputFilePath, ""), true, fileInfo.suffix());
+		//				return WriteErrorFile(fileInfo.completeBaseName(), m_inputFileBody, QString("Validation %1 failed: %2").arg(outputFilePath, errorText), true, fileInfo.suffix()), true;
+		//			}
 
-			return bodyOutput;
-		}
-		catch (const std::exception& ex)
-		{
-			PLOGE << ex.what();
-		}
-		catch (...)
-		{
-			PLOGE << "unknown error";
-		}
-		return {};
+		return { .name = m_inputFilePath, .body = std::move(bodyOutput) };
+	}
+
+	const QString& GetInputFileName() const noexcept override
+	{
+		return m_inputFilePath;
+	}
+
+	const QByteArray& GetInputFileBody() const noexcept override
+	{
+		return m_inputFileBody;
 	}
 
 private:
@@ -683,7 +682,8 @@ private:
 namespace HomeCompa::fb2cut
 {
 
-std::unique_ptr<IParser> CreateFb2Parser(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
+std::unique_ptr<IParser>
+create_fb2_parser(QString inputFilePath, QByteArray inputFileBody, QByteArray /*fbdBody*/, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
 {
 	return std::make_unique<Fb2Parser>(std::move(inputFilePath), std::move(inputFileBody), encodingDetector, decoder, validator);
 }

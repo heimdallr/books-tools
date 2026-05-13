@@ -1,21 +1,31 @@
-#include "IParser.h"
-
 #include <QBuffer>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QTextCodec>
 
+#include "fnd/IsOneOf.h"
+#include "fnd/try.h"
+
 #include "util/xml/SaxParser.h"
 #include "util/xml/Validator.h"
 
+#include "IParser.h"
 #include "log.h"
+#include "zip.h"
+#include "platform/FileUtil.h"
+
+#define PARSER_ITEMS_X_MACRO \
+	PARSER_ITEM(fb2)         \
+	PARSER_ITEM(epub)
 
 namespace HomeCompa::fb2cut
 {
 
-std::unique_ptr<IParser>
-CreateFb2Parser(QString /*inputFilePath*/, QByteArray /*inputFileBody*/, const IEncodingDetector& /*encodingDetector*/, const Decoder& /*decoder*/, const Util::XmlValidator& /*validator*/);
+#define PARSER_ITEM(NAME) \
+	std::unique_ptr<IParser> create_##NAME##_parser(QString /*file name*/, QByteArray /*file body*/, QByteArray /*fbd body*/, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
+PARSER_ITEMS_X_MACRO
+#undef PARSER_ITEM
 
 }
 
@@ -24,6 +34,102 @@ using namespace HomeCompa;
 
 namespace
 {
+
+using ParserImpl = std::unique_ptr<IParser> (*)(QString, QByteArray, QByteArray, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
+
+constexpr std::pair<const char*, ParserImpl> PARSERS[] {
+#define PARSER_ITEM(NAME) { "." #NAME, &create_##NAME##_parser },
+	PARSER_ITEMS_X_MACRO
+#undef PARSER_ITEM
+};
+
+struct FoundParser
+{
+	QString     path;
+	QByteArray  body;
+	ParserImpl  parser;
+	QByteArray  fbd;
+	const char* ext;
+};
+
+constexpr const char* NO_PARSE[] = { ".djvu", ".djv", ".pdf", ".txt", ".doc", ".docx", ".htm", ".html", ".chm", ".mobi", ".fbd" };
+
+bool Unparsable(const QString& fileName)
+{
+	return std::ranges::any_of(NO_PARSE, [&](const auto* item) {
+		return fileName.endsWith(item, Qt::CaseInsensitive);
+	});
+}
+
+FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody)
+{
+	inputFilePath = Platform::RemoveIllegalPathCharacters(std::move(inputFilePath));
+	const auto it = std::ranges::find_if(PARSERS, [&](const auto& item) {
+		return inputFilePath.endsWith(item.first, Qt::CaseInsensitive);
+	});
+	if (it != std::end(PARSERS))
+		return { .path = std::move(inputFilePath), .body = std::move(inputFileBody), .parser = it->second, .ext = it->first };
+
+	if (Unparsable(inputFilePath))
+		return {};
+
+	const auto zip = [&]() -> std::unique_ptr<Zip> {
+		try
+		{
+			QBuffer stream(&inputFileBody);
+			stream.open(QIODevice::ReadOnly);
+			return std::make_unique<Zip>(stream);
+		}
+		catch (...)
+		{
+		}
+		return {};
+	}();
+
+	if (!zip)
+		return {};
+
+	const auto zipFileNames = zip->GetFileNameList();
+
+	auto fbd = [&]() -> QByteArray {
+		const auto itFbd = std::ranges::find_if(zipFileNames, [](const auto& item) {
+			return item.endsWith(".fbd", Qt::CaseInsensitive);
+		});
+		if (itFbd == zipFileNames.end())
+			return {};
+
+		try
+		{
+			if (const auto stream = zip->Read(*itFbd))
+				return stream->GetStream().readAll();
+		}
+		catch (...)
+		{
+		}
+		return {};
+	}();
+
+	for (const auto& fileName : zipFileNames | std::views::filter([](const QString& item) {
+									return !Unparsable(item);
+								}))
+	{
+		const auto stream = zip->Read(fileName);
+		if (!stream)
+			continue;
+
+		auto [name, body, parser, _, ext] = FindParserCreator(fileName, stream->GetStream().readAll());
+		if (body.isEmpty())
+			continue;
+
+		inputFilePath = QFileInfo(inputFilePath).completeBaseName();
+		if (!inputFilePath.endsWith(ext))
+			inputFilePath.append(ext);
+
+		return { .path = inputFilePath, .body = std::move(body), .parser = parser, .fbd = std::move(fbd), .ext = ext };
+	}
+
+	return {};
+}
 
 class EncodingDetector final : virtual public IEncodingDetector
 {
@@ -106,7 +212,8 @@ private:
 
 std::unique_ptr<IParser> IParser::Create(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
 {
-	return CreateFb2Parser(std::move(inputFilePath), std::move(inputFileBody), encodingDetector, decoder, validator);
+	auto [name, body, parser, fbd, _] = FindParserCreator(std::move(inputFilePath), std::move(inputFileBody));
+	return body.isEmpty() ? std::unique_ptr<IParser>() : std::invoke(parser, std::move(name), std::move(body), std::move(fbd), encodingDetector, decoder, validator);
 }
 
 IEncodingDetector::Ptr IEncodingDetector::Create()
@@ -168,13 +275,16 @@ void WriteErrorFile(const QDir& dir, std::mutex& guard, const QString& name, con
 {
 	std::scoped_lock lock(guard);
 
-	const auto filePath = dir.filePath(QString("error/%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
-	const QDir imgDir   = QFileInfo(filePath).dir();
-	if (!imgDir.exists() && !imgDir.mkpath("."))
+	auto dstDir = dir;
+	dstDir.cdUp();
+	dstDir = dstDir.filePath(QString("error/%1").arg(dir.dirName()));
+	if (!dstDir.exists() && !dstDir.mkpath("."))
 	{
-		PLOGE << QString("Cannot create folder %1").arg(imgDir.path());
+		PLOGE << QString("Cannot create folder %1").arg(dstDir.path());
 		return;
 	}
+
+	const auto filePath = dstDir.filePath(QString("%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
 
 	QFile file(filePath);
 	if (!file.open(QIODevice::WriteOnly))

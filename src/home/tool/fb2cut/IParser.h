@@ -4,6 +4,8 @@
 #include <memory>
 #include <mutex>
 
+#include <QString>
+
 #include "fnd/NonCopyMovable.h"
 
 class QDir;
@@ -16,8 +18,6 @@ class XmlValidator;
 }
 
 class QIODevice;
-class QByteArray;
-class QString;
 
 namespace HomeCompa::fb2cut
 {
@@ -56,6 +56,12 @@ private:
 class IParser // NOLINT(cppcoreguidelines-special-member-functions)
 {
 public:
+	struct OutputFile
+	{
+		QString    name;
+		QByteArray body;
+	};
+
 	using OnBinaryFound = std::function<void(QString&&, bool isCover, const QByteArray& data)>;
 	using ImageMapper   = std::unordered_map<QString, int>;
 
@@ -65,7 +71,10 @@ public:
 public:
 	virtual ~IParser() = default;
 
-	virtual QByteArray Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) const = 0;
+	virtual OutputFile Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) = 0;
+
+	virtual const QString&    GetInputFileName() const noexcept = 0;
+	virtual const QByteArray& GetInputFileBody() const noexcept = 0;
 };
 
 QString Validate(const Util::XmlValidator& validator, QByteArray& body);
