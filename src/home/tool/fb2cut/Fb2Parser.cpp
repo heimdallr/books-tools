@@ -312,6 +312,35 @@ QByteArray ValidateFileBody(const QString& inputFilePath, const QByteArray& inpu
 	return fixedInputFileBody;
 }
 
+bool CheckImpl(const QString& fileName, QByteArray& inputFileBody)
+{
+	if (fileName.endsWith(".fbd", Qt::CaseInsensitive) || fileName.endsWith(".fbd.fb2", Qt::CaseInsensitive))
+		return false;
+
+	struct Checker : private Util::SaxParser
+	{
+		bool checked { false };
+
+		explicit Checker(QIODevice& input)
+			: SaxParser(input)
+		{
+			Parse();
+		}
+
+	private: // SaxParser
+		bool OnStartElement(const QString&, const QString& path, const Util::XmlAttributes&) override
+		{
+			checked = path == FICTION_BOOK;
+			return false;
+		}
+	};
+
+	QBuffer buffer(&inputFileBody);
+	buffer.open(QIODevice::ReadOnly);
+
+	return Checker(buffer).checked;
+}
+
 class Fb2ImageParser final : public Util::SaxParser
 {
 public:
@@ -620,7 +649,8 @@ class Fb2Parser final : public IParser
 {
 public:
 	Fb2Parser(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
-		: m_inputFilePath { std::move(inputFilePath) }
+		: m_checked { CheckImpl(inputFilePath, inputFileBody) }
+		, m_inputFilePath { std::move(inputFilePath) }
 		, m_inputFileBody { std::move(inputFileBody) }
 		, m_encodingDetector { encodingDetector }
 		, m_decoder { decoder }
@@ -659,6 +689,11 @@ private: // IParser
 		return { .name = m_inputFilePath, .body = std::move(bodyOutput) };
 	}
 
+	bool Check() const override
+	{
+		return m_checked;
+	}
+
 	const QString& GetInputFileName() const noexcept override
 	{
 		return m_inputFilePath;
@@ -670,6 +705,7 @@ private: // IParser
 	}
 
 private:
+	const bool                m_checked;
 	const QString             m_inputFilePath;
 	QByteArray                m_inputFileBody;
 	const IEncodingDetector&  m_encodingDetector;

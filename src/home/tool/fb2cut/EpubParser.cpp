@@ -29,11 +29,29 @@ QByteArray GetImageIndex(const IParser::ImageMapper& idToNum)
 	return QJsonDocument(array).toJson(QJsonDocument::Compact);
 }
 
+bool CheckImpl(QByteArray& inputFileBody)
+{
+	try
+	{
+		QBuffer buffer(&inputFileBody);
+		buffer.open(QIODevice::ReadOnly);
+		Zip zip(buffer);
+		return std::ranges::any_of(zip.GetFileNameList(), [](const QString& fileName) {
+			return fileName.endsWith("META-INF/container.xml", Qt::CaseInsensitive);
+		});
+	}
+	catch (...)
+	{
+	}
+	return false;
+}
+
 class EpubParser final : public IParser
 {
 public:
 	EpubParser(QString inputFilePath, QByteArray inputFileBody, QByteArray fbdBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
-		: m_inputFilePath { std::move(inputFilePath) }
+		: m_checked { CheckImpl(inputFileBody) }
+		, m_inputFilePath { std::move(inputFilePath) }
 		, m_inputFileBody { std::move(inputFileBody) }
 		, m_fbdFileBody { std::move(fbdBody) }
 		, m_encodingDetector { encodingDetector }
@@ -79,6 +97,11 @@ private: // IParser
 		return { .name = m_inputFilePath, .body = std::move(body) };
 	}
 
+	bool Check() const override
+	{
+		return m_checked;
+	}
+
 	const QString& GetInputFileName() const noexcept override
 	{
 		return m_inputFilePath;
@@ -90,6 +113,7 @@ private: // IParser
 	}
 
 private:
+	const bool                m_checked;
 	const QString             m_inputFilePath;
 	QByteArray                m_inputFileBody;
 	QByteArray                m_fbdFileBody;

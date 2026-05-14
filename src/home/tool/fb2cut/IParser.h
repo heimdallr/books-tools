@@ -73,6 +73,8 @@ public:
 
 	virtual OutputFile Parse(OnBinaryFound binaryCallback, const ImageMapper& idToNum) = 0;
 
+	virtual bool Check() const = 0;
+
 	virtual const QString&    GetInputFileName() const noexcept = 0;
 	virtual const QByteArray& GetInputFileBody() const noexcept = 0;
 };

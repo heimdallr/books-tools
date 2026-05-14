@@ -658,7 +658,7 @@ private:
 			return;
 
 		const auto archiveFileName = GetImagesFolder(m_dstDir, type);
-		PLOGI << "archive " << images.size() << " images: " << archiveFileName;
+		PLOGI << "archive " << archiveFileName << ", total:" << images.size();
 
 		QFile::remove(archiveFileName);
 
@@ -974,7 +974,7 @@ QStringList ProcessArchives(Settings& settings)
 	const Decoder decoder;
 	const auto    encodingDetector = IEncodingDetector::Create();
 
-	Util::Progress progress(settings.totalFileCount, "repacking fb2 library");
+	Util::Progress progress(settings.totalFileCount, "repacking e-library");
 
 	QStringList failed;
 	for (auto&& file : sorted | std::views::values | std::views::reverse)

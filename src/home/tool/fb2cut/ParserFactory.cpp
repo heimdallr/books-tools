@@ -7,22 +7,22 @@
 #include "fnd/IsOneOf.h"
 #include "fnd/try.h"
 
+#include "platform/FileUtil.h"
 #include "util/xml/SaxParser.h"
 #include "util/xml/Validator.h"
 
 #include "IParser.h"
 #include "log.h"
 #include "zip.h"
-#include "platform/FileUtil.h"
 
 #define PARSER_ITEMS_X_MACRO \
-	PARSER_ITEM(fb2)         \
-	PARSER_ITEM(epub)
+	PARSER_ITEM(fb2, <?xml)  \
+	PARSER_ITEM(epub, \x50\x4B\x03\x04)
 
 namespace HomeCompa::fb2cut
 {
 
-#define PARSER_ITEM(NAME) \
+#define PARSER_ITEM(NAME, _) \
 	std::unique_ptr<IParser> create_##NAME##_parser(QString /*file name*/, QByteArray /*file body*/, QByteArray /*fbd body*/, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
 PARSER_ITEMS_X_MACRO
 #undef PARSER_ITEM
@@ -37,40 +37,54 @@ namespace
 
 using ParserImpl = std::unique_ptr<IParser> (*)(QString, QByteArray, QByteArray, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
 
-constexpr std::pair<const char*, ParserImpl> PARSERS[] {
-#define PARSER_ITEM(NAME) { "." #NAME, &create_##NAME##_parser },
+constexpr std::pair<const char*, std::pair<const char*, ParserImpl>> PARSERS[] {
+#define PARSER_ITEM(NAME, SIGN)                \
+	{                                          \
+		#SIGN,                                 \
+		{ "." #NAME, &create_##NAME##_parser } \
+},
 	PARSER_ITEMS_X_MACRO
 #undef PARSER_ITEM
 };
 
 struct FoundParser
 {
-	QString     path;
-	QByteArray  body;
-	ParserImpl  parser;
-	QByteArray  fbd;
-	const char* ext;
+	QString                  path;
+	QByteArray               body;
+	std::unique_ptr<IParser> parser;
+	QByteArray               fbd;
+	const char*              ext = nullptr;
 };
 
-constexpr const char* NO_PARSE[] = { ".djvu", ".djv", ".pdf", ".txt", ".doc", ".docx", ".htm", ".html", ".chm", ".mobi", ".fbd" };
+constexpr const char* NO_PARSE[] = { ".djvu", ".djv", ".pdf", ".txt", ".doc", ".docx", ".rtf", ".htm", ".html", ".chm", ".mobi", ".fbd", ".dll" };
 
-bool Unparsable(const QString& fileName)
+bool Parsable(const QString& fileName)
 {
-	return std::ranges::any_of(NO_PARSE, [&](const auto* item) {
+	return std::ranges::none_of(NO_PARSE, [&](const auto* item) {
 		return fileName.endsWith(item, Qt::CaseInsensitive);
 	});
 }
 
-FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody)
+FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
 {
 	inputFilePath = Platform::RemoveIllegalPathCharacters(std::move(inputFilePath));
+
 	const auto it = std::ranges::find_if(PARSERS, [&](const auto& item) {
-		return inputFilePath.endsWith(item.first, Qt::CaseInsensitive);
+		return inputFileBody.startsWith(item.first);
 	});
 	if (it != std::end(PARSERS))
-		return { .path = std::move(inputFilePath), .body = std::move(inputFileBody), .parser = it->second, .ext = it->first };
+	{
+		const auto ext      = it->second.first;
+		auto       filePath = inputFilePath;
+		if (!filePath.endsWith(ext))
+			filePath.append(ext);
 
-	if (Unparsable(inputFilePath))
+		auto parser = std::invoke(it->second.second, filePath, inputFileBody, QByteArray {}, encodingDetector, decoder, validator);
+		if (parser->Check())
+			return { .path = std::move(filePath), .body = std::move(inputFileBody), .parser = std::move(parser), .ext = it->second.first };
+	}
+
+	if (!Parsable(inputFilePath))
 		return {};
 
 	const auto zip = [&]() -> std::unique_ptr<Zip> {
@@ -109,23 +123,19 @@ FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody)
 		return {};
 	}();
 
-	for (const auto& fileName : zipFileNames | std::views::filter([](const QString& item) {
-									return !Unparsable(item);
-								}))
+	inputFilePath = QFileInfo(inputFilePath).completeBaseName();
+
+	for (const auto& fileName : zipFileNames | std::views::filter(&Parsable))
 	{
 		const auto stream = zip->Read(fileName);
 		if (!stream)
 			continue;
 
-		auto [name, body, parser, _, ext] = FindParserCreator(fileName, stream->GetStream().readAll());
+		auto [name, body, parser, _, ext] = FindParserCreator(inputFilePath, stream->GetStream().readAll(), encodingDetector, decoder, validator);
 		if (body.isEmpty())
 			continue;
 
-		inputFilePath = QFileInfo(inputFilePath).completeBaseName();
-		if (!inputFilePath.endsWith(ext))
-			inputFilePath.append(ext);
-
-		return { .path = inputFilePath, .body = std::move(body), .parser = parser, .fbd = std::move(fbd), .ext = ext };
+		return { .path = std::move(name), .body = std::move(body), .parser = std::move(parser), .fbd = std::move(fbd), .ext = ext };
 	}
 
 	return {};
@@ -212,8 +222,7 @@ private:
 
 std::unique_ptr<IParser> IParser::Create(QString inputFilePath, QByteArray inputFileBody, const IEncodingDetector& encodingDetector, const Decoder& decoder, const Util::XmlValidator& validator)
 {
-	auto [name, body, parser, fbd, _] = FindParserCreator(std::move(inputFilePath), std::move(inputFileBody));
-	return body.isEmpty() ? std::unique_ptr<IParser>() : std::invoke(parser, std::move(name), std::move(body), std::move(fbd), encodingDetector, decoder, validator);
+	return FindParserCreator(std::move(inputFilePath), std::move(inputFileBody), encodingDetector, decoder, validator).parser;
 }
 
 IEncodingDetector::Ptr IEncodingDetector::Create()
