@@ -18,7 +18,7 @@
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/LogConsoleFormatter.h"
-#include "util/bookhash/hashfb2.h"
+#include "util/bookhash/hashbook.h"
 #include "util/executor/ThreadPool.h"
 #include "util/files.h"
 #include "util/progress.h"
@@ -77,7 +77,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	{
 		auto& bookTaskItem = bookHashItems.emplace_back(bookHashItemProvider.Get(file));
 		threadPool.enqueue([&](QCryptographicHash& md5) {
-			ParseFb2Hash(bookTaskItem, md5);
+			ParseBookHash(bookTaskItem, md5);
 			progress.Increment(1, bookTaskItem.file.toStdString());
 		});
 	}
