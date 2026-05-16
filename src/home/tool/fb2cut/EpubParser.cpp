@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "Constant.h"
 #include "IParser.h"
 #include "zip.h"
 
@@ -22,8 +23,8 @@ QByteArray GetImageIndex(const IParser::ImageMapper& idToNum)
 	for (const auto& [id, num] : idToNum)
 		array.append(
 			QJsonObject {
-				{  "id",  id },
-				{ "num", num },
+				{  Epub::IMAGE_INDEX_ID,  id },
+				{ Epub::IMAGE_INDEX_NUM, num },
         }
 		);
 	return QJsonDocument(array).toJson(QJsonDocument::Compact);
@@ -77,7 +78,7 @@ private: // IParser
 		const auto name = QFileInfo(m_inputFilePath).completeBaseName();
 
 		if (!idToNum.empty())
-			zipFiles->AddFile("FLibraryImageIndex.json", GetImageIndex(idToNum));
+			zipFiles->AddFile(Epub::IMAGE_INDEX_FILE_NAME, GetImageIndex(idToNum));
 		if (!m_fbdFileBody.isEmpty())
 			zipFiles->AddFile(name + ".fbd", m_fbdFileBody);
 
