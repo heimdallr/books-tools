@@ -481,10 +481,10 @@ private: // QAbstractItemModel
 
 	bool removeRows(const int row, const int count, const QModelIndex& parent) override
 	{
-		if (row < 0 || row > rowCount(parent))
+		if (row < 0 || row + count > rowCount(parent) + 1)
 			return false;
 
-		const ScopedCall insertGuard(
+		const ScopedCall removeGuard(
 			[&] {
 				beginRemoveRows(parent, row, row + count - 1);
 			},
@@ -497,6 +497,39 @@ private: // QAbstractItemModel
 		parentItem->children.erase(std::next(parentItem->children.begin(), row), std::next(parentItem->children.begin(), row + count));
 		for (const auto& item : parentItem->children | std::views::drop(row))
 			item->row -= count;
+
+		return true;
+	}
+
+	bool moveRows(const QModelIndex& sourceParent, const int sourceRow, const int count, const QModelIndex& destinationParent, const int destinationChild) override
+	{
+		if (sourceRow < 0 || sourceRow + count > rowCount(sourceParent) + 1 || destinationChild < 0 || destinationChild > rowCount(destinationParent))
+			return false;
+
+		const ScopedCall removeGuard(
+			[&] {
+				beginMoveRows(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild);
+			},
+			[this] {
+				endMoveRows();
+			}
+		);
+
+		auto* parentSourceItem = sourceParent.isValid() ? static_cast<Item*>(sourceParent.internalPointer()) : m_root.get();
+		auto* parentDestinationItem = destinationParent.isValid() ? static_cast<Item*>(destinationParent.internalPointer()) : m_root.get();
+		Items buffer;
+		buffer.reserve(count);
+		std::ranges::move(std::next(parentSourceItem->children.begin(), sourceRow), std::next(parentSourceItem->children.begin(), sourceRow + count), std::back_inserter(buffer));
+		parentSourceItem->children.erase(std::next(parentSourceItem->children.begin(), sourceRow), std::next(parentSourceItem->children.begin(), sourceRow + count));
+		for (const auto& item : parentSourceItem->children | std::views::drop(sourceRow))
+			item->row -= count;
+
+		for (auto&& [item, row] : std::views::zip(buffer, std::views::iota(destinationChild)))
+			item->row = row;
+
+		std::ranges::move(buffer | std::views::as_rvalue, std::inserter(parentDestinationItem->children, std::next(parentDestinationItem->children.begin(), destinationChild)));
+		for (const auto& item : parentDestinationItem->children | std::views::drop(destinationChild + count))
+			item->row += count;
 
 		return true;
 	}

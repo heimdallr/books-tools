@@ -161,8 +161,16 @@
     </property>
     <addaction name="actionAboutFlifaqer"/>
    </widget>
+   <widget class="QMenu" name="menuQuestion">
+    <property name="title">
+     <string>Question</string>
+    </property>
+    <addaction name="actionQuestionUp"/>
+    <addaction name="actionQuestionDown"/>
+   </widget>
    <addaction name="menuFile"/>
    <addaction name="menuSettings"/>
+   <addaction name="menuQuestion"/>
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
@@ -332,6 +340,34 @@
   <action name="actionCloseAllFiles">
    <property name="text">
     <string>Close all files</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionQuestionUp">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Up</string>
+   </property>
+   <property name="shortcut">
+    <string>Shift+Up</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionQuestionDown">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Down</string>
+   </property>
+   <property name="shortcut">
+    <string>Shift+Down</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>

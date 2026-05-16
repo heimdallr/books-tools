@@ -162,11 +162,7 @@ public:
 		});
 
 		connect(m_ui.navigatorView->selectionModel(), &QItemSelectionModel::currentChanged, [this](const QModelIndex& index) {
-			m_templateWidget->SetCurrentIndex(index);
-			m_referenceWidget->SetCurrentIndex(index);
-			m_translationWidget->SetCurrentIndex(index);
-			m_referenceTextView->SetCurrentIndex(index);
-			m_translationTextView->SetCurrentIndex(index);
+			OnNavigationSelectionChanged(index);
 		});
 
 		connect(m_ui.actionCloseAllFiles, &QAction::triggered, [this] {
@@ -213,6 +209,12 @@ public:
 		});
 		connect(m_ui.actionAboutFlifaqer, &QAction::triggered, &m_self, [this] {
 			ShowAbout();
+		});
+		connect(m_ui.actionQuestionUp, &QAction::triggered, &m_self, [this] {
+			MoveQuestion(true);
+		});
+		connect(m_ui.actionQuestionDown, &QAction::triggered, &m_self, [this] {
+			MoveQuestion(false);
 		});
 
 		const auto currentStyleName = QApplication::style()->name();
@@ -273,6 +275,17 @@ private: // plog::IAppender
 	}
 
 private:
+	void OnNavigationSelectionChanged(const QModelIndex& index)
+	{
+		m_templateWidget->SetCurrentIndex(index);
+		m_referenceWidget->SetCurrentIndex(index);
+		m_translationWidget->SetCurrentIndex(index);
+		m_referenceTextView->SetCurrentIndex(index);
+		m_translationTextView->SetCurrentIndex(index);
+		m_ui.actionQuestionUp->setEnabled(index.row() > 0);
+		m_ui.actionQuestionDown->setEnabled(index.isValid() && index.row() < m_model->rowCount(index.parent()) - 1);
+	}
+
 	void OnNavigationViewContextMenuRequested(const QPoint& pos)
 	{
 		const auto index = m_ui.navigatorView->indexAt(pos);
@@ -295,6 +308,8 @@ private:
 					m_model->removeRow(index.row(), index.parent());
 				}
 		)->setEnabled(index.isValid());
+		menu.addAction(m_ui.actionQuestionUp);
+		menu.addAction(m_ui.actionQuestionDown);
 		menu.addSeparator();
 		menu.addAction(m_ui.actionExpandAll);
 		menu.addAction(m_ui.actionCollapsAll);
@@ -490,6 +505,13 @@ private:
 	{
 		m_model->setData({}, {}, Role::Validate) ? QMessageBox::information(&m_self, Tr(VALIDATION_RESULT), Tr(OK))
 												 : QMessageBox::warning(&m_self, Tr(VALIDATION_RESULT), m_model->data({}, Role::Validate).toString());
+	}
+
+	void MoveQuestion(const bool up)
+	{
+		const auto index = m_ui.navigatorView->currentIndex();
+		assert(index.isValid());
+		m_model->moveRow(index.parent(), index.row(), index.parent(), index.row() + (up ? -1 : 1));
 	}
 
 	void ShowAbout() const
