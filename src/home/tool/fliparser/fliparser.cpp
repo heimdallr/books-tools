@@ -474,7 +474,7 @@ void SetOriginalNames(Book& book, const QString& originBaseName, const QString& 
 		book.ext = originSuffix;
 }
 
-Book ParseStub(
+std::optional<Book> ParseStub(
 	QString& /*parserName*/,
 	const QString& /*folder*/,
 	const Zip& /*zip*/,
@@ -485,10 +485,10 @@ Book ParseStub(
 	const QString& /*originSuffix*/
 )
 {
-	return {};
+	return std::nullopt;
 }
 
-Book ParseFb2(
+std::optional<Book> ParseFb2(
 	QString&         parserName,
 	const QString&   folder,
 	const Zip&       zip,
@@ -505,7 +505,7 @@ Book ParseFb2(
 	return parsedBook;
 }
 
-Book ParseEpub(
+std::optional<Book> ParseEpub(
 	QString&         parserName,
 	const QString&   folder,
 	const Zip&       zip,
@@ -558,10 +558,10 @@ Book ParseEpub(
 	{
 		PLOGE << QString("%1/%2: unknown error").arg(folder, fileName);
 	}
-	return {};
+	return std::nullopt;
 }
 
-Book ParseFbd(
+std::optional<Book> ParseFbd(
 	QString&         parserName,
 	const QString&   folder,
 	const Zip&       zip,
@@ -580,10 +580,10 @@ Book ParseFbd(
 		return ParseFb2(parserName, folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 	if (const auto fbdFileName = fileInfo.completeBaseName() + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
 		return ParseFb2(parserName, folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
-	return {};
+	return std::nullopt;
 }
 
-Book ParseZip(
+std::optional<Book> ParseZip(
 	QString&         parserName,
 	const QString&   folder,
 	const Zip&       zip,
@@ -594,7 +594,7 @@ Book ParseZip(
 	const QString& /*originSuffix*/   = {}
 );
 
-using FileParser = Book (*)(
+using FileParser = std::optional<Book> (*)(
 	QString& /*parserName*/,
 	const QString& /*folder*/,
 	const Zip&,
@@ -613,7 +613,7 @@ constexpr std::pair<const char*, std::pair<FileParser, bool /*parser exists*/>> 
     {  ".rar",  { &ParseZip, false } },
 };
 
-Book ParseZip(
+std::optional<Book> ParseZip(
 	QString&         parserName,
 	const QString&   folder,
 	const Zip&       zip,
@@ -642,8 +642,7 @@ Book ParseZip(
 		{
 			if (subZipFile.endsWith(ext, Qt::CaseInsensitive))
 			{
-				auto book = parserPair.first(parserName, folder, *subZip, subZipFile, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
-				if (!book.title.isEmpty())
+				if (auto book = parserPair.first(parserName, folder, *subZip, subZipFile, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix()))
 					return book;
 			}
 		}
@@ -653,7 +652,7 @@ Book ParseZip(
 		return item.endsWith(".fbd", Qt::CaseInsensitive);
 	});
 	if (it == subZipFiles.end())
-		return {};
+		return std::nullopt;
 
 	const ScopedCall parserNameGuard([&] {
 		parserName = "fbd";
@@ -674,10 +673,10 @@ Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const
 	}();
 
 	QString parserName;
-	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}); !parsedBook.title.isEmpty())
+	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}))
 	{
 		PLOGI << parserName << " parser finished";
-		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(parsedBook)));
+		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook)));
 	}
 
 	return nullptr;
