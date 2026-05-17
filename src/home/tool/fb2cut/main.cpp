@@ -1,6 +1,7 @@
 #include <QCryptographicHash>
 
 #include <condition_variable>
+#include <expected>
 #include <queue>
 #include <ranges>
 
@@ -116,14 +117,14 @@ struct ImageStatisticsItem
 
 using ImageStatistics = std::vector<ImageStatisticsItem>;
 
-std::pair<QImage, QString> ToImage(QByteArray& body)
+std::expected<QImage, QString> ToImage(QByteArray& body)
 {
 	QBuffer buffer(&body);
 	buffer.open(QBuffer::ReadOnly);
-	QImageReader               imageReader(&buffer);
-	std::pair<QImage, QString> result { imageReader.read(), {} };
-	if (result.first.isNull())
-		result.second = imageReader.errorString();
+	QImageReader imageReader(&buffer);
+	auto         result = imageReader.read();
+	if (result.isNull()) [[unlikely]]
+		return std::unexpected(imageReader.errorString());
 
 	return result;
 }
@@ -446,9 +447,12 @@ private:
 			return ReadImage(body, settings, imageFile, fail, needSaveBody);
 		}
 
-		auto [image, errorString] = ToImage(body);
-		if (!image.isNull())
-			return image;
+		auto image = ToImage(body);
+		if (image)
+		{
+			auto result = std::move(image.value());
+			return result;
+		}
 
 		if (body.size() < m_settings.minImageFileSize)
 		{
@@ -464,7 +468,7 @@ private:
 			);
 		    it != std::end(signatures))
 			return (fail = it->extension),
-			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(errorString), needSaveBody && it->needSaveBody, it->extension);
+			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(image.error()), needSaveBody && it->needSaveBody, it->extension);
 
 		if (const auto it = std::ranges::find_if(
 				unsupportedSignatures,
@@ -489,7 +493,7 @@ private:
 		if (QString::fromUtf8(body).contains("!doctype html", Qt::CaseInsensitive))
 			return fail = knownSignatures[0].extension, AddError(settings, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(settings.type).arg(imageFile).arg("html"), false, "html", false);
 
-		return AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(errorString), needSaveBody);
+		return AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(image.error()), needSaveBody);
 	}
 
 	QImage AddError(const ImageSettings& settings, const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext = {}, const bool tryToFix = true) const
@@ -550,13 +554,15 @@ private:
 		if (fixed.isEmpty())
 			return {};
 
-		auto [image, errorString] = ToImage(fixed);
-		if (!errorString.isEmpty())
+		auto image = ToImage(fixed);
+		if (image)
 		{
-			PLOGW << errorString;
+			auto result = std::move(image.value());
+			return result;
 		}
 
-		return image;
+		PLOGW << image.error();
+		return {};
 	}
 
 private:
