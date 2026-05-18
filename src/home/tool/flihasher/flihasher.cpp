@@ -77,11 +77,13 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	{
 		auto& bookTaskItem = bookHashItems.emplace_back(bookHashItemProvider.Get(file));
 		threadPool.enqueue([&](QCryptographicHash& md5) {
+			PLOGV << "start parsing: " << bookTaskItem.file;
 			ParseBookHash(bookTaskItem, md5);
 			progress.Increment(1, bookTaskItem.file.toStdString());
 		});
 	}
 
+	PLOGI << "wait for threads finished";
 	threadPool.wait();
 
 	XmlWriter  writer(output);

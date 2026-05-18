@@ -168,6 +168,7 @@ endif()
 add_compile_definitions(${PLOG_SHARED_IMPORT})
 add_compile_definitions(UNICODE _UNICODE NOMINMAX _USE_MATH_DEFINES)
 add_compile_definitions(HYPODERMIC_OVERRIDE_CONSTRUCTOR_ARGUMENT_COUNT=32)
+add_compile_definitions(ADDITIONAL_LOG_ENABLED)
 include_directories("src/ext/Hypodermic")
 
 include("src/ext/sqlite.cmake")
