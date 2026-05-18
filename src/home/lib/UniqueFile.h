@@ -127,7 +127,6 @@ public:
 	void                                      SetImages(const QString& hash, const QString& fileName, ImageItem cover, std::set<ImageItem> images);
 	UniqueFile*                               Add(QString hash, UniqueFile file);
 	std::pair<ImageItems, ImageItems>         GetNewImages();
-	void                                      Save(const QString& folder, bool moveDuplicates);
 	void                                      SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
 	void                                      SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
 

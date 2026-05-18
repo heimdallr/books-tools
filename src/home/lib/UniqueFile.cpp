@@ -25,68 +25,6 @@ using namespace HomeCompa;
 namespace
 {
 
-class ISerializer // NOLINT(cppcoreguidelines-special-member-functions)
-{
-public:
-	virtual ~ISerializer()                                                   = default;
-	virtual void Serialize(const UniqueFile& file, const UniqueFile& origin) = 0;
-};
-
-class SerializerStub final : public ISerializer
-{
-public:
-	static std::unique_ptr<ISerializer> Create()
-	{
-		return std::make_unique<SerializerStub>();
-	}
-
-private: // ISerializer
-	void Serialize(const UniqueFile&, const UniqueFile&) override
-	{
-	}
-};
-
-class Serializer final : public ISerializer
-{
-public:
-	static std::unique_ptr<ISerializer> Create(const QString& fileName)
-	{
-		if (const auto dir = QFileInfo(fileName).dir(); !dir.exists())
-			(void)dir.mkpath(".");
-
-		if (auto file = std::make_unique<QFile>(fileName); file->open(QIODevice::WriteOnly))
-			return std::make_unique<Serializer>(std::move(file));
-
-		PLOGE << "Cannot write to " << fileName;
-		return SerializerStub::Create();
-	}
-
-	explicit Serializer(std::unique_ptr<QIODevice> ioDevice)
-		: m_ioDevice { std::move(ioDevice) }
-	{
-	}
-
-private: // ISerializer
-	void Serialize(const UniqueFile& file, const UniqueFile& origin) override
-	{
-		const auto book = m_booksGuard->Guard("book");
-		book->WriteAttribute("id", file.hashText).WriteAttribute("folder", file.uid.folder).WriteAttribute("file", file.uid.file).WriteAttribute("title", file.GetTitle());
-		if (!file.cover.fileName.isEmpty())
-			book->Guard("cover")->WriteCharacters(file.cover.hash);
-		for (const auto& image : file.images)
-			book->Guard("image")->WriteCharacters(image.hash);
-		if (!origin.uid.file.isEmpty())
-			book->Guard("duplicates")->WriteAttribute("folder", origin.uid.folder).WriteAttribute("file", origin.uid.file);
-
-		SerializeHashSections(file.hashSections, m_writer);
-	}
-
-private:
-	std::unique_ptr<QIODevice>    m_ioDevice;
-	Util::XmlWriter               m_writer { *m_ioDevice };
-	Util::XmlWriter::XmlNodeGuard m_booksGuard { m_writer.Guard("books") };
-};
-
 class DuplicateObserverStub final : public UniqueFileStorage::IDuplicateObserver
 {
 	void OnDuplicateFound(const UniqueFile::Uid&, const UniqueFile::Uid&) override
@@ -562,61 +500,6 @@ std::pair<ImageItems, ImageItems> UniqueFileStorage::GetNewImages()
 	}
 
 	return std::make_pair(std::move(covers), std::move(images));
-}
-
-void UniqueFileStorage::Save(const QString& folder, const bool moveDuplicates)
-{
-	if (m_new.empty() && m_dup.empty())
-		return;
-
-	if (m_hashDir.isEmpty())
-		return m_new.clear();
-
-	const QDir dstDir(m_hashDir);
-	const auto serializer = Serializer::Create(dstDir.filePath(QString("%1.xml").arg(folder)));
-
-	const auto save = [&](UniqueFile& item, const UniqueFile& origin = {}) {
-		serializer->Serialize(item, origin);
-		item.hashText.clear();
-		item.hashSections.clear();
-	};
-
-	const QDir srcDir     = dstDir.filePath(folder);
-	const QDir duplicates = srcDir.filePath("duplicates");
-	const auto rename     = [&](const QString& fileName) {
-		if (!moveDuplicates)
-			return;
-
-		if (!duplicates.exists())
-			duplicates.mkpath(".");
-
-		[[maybe_unused]] const auto ok = QFile::rename(srcDir.filePath(fileName), duplicates.filePath(fileName));
-		assert(ok);
-	};
-
-	for (auto&& [hash, newItems] : m_new)
-	{
-		const auto it = m_old.emplace(hash, std::move(newItems.first));
-		it->second.ClearImages();
-
-		save(it->second);
-
-		if (newItems.second.empty())
-			continue;
-
-		std::ranges::transform(newItems.second, std::back_inserter(m_dup), [&](auto&& item) {
-			rename(item.uid.file);
-			return Dup { std::forward<UniqueFile>(item), it->second };
-		});
-	}
-
-	std::ranges::for_each(m_dup, [&](Dup& dup) {
-		rename(dup.file.uid.file);
-		save(dup.file, dup.origin);
-	});
-
-	m_new.clear();
-	m_dup.clear();
 }
 
 void UniqueFileStorage::SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver)
