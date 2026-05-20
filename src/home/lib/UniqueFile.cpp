@@ -320,16 +320,27 @@ const std::vector<Book*>& InpDataProvider::Books() const noexcept
 
 Book* InpDataProvider::SetFile(const UniqueFile::Uid& uid, QString id, const size_t size)
 {
-	assert(m_currentInpData);
-	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
-	{
-		assert(it->second);
-		auto& book   = m_data.try_emplace(QString("%1#%2").arg(uid.folder, uid.file), it->second).first->second;
+	const auto add = [&](std::shared_ptr<Book> bookSrc) {
+		auto& book   = m_data.try_emplace(QString("%1#%2").arg(uid.folder, uid.file), std::move(bookSrc)).first->second;
 		book->id     = std::move(id);
 		book->folder = uid.folder;
 		if (size != 0)
 			book->size = QString::number(size);
 		return book.get();
+	};
+
+	assert(m_currentInpData);
+	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
+	{
+		assert(it->second);
+		return add(it->second);
+	}
+
+	const QFileInfo fileInfo(uid.file);
+	if (const auto it = m_currentInpData->find(fileInfo.baseName() + "." + fileInfo.suffix()); it != m_currentInpData->end())
+	{
+		assert(it->second);
+		return add(it->second);
 	}
 
 	return nullptr;
