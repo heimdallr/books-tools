@@ -802,6 +802,8 @@ bool ArchiveFb2(const Settings& settings)
 	if (!settings.archiver.isEmpty())
 		return ArchiveFb2External(settings);
 
+	size_t epubCount = 0;
+
 	auto zipFiles = Zip::CreateZipFileController();
 	for (QDirIterator it(settings.dstDir.path(), QStringList() << "*", QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
 	{
@@ -812,6 +814,9 @@ bool ArchiveFb2(const Settings& settings)
 			PLOGW << "cannot read " << file;
 			return false;
 		}
+
+		if (file.endsWith(".epub", Qt::CaseInsensitive))
+			++epubCount;
 
 		zipFiles->AddFile(settings.dstDir.relativeFilePath(file), stream.readAll(), QFileInfo(file).birthTime());
 	}
@@ -827,12 +832,14 @@ bool ArchiveFb2(const Settings& settings)
 
 	QFile::remove(dstArchiveFileName);
 
+	const auto isEpub = epubCount * 10 > 9 * zipFiles->GetCount();
+
 	Zip zip(dstArchiveFileName, settings.format);
-	zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::Ultra));
+	zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(isEpub ? Zip::CompressionLevel::None : Zip::CompressionLevel::Ultra));
 	zip.SetProperty(Zip::PropertyId::SolidArchive, false);
 	zip.SetProperty(Zip::PropertyId::ThreadsCount, settings.maxThreadCount);
 	if (settings.format == Zip::Format::SevenZip)
-		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
+		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(isEpub ? Zip::CompressionMethod::Copy : Zip::CompressionMethod::Ppmd));
 
 	const auto result = zip.Write(*zipFiles);
 	if (result)
