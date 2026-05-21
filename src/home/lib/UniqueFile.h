@@ -1,7 +1,7 @@
 #pragma once
 
-#include <set>
 #include <mutex>
+#include <set>
 
 #include "fnd/NonCopyMovable.h"
 #include "fnd/algorithm.h"

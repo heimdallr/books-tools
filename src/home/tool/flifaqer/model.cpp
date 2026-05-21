@@ -515,7 +515,7 @@ private: // QAbstractItemModel
 			}
 		);
 
-		auto* parentSourceItem = sourceParent.isValid() ? static_cast<Item*>(sourceParent.internalPointer()) : m_root.get();
+		auto* parentSourceItem      = sourceParent.isValid() ? static_cast<Item*>(sourceParent.internalPointer()) : m_root.get();
 		auto* parentDestinationItem = destinationParent.isValid() ? static_cast<Item*>(destinationParent.internalPointer()) : m_root.get();
 		Items buffer;
 		buffer.reserve(count);
