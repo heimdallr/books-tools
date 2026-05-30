@@ -163,6 +163,7 @@ include(${FOUNDATION_ROOT}/utilgui/utilgui.cmake)
 include(${FOUNDATION_ROOT}/icu/icu.cmake)
 include(${FOUNDATION_ROOT}/platform/platform.cmake)
 include(${FOUNDATION_ROOT}/platformgui/platformgui.cmake)
+include(${FOUNDATION_ROOT}/settings/settings.cmake)
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/src/home/resources/locales)
 

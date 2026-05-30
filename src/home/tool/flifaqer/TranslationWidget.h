@@ -5,7 +5,7 @@
 #include "fnd/NonCopyMovable.h"
 #include "fnd/memory.h"
 
-#include "util/ISettings.h"
+#include "settings/ISettings.h"
 
 class QAbstractItemModel;
 

@@ -11,7 +11,7 @@
 #include <Hypodermic/ContainerBuilder.h>
 
 #include "logging/init.h"
-#include "util/ISettings.h"
+#include "settings/ISettings.h"
 
 #include "AppConstant.h"
 #include "Constant.h"

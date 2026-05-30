@@ -1,7 +1,7 @@
 #include "di_app.h"
 
 #include "Hypodermic/Hypodermic.h"
-#include "util/Settings.h"
+#include "settings/Settings.h"
 
 #include "MainWindow.h"
 #include "model.h"

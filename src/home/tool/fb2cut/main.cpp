@@ -30,7 +30,6 @@
 #include "lib/book.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
-#include "util/ISettings.h"
 #include "util/ImageUtil.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/files.h"
