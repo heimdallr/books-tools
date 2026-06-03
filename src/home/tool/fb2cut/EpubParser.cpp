@@ -77,8 +77,7 @@ private: // IParser
 
 		const auto name = QFileInfo(m_inputFilePath).completeBaseName();
 
-		if (!idToNum.empty())
-			zipFiles->AddFile(Epub::IMAGE_INDEX_FILE_NAME, GetImageIndex(idToNum));
+		zipFiles->AddFile(Epub::IMAGE_INDEX_FILE_NAME, GetImageIndex(idToNum));
 		if (!m_fbdFileBody.isEmpty())
 			zipFiles->AddFile(name + ".fbd", m_fbdFileBody);
 
