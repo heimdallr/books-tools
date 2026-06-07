@@ -531,11 +531,11 @@ std::optional<Book> ParseEpub(
 		std::ranges::transform(authors, std::back_inserter(values), [](const auto& author) {
 			return author.join(Util::Fb2InpxParser::NAMES_SEPARATOR);
 		});
-		return values.join(Util::Fb2InpxParser::LIST_SEPARATOR) + Util::Fb2InpxParser::LIST_SEPARATOR;
+		return values.join(Inpx::LIST_SEPARATOR) + Inpx::LIST_SEPARATOR;
 	};
 
 	const auto genresToString = [](const QStringList& genres) {
-		return genres.empty() ? QString {} : genres.join(Util::Fb2InpxParser::LIST_SEPARATOR) + Util::Fb2InpxParser::LIST_SEPARATOR;
+		return genres.empty() ? QString {} : genres.join(Inpx::LIST_SEPARATOR) + Inpx::LIST_SEPARATOR;
 	};
 
 	const QFileInfo fileInfo(fileName);
