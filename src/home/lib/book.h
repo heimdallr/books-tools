@@ -9,6 +9,7 @@
 
 #include "export/lib.h"
 
+class QDate;
 class QIODevice;
 
 namespace HomeCompa::FliLib
@@ -49,6 +50,8 @@ struct Book
 	LIB_EXPORT static Book FromString(const QString& str);
 	LIB_EXPORT QString     GetFileName() const;
 	LIB_EXPORT QString     GetUid() const;
+
+	LIB_EXPORT static Book CreateUnknown(const QString& fileName, size_t sz, const QDate& date);
 };
 
 LIB_EXPORT QByteArray& operator<<(QByteArray& bytes, const Book& book);

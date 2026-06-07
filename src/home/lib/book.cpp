@@ -1,12 +1,33 @@
 #include "book.h"
 
-#include <ranges>
+#include <QFileInfo>
 
-#include <QStringList>
-
+#include "util/GenresLocalization.h"
 #include "util/language.h"
 
+#include "Constant.h"
+
 using namespace HomeCompa::FliLib;
+
+Book Book::CreateUnknown(const QString& fileName, const size_t sz, const QDate& date)
+{
+	const QFileInfo fileInfo(fileName);
+	return Book {
+		.author    = QString(Global::AUTHOR_UNKNOWN) + ":",
+		.genre     = QString(Util::UNORDERED_GENRE) + ":",
+		.title     = fileInfo.completeBaseName(),
+		.series    = { {} },
+		.file      = fileInfo.completeBaseName(),
+		.size      = QString::number(sz),
+		.libId     = fileInfo.completeBaseName(),
+		.deleted   = true,
+		.ext       = fileInfo.suffix(),
+		.date      = date.toString("yyyy-MM-dd"),
+		.lang      = GetLanguage({}).toString(),
+		.rate      = 0.0,
+		.rateCount = 1,
+	};
+}
 
 Book Book::FromString(const QString& str)
 {

@@ -703,7 +703,9 @@ Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const
 		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook)));
 	}
 
-	return nullptr;
+	PLOGW << "unknown book";
+	auto book = std::make_unique<Book>(Book::CreateUnknown(fileName, zip.GetFileSize(fileName), zip.GetFileTime(fileName).date()));
+	return inpDataProvider.AddBook(std::move(book));
 }
 
 void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvider& inpDataProvider)
