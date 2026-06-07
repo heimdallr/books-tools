@@ -10,10 +10,15 @@ using namespace HomeCompa;
 class TextViewWidget::Impl
 {
 public:
-	Impl(QWidget& self, std::shared_ptr<const QAbstractItemModel> model)
+	Impl(QWidget& self, std::shared_ptr<const QAbstractItemModel> model, std::shared_ptr<Util::ScrollBarController> scrollBarController)
 		: m_model { std::move(model) }
+		, m_scrollBarController { std::move(scrollBarController) }
 	{
 		m_ui.setupUi(&self);
+
+		m_ui.textEdit->viewport()->installEventFilter(m_scrollBarController.get());
+		m_scrollBarController->SetScrollArea(m_ui.textEdit);
+
 		connect(m_model.get(), &QAbstractItemModel::dataChanged, [this](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
 			if (roles.contains(m_role))
 				UpdateText();
@@ -40,6 +45,7 @@ private:
 
 private:
 	std::shared_ptr<const QAbstractItemModel> m_model;
+	PropagateConstPtr<Util::ScrollBarController, std::shared_ptr> m_scrollBarController;
 
 	int                   m_role { -1 };
 	QPersistentModelIndex m_currentIndex;
@@ -47,9 +53,9 @@ private:
 	Ui::TextViewWidget m_ui {};
 };
 
-TextViewWidget::TextViewWidget(std::shared_ptr<const QAbstractItemModel> model, QWidget* parent)
+TextViewWidget::TextViewWidget(std::shared_ptr<const QAbstractItemModel> model, std::shared_ptr<Util::ScrollBarController> scrollBarController, QWidget* parent)
 	: QWidget(parent)
-	, m_impl(*this, std::move(model))
+	, m_impl(*this, std::move(model), std::move(scrollBarController))
 {
 }
 

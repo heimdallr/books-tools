@@ -6,6 +6,7 @@
 #include "fnd/memory.h"
 
 #include "settings/ISettings.h"
+#include "utilgui/ScrollBarController.h"
 
 class QAbstractItemModel;
 
@@ -33,7 +34,13 @@ signals:
 	void RowChanged(int row) const;
 
 public:
-	TranslationWidget(std::shared_ptr<ISettings> settings, std::shared_ptr<QAbstractItemModel> model, QWidget* parent = nullptr);
+	TranslationWidget(
+		std::shared_ptr<ISettings>                 settings,
+		std::shared_ptr<QAbstractItemModel>        model,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit,
+		QWidget*                                   parent = nullptr
+	);
 	~TranslationWidget() override;
 
 public:

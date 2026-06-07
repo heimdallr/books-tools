@@ -84,14 +84,15 @@ class MainWindow::Impl final
 
 public:
 	Impl(
-		MainWindow&                         self,
-		std::shared_ptr<ISettings>          settings,
-		std::shared_ptr<QAbstractItemModel> model,
-		std::shared_ptr<TranslationWidget>  templateWidget,
-		std::shared_ptr<TranslationWidget>  referenceWidget,
-		std::shared_ptr<TranslationWidget>  translationWidget,
-		std::shared_ptr<TextViewWidget>     referenceTextView,
-		std::shared_ptr<TextViewWidget>     translationTextView
+		MainWindow&                                self,
+		std::shared_ptr<ISettings>                 settings,
+		std::shared_ptr<QAbstractItemModel>        model,
+		std::shared_ptr<TranslationWidget>         templateWidget,
+		std::shared_ptr<TranslationWidget>         referenceWidget,
+		std::shared_ptr<TranslationWidget>         translationWidget,
+		std::shared_ptr<TextViewWidget>            referenceTextView,
+		std::shared_ptr<TextViewWidget>            translationTextView,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation
 	)
 		: GeometryRestorable(*this, settings, MAIN_WINDOW)
 		, GeometryRestorableObserver(self)
@@ -103,9 +104,13 @@ public:
 		, m_translationWidget { std::move(translationWidget) }
 		, m_referenceTextView { std::move(referenceTextView) }
 		, m_translationTextView { std::move(translationTextView) }
+		, m_scrollBarControllerNavigation { std::move(scrollBarControllerNavigation) }
 	{
 		m_ui.setupUi(&m_self);
 		m_ui.navigatorView->setModel(m_model.get());
+		m_ui.navigatorView->viewport()->installEventFilter(m_scrollBarControllerNavigation.get());
+		m_scrollBarControllerNavigation->SetScrollArea(m_ui.navigatorView);
+
 		m_ui.templateLayout->addWidget(m_templateWidget.get());
 
 		const auto setView = [this](QStackedWidget* stackedWidget, const QAction* action, TranslationWidget* trWidget, TextViewWidget* ourTextViewWidget, TextViewWidget* theirTextViewWidget) {
@@ -527,13 +532,14 @@ private:
 private:
 	MainWindow& m_self;
 
-	PropagateConstPtr<ISettings, std::shared_ptr>          m_settings;
-	PropagateConstPtr<QAbstractItemModel, std::shared_ptr> m_model;
-	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_templateWidget;
-	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_referenceWidget;
-	PropagateConstPtr<TranslationWidget, std::shared_ptr>  m_translationWidget;
-	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_referenceTextView;
-	PropagateConstPtr<TextViewWidget, std::shared_ptr>     m_translationTextView;
+	PropagateConstPtr<ISettings, std::shared_ptr>                 m_settings;
+	PropagateConstPtr<QAbstractItemModel, std::shared_ptr>        m_model;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>         m_templateWidget;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>         m_referenceWidget;
+	PropagateConstPtr<TranslationWidget, std::shared_ptr>         m_translationWidget;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>            m_referenceTextView;
+	PropagateConstPtr<TextViewWidget, std::shared_ptr>            m_translationTextView;
+	PropagateConstPtr<Util::ScrollBarController, std::shared_ptr> m_scrollBarControllerNavigation;
 
 	bool                            m_dataChanged { false };
 	Util::FunctorExecutionForwarder m_forwarder;
@@ -543,17 +549,28 @@ private:
 };
 
 MainWindow::MainWindow(
-	std::shared_ptr<ISettings>          settings,
-	std::shared_ptr<QAbstractItemModel> model,
-	std::shared_ptr<TranslationWidget>  templateWidget,
-	std::shared_ptr<TranslationWidget>  referenceWidget,
-	std::shared_ptr<TranslationWidget>  translationWidget,
-	std::shared_ptr<TextViewWidget>     referenceTextView,
-	std::shared_ptr<TextViewWidget>     translationTextView,
-	QWidget*                            parent
+	std::shared_ptr<ISettings>                 settings,
+	std::shared_ptr<QAbstractItemModel>        model,
+	std::shared_ptr<TranslationWidget>         templateWidget,
+	std::shared_ptr<TranslationWidget>         referenceWidget,
+	std::shared_ptr<TranslationWidget>         translationWidget,
+	std::shared_ptr<TextViewWidget>            referenceTextView,
+	std::shared_ptr<TextViewWidget>            translationTextView,
+	std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation,
+	QWidget*                                   parent
 )
 	: QMainWindow(parent)
-	, m_impl(*this, std::move(settings), std::move(model), std::move(templateWidget), std::move(referenceWidget), std::move(translationWidget), std::move(referenceTextView), std::move(translationTextView))
+	, m_impl(
+		  *this,
+		  std::move(settings),
+		  std::move(model),
+		  std::move(templateWidget),
+		  std::move(referenceWidget),
+		  std::move(translationWidget),
+		  std::move(referenceTextView),
+		  std::move(translationTextView),
+		  std::move(scrollBarControllerNavigation)
+	  )
 {
 }
 

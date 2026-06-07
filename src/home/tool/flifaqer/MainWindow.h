@@ -6,6 +6,7 @@
 #include "fnd/memory.h"
 
 #include "settings/ISettings.h"
+#include "utilgui/ScrollBarController.h"
 
 #include "TextViewWidget.h"
 #include "TranslationWidget.h"
@@ -22,14 +23,15 @@ class MainWindow final : public QMainWindow
 
 public:
 	MainWindow(
-		std::shared_ptr<ISettings>          settings,
-		std::shared_ptr<QAbstractItemModel> model,
-		std::shared_ptr<TranslationWidget>  templateWidget,
-		std::shared_ptr<TranslationWidget>  referenceWidget,
-		std::shared_ptr<TranslationWidget>  translationWidget,
-		std::shared_ptr<TextViewWidget>     referenceTextView,
-		std::shared_ptr<TextViewWidget>     translationTextView,
-		QWidget*                            parent = nullptr
+		std::shared_ptr<ISettings>                 settings,
+		std::shared_ptr<QAbstractItemModel>        model,
+		std::shared_ptr<TranslationWidget>         templateWidget,
+		std::shared_ptr<TranslationWidget>         referenceWidget,
+		std::shared_ptr<TranslationWidget>         translationWidget,
+		std::shared_ptr<TextViewWidget>            referenceTextView,
+		std::shared_ptr<TextViewWidget>            translationTextView,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation,
+		QWidget*                                   parent = nullptr
 	);
 	~MainWindow() override;
 

@@ -325,13 +325,27 @@ constexpr std::pair<TranslationWidget::Mode, std::pair<TranslationWidgetCreator,
 class TranslationWidget::Impl
 {
 public:
-	explicit Impl(TranslationWidget& self, std::shared_ptr<ISettings> settings, std::shared_ptr<QAbstractItemModel> model)
+	explicit Impl(
+		TranslationWidget&                         self,
+		std::shared_ptr<ISettings>                 settings,
+		std::shared_ptr<QAbstractItemModel>        model,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit
+	)
 		: m_self { self }
 		, m_settings { std::move(settings) }
 		, m_model { std::move(model) }
+		, m_scrollBarControllerAnswer { std::move(scrollBarControllerAnswer) }
+		, m_scrollBarControllerEdit { std::move(scrollBarControllerEdit) }
 	{
 		m_ui.setupUi(&m_self);
 		m_ui.answerEdit->installEventFilter(&m_self);
+
+		m_ui.answerEdit->viewport()->installEventFilter(m_scrollBarControllerEdit.get());
+		m_scrollBarControllerEdit->SetScrollArea(m_ui.answerEdit);
+
+		m_ui.answer->viewport()->installEventFilter(m_scrollBarControllerAnswer.get());
+		m_scrollBarControllerAnswer->SetScrollArea(m_ui.answer);
 	}
 
 public:
@@ -372,17 +386,25 @@ public:
 	}
 
 private:
-	TranslationWidget&                                     m_self;
-	PropagateConstPtr<ISettings, std::shared_ptr>          m_settings;
-	PropagateConstPtr<QAbstractItemModel, std::shared_ptr> m_model;
-	PropagateConstPtr<TranslationWidgetImpl>               m_impl { std::unique_ptr<TranslationWidgetImpl> {} };
+	TranslationWidget&                                            m_self;
+	PropagateConstPtr<ISettings, std::shared_ptr>                 m_settings;
+	PropagateConstPtr<QAbstractItemModel, std::shared_ptr>        m_model;
+	PropagateConstPtr<Util::ScrollBarController, std::shared_ptr> m_scrollBarControllerAnswer;
+	PropagateConstPtr<Util::ScrollBarController, std::shared_ptr> m_scrollBarControllerEdit;
+	PropagateConstPtr<TranslationWidgetImpl>                      m_impl { std::unique_ptr<TranslationWidgetImpl> {} };
 
 	Ui::TranslationWidget m_ui;
 };
 
-TranslationWidget::TranslationWidget(std::shared_ptr<ISettings> settings, std::shared_ptr<QAbstractItemModel> model, QWidget* parent)
+TranslationWidget::TranslationWidget(
+	std::shared_ptr<ISettings>                 settings,
+	std::shared_ptr<QAbstractItemModel>        model,
+	std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
+	std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit,
+	QWidget*                                   parent
+)
 	: QWidget(parent)
-	, m_impl(*this, std::move(settings), std::move(model))
+	, m_impl(*this, std::move(settings), std::move(model), std::move(scrollBarControllerAnswer), std::move(scrollBarControllerEdit))
 {
 }
 

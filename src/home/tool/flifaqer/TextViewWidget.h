@@ -5,6 +5,8 @@
 #include "fnd/NonCopyMovable.h"
 #include "fnd/memory.h"
 
+#include "utilgui/ScrollBarController.h"
+
 class QAbstractItemModel;
 
 namespace HomeCompa::FliFaq
@@ -15,7 +17,7 @@ class TextViewWidget final : public QWidget
 	NON_COPY_MOVABLE(TextViewWidget)
 
 public:
-	explicit TextViewWidget(std::shared_ptr<const QAbstractItemModel> model, QWidget* parent = nullptr);
+	TextViewWidget(std::shared_ptr<const QAbstractItemModel> model, std::shared_ptr<Util::ScrollBarController> scrollBarController, QWidget* parent = nullptr);
 	~TextViewWidget() override;
 
 public:

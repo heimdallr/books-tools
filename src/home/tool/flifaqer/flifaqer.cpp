@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QStyleFactory>
+#include <QStyleHints>
 
 #include <Hypodermic/Container.h>
 #include <Hypodermic/ContainerBuilder.h>
@@ -67,11 +68,7 @@ int main(int argc, char* argv[])
 			const auto availableStyles = QStyleFactory::keys();
 			auto       currentTheme    = settings->Get(Constant::THEME).toString();
 			if (!availableStyles.contains(currentTheme))
-			{
 				currentTheme = availableStyles.isEmpty() ? QString() : availableStyles.front();
-				if (currentTheme == "windows11" && availableStyles.size() > 1)
-					currentTheme = availableStyles[1];
-			}
 			if (!currentTheme.isEmpty())
 				QApplication::setStyle(QStyleFactory::create(currentTheme));
 
