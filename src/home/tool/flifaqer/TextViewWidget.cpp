@@ -16,7 +16,6 @@ public:
 	{
 		m_ui.setupUi(&self);
 
-		m_ui.textEdit->viewport()->installEventFilter(m_scrollBarController.get());
 		m_scrollBarController->SetScrollArea(m_ui.textEdit);
 
 		connect(m_model.get(), &QAbstractItemModel::dataChanged, [this](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {

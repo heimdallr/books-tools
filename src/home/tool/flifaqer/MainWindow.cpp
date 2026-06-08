@@ -108,7 +108,6 @@ public:
 	{
 		m_ui.setupUi(&m_self);
 		m_ui.navigatorView->setModel(m_model.get());
-		m_ui.navigatorView->viewport()->installEventFilter(m_scrollBarControllerNavigation.get());
 		m_scrollBarControllerNavigation->SetScrollArea(m_ui.navigatorView);
 
 		m_ui.templateLayout->addWidget(m_templateWidget.get());

@@ -341,10 +341,7 @@ public:
 		m_ui.setupUi(&m_self);
 		m_ui.answerEdit->installEventFilter(&m_self);
 
-		m_ui.answerEdit->viewport()->installEventFilter(m_scrollBarControllerEdit.get());
 		m_scrollBarControllerEdit->SetScrollArea(m_ui.answerEdit);
-
-		m_ui.answer->viewport()->installEventFilter(m_scrollBarControllerAnswer.get());
 		m_scrollBarControllerAnswer->SetScrollArea(m_ui.answer);
 	}
 
