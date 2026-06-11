@@ -76,7 +76,7 @@ FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody, c
 	inputFilePath = Platform::RemoveIllegalPathCharacters(std::move(inputFilePath));
 
 	const auto it = std::ranges::find_if(PARSERS, [&](const auto& item) {
-		const auto utfIt = std::ranges::find_if(UTF, [&](const auto utf) {
+		const auto     utfIt    = std::ranges::find_if(UTF, [&](const auto utf) {
 			return inputFileBody.startsWith(utf);
 		});
 		const auto     utfWidth = utfIt == std::end(UTF) ? 0 : utfIt->size();

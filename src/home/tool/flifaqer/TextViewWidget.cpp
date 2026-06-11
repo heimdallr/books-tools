@@ -43,7 +43,7 @@ private:
 	}
 
 private:
-	std::shared_ptr<const QAbstractItemModel> m_model;
+	std::shared_ptr<const QAbstractItemModel>                     m_model;
 	PropagateConstPtr<Util::ScrollBarController, std::shared_ptr> m_scrollBarController;
 
 	int                   m_role { -1 };
