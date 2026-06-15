@@ -67,7 +67,7 @@ private: // IParser
 		QBuffer buffer(&m_inputFileBody);
 		buffer.open(QIODevice::ReadOnly);
 
-		auto parseResult = Util::EpubParser::Parse(buffer, Util::EpubParser::Mode::All);
+		auto parseResult = Util::EpubParser::Parse(buffer, Util::CommonParser::Mode::All);
 		if (parseResult.coverExists)
 			binaryCallback(std::move(parseResult.images.front().id), true, parseResult.images.front().body);
 		for (auto&& [id, body] : parseResult.images | std::views::drop(parseResult.coverExists ? 1 : 0))

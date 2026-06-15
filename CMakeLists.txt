@@ -87,7 +87,6 @@ else()
 		-Werror
 		-pedantic
 		-Wno-deprecated-declarations
-		-Wno-virtual-move-assign
 		-Wno-missing-field-initializers
 		-Wno-array-bounds
 		-fPIC
@@ -128,9 +127,12 @@ get_filename_component(QT_ROOT "${Qt${QT_MAJOR_VERSION}_DIR}/../../.." ABSOLUTE)
 set(BIT7Z_AUTO_FORMAT ON CACHE BOOL "enable auto format support" FORCE)
 set(BIT7Z_USE_NATIVE_STRING ON CACHE BOOL "enable native string" FORCE)
 set(BIT7Z_USE_STD_BYTE ON CACHE BOOL "enable std::byte" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/src/ext/bit7z)
+add_subdirectory(${EXT_ROOT}/bit7z)
+add_subdirectory(${EXT_ROOT}/libmobi)
 if(MSVC)
 	set_property(TARGET bit7z PROPERTY FOLDER ThirdParty)
+	set_property(TARGET mobi PROPERTY FOLDER ThirdParty)
+	set_target_properties(mobi PROPERTIES COMPILE_OPTIONS /W0)	
 endif()
 
 include(${BUILDSCRIPTS_ROOT}/cmake/target.cmake)
@@ -143,6 +145,8 @@ find_package(ICU REQUIRED)
 find_package(libjxl REQUIRED)
 find_package(cimg REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(libxml2 REQUIRED)
+find_package(ZLIB REQUIRED)
 
 CopyAndInstallICU(tu dt uc in)
 CopyAndInstallQtModules(${QtModules})
@@ -179,7 +183,7 @@ add_compile_definitions(${PLOG_SHARED_IMPORT})
 add_compile_definitions(UNICODE _UNICODE NOMINMAX _USE_MATH_DEFINES)
 add_compile_definitions(HYPODERMIC_OVERRIDE_CONSTRUCTOR_ARGUMENT_COUNT=32)
 add_compile_definitions(ADDITIONAL_LOG_ENABLED)
-include_directories("src/ext/Hypodermic")
+include_directories("${EXT_ROOT}/Hypodermic")
 
 include("src/ext/sqlite.cmake")
 include("src/home/lib/lib.cmake")
