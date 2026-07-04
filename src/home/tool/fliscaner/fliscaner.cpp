@@ -34,13 +34,14 @@ using namespace HomeCompa;
 namespace
 {
 
-constexpr auto APP_ID        = "fliscaner";
-constexpr auto OUTPUT_FOLDER = "output-folder";
-constexpr auto TIMEOUT       = "timeout";
-constexpr auto CONFIG        = "config";
-constexpr auto ATTEMPTS      = "attempts";
-constexpr auto COUNT         = "count";
-constexpr auto READY_LIST    = "ready-list";
+constexpr auto APP_ID             = "fliscaner";
+constexpr auto OUTPUT_FOLDER      = "output-folder";
+constexpr auto TIMEOUT            = "timeout";
+constexpr auto CONFIG             = "config";
+constexpr auto ATTEMPTS           = "attempts";
+constexpr auto COUNT              = "count";
+constexpr auto READY_LIST         = "ready-list";
+constexpr auto READY_LIST_CLEANUP = "ready-list-cleanup";
 
 constexpr auto DEFAULT_COUNT   = 3;
 constexpr auto DEFAULT_TIMEOUT = 5000;
@@ -48,6 +49,7 @@ int            MAX_ATTEMPTS    = 10;
 
 QString           DST_PATH;
 std::set<QString> UNIQUE_FILES;
+bool              FILTER_UNIQUE_FILES = false;
 
 class EventLooper
 {
@@ -252,6 +254,16 @@ void GetDaily(const QJsonArray& regexps, EventLooper& eventLooper, const QString
 			files.insert(match.captured(0));
 	}
 
+	if (FILTER_UNIQUE_FILES)
+	{
+		std::vector<QString> toRemove;
+		std::ranges::copy_if(UNIQUE_FILES, std::back_inserter(toRemove), [&](const auto& item) {
+			return !files.contains(item);
+		});
+		for (const auto& file : toRemove)
+			UNIQUE_FILES.erase(file);
+	}
+
 	QJsonArray filesArray;
 	std::ranges::copy(files, std::back_inserter(filesArray));
 	const QJsonObject obj {
@@ -322,12 +334,13 @@ int main(int argc, char* argv[])
 	parser.addVersionOption();
 	parser.addOptions(
 		{
-			{ { "o", OUTPUT_FOLDER },                                "Output folder",                         DST_PATH },
-			{        { "c", CONFIG },                  "Config file path (required)",                         "config" },
-			{				TIMEOUT,          "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
-			{			   ATTEMPTS, "Maximum number of download attempts per file",    QString::number(MAX_ATTEMPTS) },
-			{				  COUNT,    "Number of files downloaded simultaneously",   QString::number(DEFAULT_COUNT) },
-			{             READY_LIST,           "Already downloaded files list file",                           "file" },
+			{ { "o", OUTPUT_FOLDER }, "Output folder", DST_PATH },
+			{ { "c", CONFIG }, "Config file path (required)", "config" },
+			{ TIMEOUT, "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
+			{ ATTEMPTS, "Maximum number of download attempts per file", QString::number(MAX_ATTEMPTS) },
+			{ COUNT, "Number of files downloaded simultaneously", QString::number(DEFAULT_COUNT) },
+			{ READY_LIST, "Already downloaded files list file", "file" },
+			{ READY_LIST_CLEANUP, "Cleanup already downloaded files list file" },
     }
 	);
 	parser.addPositionalArgument("sql", "Download dump files");
@@ -363,8 +376,10 @@ int main(int argc, char* argv[])
 	{
 		QFile file(readyFiles);
 		if (file.open(QIODevice::ReadOnly))
-			UNIQUE_FILES = QString::fromUtf8(file.readAll()).split('\n') | std::ranges::to<std::set>();
+			UNIQUE_FILES = QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts) | std::ranges::to<std::set>();
 	}
+
+	FILTER_UNIQUE_FILES = parser.isSet(READY_LIST_CLEANUP);
 
 	EventLooper evenLooper;
 	TaskQueue   taskQueue;
