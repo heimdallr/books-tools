@@ -62,6 +62,38 @@ void ReplaceStringInPlace(std::string& subject, const std::string& search, const
 	}
 }
 
+std::string GetLine(std::ifstream& inp)
+{
+	std::string result;
+	std::string line;
+	while (std::getline(inp, line))
+	{
+		if (!line.starts_with("INSERT INTO"))
+			continue;
+
+		if (line.ends_with(';'))
+			return line;
+
+		result = std::move(line);
+		break;
+	}
+
+	if (result.empty())
+		return {};
+
+	while (std::getline(inp, line))
+	{
+		if (line.starts_with("--"))
+			continue;
+
+		result.append(line);
+		if (line.ends_with(';'))
+			return result;
+	}
+
+	return {};
+}
+
 void FillTables(DB::IDatabase& db, const std::filesystem::path& path)
 {
 	std::ifstream inp(path);
@@ -69,16 +101,18 @@ void FillTables(DB::IDatabase& db, const std::filesystem::path& path)
 	const auto size = inp.tellg();
 	inp.seekg(0, std::ios_base::beg);
 
-	const auto  tr = db.CreateTransaction();
-	std::string line;
+	const auto tr = db.CreateTransaction();
 
 	const std::regex escape(R"(\\(.))"), escapeBack("\x04(.)\x05");
 
 	int64_t currentPercents = 0;
-	while (std::getline(inp, line))
+	while (true)
 	{
-		if (!line.starts_with("INSERT INTO"))
-			continue;
+		auto line = GetLine(inp);
+		if (line.empty())
+			break;
+
+		assert(line.starts_with("INSERT INTO"));
 
 		ReplaceStringInPlace(line, R"(\\\")", "\"");
 		ReplaceStringInPlace(line, R"(\r\n)", "\n");
