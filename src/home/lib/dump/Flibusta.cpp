@@ -215,7 +215,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 		auto dataCopy = std::move(data);
 		data          = {};
 
-		threadPool.enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)](auto) mutable {
+		threadPool.enqueue([&archivesGuard, &archives, &picsGuard, &zipGuard, &pics, &picsFiles, currentId, data = std::move(dataCopy)](auto, const auto&) mutable {
 			size_t pictureCount = 0;
 
 			const ScopedCall logGuard(

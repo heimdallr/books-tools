@@ -75,7 +75,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	for (const auto& file : fileList)
 	{
 		auto& bookTaskItem = bookHashItems.emplace_back(bookHashItemProvider.Get(file));
-		threadPool.enqueue([&](QCryptographicHash& md5) {
+		threadPool.enqueue([&](QCryptographicHash& md5, const auto&) {
 			PLOGV << "start parsing: " << bookTaskItem.file;
 			ParseBookHash(bookTaskItem, md5);
 			progress.Increment(1, bookTaskItem.file.toStdString());

@@ -904,7 +904,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	std::mutex                                   archivesGuard;
 	std::vector<std::tuple<QString, QByteArray>> archives;
 
-	threadPool.enqueue([&](auto) {
+	threadPool.enqueue([&](auto, const auto&) {
 		auto             archiveName = Platform::PathToString(reviewsFolder / Inpx::REVIEWS_ADDITIONAL_ARCHIVE_NAME);
 		const ScopedCall logGuard(
 			[&] {
@@ -945,7 +945,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	const auto write = [&](const int year, const int month, Data data) {
 		auto archiveName = Platform::PathToString(reviewsFolder / std::format("{:04}{:02}", year, month)) + ".7z";
 
-		threadPool.enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)](auto) mutable {
+		threadPool.enqueue([&archivesGuard, &archives, archiveName = std::move(archiveName), data = std::move(data)](auto, const auto&) mutable {
 			size_t           counter = 0;
 			const ScopedCall logGuard(
 				[&] {
@@ -1142,7 +1142,7 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 				storageItem.bytes = file.readAll();
 			}
 
-			threadPool.enqueue([&](auto) {
+			threadPool.enqueue([&](auto, const auto&) {
 				[[maybe_unused]] const CompilationHandler compilationHandler(inpDataProvider, sectionToBook, storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});
@@ -1224,7 +1224,7 @@ Replacement ReadHash(InpDataProvider& inpDataProvider, Archives& archives)
 				storageItem.bytes = file.readAll();
 			}
 
-			threadPool.enqueue([&](auto) {
+			threadPool.enqueue([&](auto, const auto&) {
 				[[maybe_unused]] const FileHashParser parser(storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});

@@ -389,7 +389,7 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 			if (!file.open(QIODevice::ReadOnly))
 				continue;
 
-			threadPool.enqueue([&, xml, bytes = file.readAll()](HashParserObserver& observer) mutable {
+			threadPool.enqueue([&, xml, bytes = file.readAll()](HashParserObserver& observer, const auto&) mutable {
 				QBuffer buffer(&bytes);
 				buffer.open(QIODevice::ReadOnly);
 				Util::HashParser::Parse(buffer, observer);
