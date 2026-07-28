@@ -273,8 +273,11 @@ Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 
 Book* InpDataProvider::GetBook(const QString& sourceLib, const QString& libId) const
 {
-	const auto it = m_libIdToBook.find(QString("%1_%2").arg(sourceLib.toLower(), libId));
-	return it != m_libIdToBook.end() ? it->second : nullptr;
+	if (const auto it = m_libIdToBook.find(libId); it != m_libIdToBook.end())
+		return it->second;
+
+	const auto it = m_sourceLibIdToBook.find(QString("%1_%2").arg(sourceLib.toLower(), libId));
+	return it != m_sourceLibIdToBook.end() ? it->second : nullptr;
 }
 
 Book* InpDataProvider::GetBook(const QString& hash) const
@@ -298,7 +301,7 @@ void InpDataProvider::SetSourceLib(const QString& sourceLib)
 
 		m_currentInpData = &it->inpData;
 
-		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_libIdToBook, m_libIdToBook.end()), [sourceLib = sourceLib.toLower()](const auto& item) {
+		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toLower()](const auto& item) {
 			return std::make_pair(QString("%1_%2").arg(sourceLib, item->libId), item.get());
 		});
 
@@ -310,6 +313,12 @@ void InpDataProvider::SetSourceLib(const QString& sourceLib)
 	}
 
 	m_currentInpData = &m_stub;
+}
+
+void InpDataProvider::AddLibToBook(Book* book)
+{
+	if (m_commonLibFolders.contains(QFileInfo(book->folder).completeBaseName()))
+		m_libIdToBook.try_emplace(book->libId, book);
 }
 
 bool InpDataProvider::Enumerate(std::function<bool(const QString&, const IDump&)> functor) const

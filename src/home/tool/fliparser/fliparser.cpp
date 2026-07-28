@@ -822,6 +822,8 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 
 			book->insNo = zip.GetFileIndex(bookFile) + 1;
 
+			inpDataProvider.AddLibToBook(book);
+
 			file << *book;
 			++counter;
 
