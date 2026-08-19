@@ -820,7 +820,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				book->series.emplace_back();
 			}
 
-			book->insNo = zip.GetFileIndex(bookFile) + 1;
+			book->insNo = zip.GetFileIndex(bookFile);
 
 			inpDataProvider.AddLibToBook(book);
 
