@@ -119,6 +119,7 @@ InpData CreateInpData(const IDump& dump)
 							 .rateCount = query.Get<int>(13),
 							 .keywords  = query.Get<const char*>(14),
 							 .year      = query.Get<const char*>(15),
+							 .sourceLib = dump.GetName(),
 							 .hash      = query.Get<const char*>(16),
 						 })
 					 )

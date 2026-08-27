@@ -69,14 +69,14 @@ public:
 	}
 
 private: // UniqueFileStorage::IUniqueFileConflictResolver
-	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
+	[[nodiscard]] bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
-		const auto isDeleted = [this](const UniqueFile& item) {
+		const auto toComparable = [this](const UniqueFile& item) {
 			const auto* book = m_inpDataProvider.GetBook(item.uid);
-			return !book || book->deleted;
+			return book ? std::make_tuple(book->deleted, book->date, book->sourceLib, book->libId) : std::make_tuple(true, QString { "9999-99-99" }, QString {}, QString {});
 		};
 
-		return isDeleted(duplicate) && !isDeleted(file);
+		return toComparable(file) < toComparable(duplicate);
 	}
 
 private:
@@ -216,7 +216,6 @@ private:
 				.hashText = std::move(hashText),
 				.cover    = { .hash = std::move(cover.hash), .pHash = cover.pHash.toULongLong(nullptr, 16) },
 				.images   = std::move(imageItems),
-				.order    = QFileInfo(file).baseName().toInt(),
         }
 		);
 

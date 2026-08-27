@@ -36,7 +36,7 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 {
 	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
-		return file.order > duplicate.order;
+		return file.uid.file < duplicate.uid.file;
 	}
 };
 
@@ -431,7 +431,6 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 						.cover    = { .hash = std::move(observerItem.cover.hash), .pHash = observerItem.cover.pHash.toULongLong(nullptr, 16) },
 						.images   = std::move(imageItems),
 					};
-					uniqueFile.order = QFileInfo(uniqueFile.uid.file).baseName().toInt();
 					m_old.emplace(std::move(observerItem.id), std::move(uniqueFile));
 				}
 				observerDataItem.second.clear();
@@ -503,9 +502,7 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 		log(it->second.first);
 
-		if (imagesCompareResult == ImagesCompareResult::Outer
-		    || (imagesCompareResult == ImagesCompareResult::Equal
-		        && (m_conflictResolver->Resolve(it->second.first, file) || (!m_conflictResolver->Resolve(file, it->second.first) && it->second.first.order >= file.order))))
+		if (imagesCompareResult == ImagesCompareResult::Outer || (imagesCompareResult == ImagesCompareResult::Equal && m_conflictResolver->Resolve(it->second.first, file)))
 		{
 			m_duplicateObserver->OnDuplicateFound(it->second.first.uid, file.uid);
 			it->second.second.emplace_back(std::move(file)).ClearImages();
