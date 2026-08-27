@@ -37,11 +37,11 @@ class FLibrary(ConanFile):
         self.requires("plog/1.1.10")
         self.requires("xerces-c/3.3.0")
         self.requires("icu/78.2")
-        self.requires("libjxl/0.11.2")
+        self.requires("libjxl/0.12.0")
         self.requires("cimg/3.3.2")
-        self.requires("sqlite3/3.51.0")
+        self.requires("sqlite3/3.53.4")
         self.requires("libxml2/2.15.3")
-        self.requires("zlib/1.3.1")
+        self.requires("zlib/1.3.2")
 
     def configure(self):
         configure_boost(self)
