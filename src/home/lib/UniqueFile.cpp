@@ -36,7 +36,7 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 {
 	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
-		return file.order > duplicate.order;
+		return file.uid.file < duplicate.uid.file;
 	}
 };
 
@@ -67,27 +67,16 @@ public:
 private: // UniqueFileStorage::ImageComparer
 	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
 	{
-		const auto getAllImages = [](const UniqueFile& uniqueFile) {
-			std::vector<std::reference_wrapper<const ImageItem>> images;
-			images.reserve(uniqueFile.images.size() + !uniqueFile.cover.hash.isEmpty());
-			if (!uniqueFile.cover.hash.isEmpty())
-				images.emplace_back(uniqueFile.cover);
-			std::ranges::copy(uniqueFile.images, std::back_inserter(images));
-			return images;
-		};
-
-		const auto lhsImages = getAllImages(lhs), rhsImages = getAllImages(rhs);
-
 		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 		using ImageHash   = std::pair<uint64_t, QString>;
 
 		ImageHashes lpHashes, rpHashes;
 
-		auto lIt = lhsImages.cbegin(), rIt = rhsImages.cbegin();
-		while (lIt != lhsImages.cend() && rIt != rhsImages.cend())
+		auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
+		while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
 		{
-			const auto& lRef = lIt->get();
-			const auto& rRef = rIt->get();
+			const auto& lRef = *lIt;
+			const auto& rRef = *rIt;
 			if (lRef.hash < rRef.hash)
 			{
 				lpHashes.emplace(lRef.pHash, lRef.fileName);
@@ -107,10 +96,10 @@ private: // UniqueFileStorage::ImageComparer
 		}
 
 		const auto transform = [](const auto& item) {
-			return std::make_pair(item.get().pHash, item.get().fileName);
+			return std::make_pair(item.pHash, item.fileName);
 		};
-		std::transform(lIt, lhsImages.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
-		std::transform(rIt, rhsImages.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
+		std::transform(lIt, lhs.images.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
+		std::transform(rIt, rhs.images.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
 
 		auto lIds = lpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
 		auto rIds = rpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
@@ -142,7 +131,7 @@ private: // UniqueFileStorage::ImageComparer
 		if (result == ImagesCompareResult::Equal && lhs.cover.hash.isEmpty() != rhs.cover.hash.isEmpty())
 			result = rhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : (assert(lhs.cover.hash.isEmpty()), ImagesCompareResult::Inner);
 
-		if (!(lhsImages.empty() || rhsImages.empty()) || lhs.hash == rhs.hash)
+		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.hash == rhs.hash)
 			return result;
 
 		if (Util::Intersect(lhs.title, rhs.title))
@@ -442,7 +431,6 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 						.cover    = { .hash = std::move(observerItem.cover.hash), .pHash = observerItem.cover.pHash.toULongLong(nullptr, 16) },
 						.images   = std::move(imageItems),
 					};
-					uniqueFile.order = QFileInfo(uniqueFile.uid.file).baseName().toInt();
 					m_old.emplace(std::move(observerItem.id), std::move(uniqueFile));
 				}
 				observerDataItem.second.clear();
@@ -514,9 +502,7 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 
 		log(it->second.first);
 
-		if (imagesCompareResult == ImagesCompareResult::Outer
-		    || (imagesCompareResult == ImagesCompareResult::Equal
-		        && (m_conflictResolver->Resolve(it->second.first, file) || (!m_conflictResolver->Resolve(file, it->second.first) && it->second.first.order >= file.order))))
+		if (imagesCompareResult == ImagesCompareResult::Outer || (imagesCompareResult == ImagesCompareResult::Equal && m_conflictResolver->Resolve(it->second.first, file)))
 		{
 			m_duplicateObserver->OnDuplicateFound(it->second.first.uid, file.uid);
 			it->second.second.emplace_back(std::move(file)).ClearImages();

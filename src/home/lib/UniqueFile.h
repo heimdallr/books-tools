@@ -33,8 +33,6 @@ struct LIB_EXPORT UniqueFile
 	ImageItem           cover;
 	std::set<ImageItem> images;
 
-	int order { 0 };
-
 	QString GetTitle() const;
 	void    ClearImages();
 };
