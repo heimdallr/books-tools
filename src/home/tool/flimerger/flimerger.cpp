@@ -180,7 +180,9 @@ private:
 			Util::HashParser::HashImageItem cover,
 		Util::HashParser::HashImageItems    images,
 		Util::HashParser::Section::Ptr      section,
-		Util::TextHistogram,
+		size_t                              size,
+		uint64_t                            simHash,
+		Util::TextHistogram                 hist,
 		QStringList
 	) override
 	{
@@ -219,6 +221,9 @@ private:
 				.hashText = std::move(hashText),
 				.cover    = { .hash = std::move(cover.hash), .pHash = cover.pHash.toULongLong(nullptr, 16) },
 				.images   = std::move(imageItems),
+				.size     = size,
+				.simHash  = simHash,
+				.hist     = hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::set>(),
         }
 		);
 

@@ -266,6 +266,8 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
+		size_t /*size*/,
+		uint64_t /*simHash*/,
 		Util::TextHistogram,
 		QStringList
 	) override
@@ -335,6 +337,8 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
+		size_t /*size*/,
+		uint64_t /*simHash*/,
 		Util::TextHistogram,
 		QStringList annotation
 	) override

@@ -155,6 +155,8 @@ struct HashParserObserver final : Util::HashParser::IObserver
 		Util::HashParser::HashImageItem  cover;
 		Util::HashParser::HashImageItems images;
 		size_t                           size { 0 };
+		uint64_t                         simHash { 0 };
+		Util::TextHistogram              hist;
 	};
 
 	using Items = std::vector<Item>;
@@ -173,7 +175,9 @@ private:
 			Util::HashParser::HashImageItem cover,
 		Util::HashParser::HashImageItems    images,
 		Util::HashParser::Section::Ptr      section,
-		Util::TextHistogram,
+		size_t                              size,
+		uint64_t                            simHash,
+		Util::TextHistogram                 hist,
 		QStringList
 	) override
 	{
@@ -189,7 +193,9 @@ private:
 #undef HASH_PARSER_CALLBACK_ITEM
 				std::move(cover),
 			std::move(images),
-			it != section->children.end() ? it->second->size : 0
+			size,
+			simHash,
+			std::move(hist)
 		);
 		return true;
 	}
@@ -433,6 +439,9 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 						.hashText = observerItem.id,
 						.cover    = { .hash = std::move(observerItem.cover.hash), .pHash = observerItem.cover.pHash.toULongLong(nullptr, 16) },
 						.images   = std::move(imageItems),
+						.size     = observerItem.size,
+						.simHash  = observerItem.simHash,
+						.hist     = observerItem.hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::set>(),
 					};
 					m_old.emplace(std::move(observerItem.id), std::move(uniqueFile));
 				}

@@ -32,6 +32,9 @@ struct LIB_EXPORT UniqueFile
 	QStringList         hashSections;
 	ImageItem           cover;
 	std::set<ImageItem> images;
+	size_t              size;
+	uint64_t            simHash;
+	std::set<QString>   hist;
 
 	QString GetTitle() const;
 	void    ClearImages();
