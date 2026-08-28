@@ -72,8 +72,9 @@ private: // UniqueFileStorage::IUniqueFileConflictResolver
 	[[nodiscard]] bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
 		const auto toComparable = [this](const UniqueFile& item) {
-			const auto* book = m_inpDataProvider.GetBook(item.uid);
-			return book ? std::make_tuple(book->deleted, book->date, book->sourceLib, book->libId) : std::make_tuple(true, QString { "9999-99-99" }, QString {}, QString {});
+			const auto* book     = m_inpDataProvider.GetBook(item.uid);
+			const auto  isNotFb2 = QFileInfo(item.uid.file).suffix() != "fb2";
+			return book ? std::make_tuple(book->deleted, isNotFb2, book->date, book->sourceLib, book->libId) : std::make_tuple(true, isNotFb2, QString { "9999-99-99" }, QString {}, QString {});
 		};
 
 		return toComparable(file) < toComparable(duplicate);
@@ -223,7 +224,7 @@ private:
 				.images   = std::move(imageItems),
 				.size     = size,
 				.simHash  = simHash,
-				.hist     = hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::set>(),
+				.hist     = hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::vector>(),
         }
 		);
 

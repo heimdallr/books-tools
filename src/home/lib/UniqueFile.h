@@ -25,16 +25,16 @@ struct LIB_EXPORT UniqueFile
 		QString file;
 	};
 
-	Uid                 uid;
-	QString             hash;
-	std::set<QString>   title;
-	QString             hashText;
-	QStringList         hashSections;
-	ImageItem           cover;
-	std::set<ImageItem> images;
-	size_t              size;
-	uint64_t            simHash;
-	std::set<QString>   hist;
+	Uid                  uid;
+	QString              hash;
+	std::set<QString>    title;
+	QString              hashText;
+	QStringList          hashSections;
+	ImageItem            cover;
+	std::set<ImageItem>  images;
+	size_t               size;
+	uint64_t             simHash;
+	std::vector<QString> hist;
 
 	QString GetTitle() const;
 	void    ClearImages();
@@ -140,7 +140,9 @@ public:
 	void                                      SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
 
 private:
-	bool CheckForOld(size_t indexFile, size_t indexOld);
+	bool                       CheckForOld(size_t indexDuplicate, size_t indexFile, bool histCheck);
+	bool                       CheckForOld(const QString& hash, size_t indexDuplicate, bool histCheck);
+	std::optional<UniqueFile*> CheckForNew(const QString& hash, size_t indexDuplicate, bool histCheck);
 
 private:
 	const QString                                m_hashDir;
@@ -153,12 +155,14 @@ private:
 	std::multimap<size_t, uint64_t> m_sizeToSimHash;
 	std::vector<UniqueFile>         m_files;
 
-	std::unordered_map<QString, std::vector<size_t>> m_old;
+	std::unordered_map<QString, std::vector<size_t>>                                 m_old;
+	std::unordered_map<QString, std::vector<std::pair<size_t, std::vector<size_t>>>> m_new;
 
+	using SimHashToHash = std::unordered_multimap<uint64_t, QString>;
+	SimHashToHash m_oldSimHash;
+	SimHashToHash m_newSimHash;
 
-	std::vector<Dup>                             m_dup;
-
-	std::unordered_multimap<QString, std::pair<UniqueFile, std::vector<UniqueFile>>> m_new;
+	std::vector<Dup> m_dup;
 
 	const QString m_si;
 };
