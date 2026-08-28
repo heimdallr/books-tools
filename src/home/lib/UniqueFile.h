@@ -90,8 +90,8 @@ class LIB_EXPORT UniqueFileStorage
 {
 	struct Dup
 	{
-		UniqueFile file;
-		UniqueFile origin;
+		size_t file;
+		size_t origin;
 	};
 
 public:
@@ -140,6 +140,9 @@ public:
 	void                                      SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
 
 private:
+	bool CheckForOld(size_t indexFile, size_t indexOld);
+
+private:
 	const QString                                m_hashDir;
 	const std::unique_ptr<const ImageComparer>   m_imageComparer;
 	std::mutex                                   m_guard;
@@ -147,10 +150,13 @@ private:
 	std::unique_ptr<IDuplicateObserver>          m_duplicateObserver;
 	std::shared_ptr<IUniqueFileConflictResolver> m_conflictResolver;
 
-	std::unordered_multimap<QString, UniqueFile> m_old;
-	std::vector<Dup>                             m_dup;
+	std::multimap<size_t, uint64_t> m_sizeToSimHash;
+	std::vector<UniqueFile>         m_files;
 
-	std::unordered_map<std::pair<QString, QString>, std::pair<QString, QString>, Util::PairHash<QString, QString>> m_skip;
+	std::unordered_map<QString, std::vector<size_t>> m_old;
+
+
+	std::vector<Dup>                             m_dup;
 
 	std::unordered_multimap<QString, std::pair<UniqueFile, std::vector<UniqueFile>>> m_new;
 

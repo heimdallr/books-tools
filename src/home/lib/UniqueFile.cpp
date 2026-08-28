@@ -443,16 +443,21 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 						.simHash  = observerItem.simHash,
 						.hist     = observerItem.hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::set>(),
 					};
-					m_old.emplace(std::move(observerItem.id), std::move(uniqueFile));
+
+					m_sizeToSimHash.emplace(uniqueFile.size, uniqueFile.simHash);
+
+					const auto index = m_files.size();
+					m_files.emplace_back(std::move(uniqueFile));
+					m_old[std::move(observerItem.id)].emplace_back(index);
 				}
 				observerDataItem.second.clear();
 			}
 			observer.data.clear();
-			progress.Increment(1, std::to_string(m_old.size()));
+			progress.Increment(1, std::to_string(m_files.size()));
 		}
 	}
 
-	PLOGI << "ready books found: " << m_old.size();
+	PLOGI << "ready books found: " << m_files.size();
 }
 
 std::pair<ImageItem, std::set<ImageItem>> UniqueFileStorage::GetImages(UniqueFile& file)
@@ -475,11 +480,42 @@ void UniqueFileStorage::SetImages(const QString& hash, const QString& fileName, 
 	}
 }
 
-UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
+void LogIt(const UniqueFile& file, const UniqueFile& fileOld)
 {
-	file.title.erase(m_si);
+	PLOGV << QString("duplicates detected: %1/%2 vs %3/%4, %5").arg(file.uid.folder, file.uid.file, fileOld.uid.folder, fileOld.uid.file, file.GetTitle());
+}
+
+bool UniqueFileStorage::CheckForOld(const size_t indexFile, const size_t indexOld)
+{
+	auto&       file                = m_files[indexFile];
+	const auto& fileOld             = m_files[indexOld];
+	const auto  imagesCompareResult = m_imageComparer->Compare(fileOld, file);
+	if (imagesCompareResult == ImagesCompareResult::Varied)
+		return false;
+
+	if (imagesCompareResult == ImagesCompareResult::Inner || (imagesCompareResult == ImagesCompareResult::Equal && file.hash != fileOld.hash && m_conflictResolver->Resolve(file, fileOld)))
+	{
+		PLOGW << QString("old duplicate detected by %1/%2: %3/%4, %5").arg(file.uid.folder, file.uid.file, fileOld.uid.folder, fileOld.uid.file, file.GetTitle());
+		return false;
+	}
+
+	LogIt(file, fileOld);
+	m_duplicateObserver->OnDuplicateFound(fileOld.uid, file.uid);
+	m_dup.emplace_back(indexFile, indexOld);
+	file.ClearImages();
+
+	return true;
+}
+
+UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile fileSrc)
+{
+	fileSrc.title.erase(m_si);
 
 	std::lock_guard lock(m_guard);
+
+	const auto indexFile = m_files.size();
+	auto&      file      = m_files.emplace_back(std::move(fileSrc));
+	m_sizeToSimHash.emplace(file.size, file.simHash);
 
 	if (m_hashDir.isEmpty())
 		return &m_new.emplace(std::move(hash), std::make_pair(std::move(file), std::vector<UniqueFile> {}))->second.first;
@@ -488,22 +524,13 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile file)
 		PLOGV << QString("duplicates detected: %1/%2 vs %3/%4, %5").arg(file.uid.folder, file.uid.file, old.uid.folder, old.uid.file, file.GetTitle());
 	};
 
-	for (auto [it, end] = m_old.equal_range(hash); it != end; ++it)
+	if (const auto it = m_old.find(hash); it != m_old.end())
 	{
-		const auto imagesCompareResult = m_imageComparer->Compare(it->second, file);
-		if (imagesCompareResult == ImagesCompareResult::Varied)
-			continue;
-
-		if (imagesCompareResult == ImagesCompareResult::Inner || (imagesCompareResult == ImagesCompareResult::Equal && file.hash != it->second.hash && m_conflictResolver->Resolve(file, it->second)))
+		for (const auto& indexOld : it->second)
 		{
-			PLOGW << QString("old duplicate detected by %1/%2: %3/%4, %5").arg(file.uid.folder, file.uid.file, it->second.uid.folder, it->second.uid.file, file.GetTitle());
-			continue;
+			if (CheckForOld(indexFile, indexOld))
+				return nullptr;
 		}
-
-		log(it->second);
-		m_duplicateObserver->OnDuplicateFound(it->second.uid, file.uid);
-		m_dup.emplace_back(std::move(file), it->second).file.ClearImages();
-		return nullptr;
 	}
 
 	for (auto [it, end] = m_new.equal_range(hash); it != end; ++it)
