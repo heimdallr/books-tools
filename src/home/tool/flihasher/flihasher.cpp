@@ -97,6 +97,9 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 			.WriteAttribute("id", file.parseResult.hashText)
 			.WriteAttribute(Inpx::FOLDER, file.folder)
 			.WriteAttribute(Inpx::FILE, file.file)
+			.WriteAttribute("count", QString::number(file.parseResult.count))
+			.WriteAttribute("size", QString::number(file.parseResult.size))
+			.WriteAttribute("simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar{'0'}))
 			.WriteAttribute("title", file.parseResult.title);
 
 		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item) {

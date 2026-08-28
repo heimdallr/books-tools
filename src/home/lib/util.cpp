@@ -164,7 +164,11 @@ void SerializeHashSections(const QStringList& sections, Util::XmlWriter& writer)
 				{
 					writer.WriteAttribute("count", *it++);
 					if (it != split.end())
+					{
 						writer.WriteAttribute("size", *it++);
+						if (it != split.end())
+							writer.WriteAttribute("simHash", *it++);
+					}
 				}
 			}
 		};
