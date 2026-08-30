@@ -1,5 +1,6 @@
 #include "util.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -78,7 +79,7 @@ InpData CreateInpData(const IDump& dump)
 	dump.CreateInpData([&](const DB::IQuery& query) {
 		QString libId = query.Get<const char*>(7);
 
-		QString fileName = query.Get<const char*>(5);
+		QString fileName = QDir::fromNativeSeparators(query.Get<const char*>(5));
 		auto    type     = query.Get<QString>(9).toLower();
 
 		if (fileName.isEmpty())
@@ -90,8 +91,11 @@ InpData CreateInpData(const IDump& dump)
 		else
 		{
 			const QFileInfo fileInfo(fileName);
-			fileName = fileInfo.completeBaseName();
-			type     = fileInfo.suffix().toLower();
+			type = fileInfo.suffix().toLower();
+			if (const auto dir = fileInfo.dir(); dir.dirName() == '.')
+				fileName = fileInfo.completeBaseName();
+			else
+				fileName = dir.filePath(fileInfo.completeBaseName());
 		}
 
 		auto index = fileName + "." + type;
@@ -124,6 +128,7 @@ InpData CreateInpData(const IDump& dump)
 						 })
 					 )
 			         .first;
+			it->second->title.replace(QChar { 0x2028 }, ' ');
 		}
 
 		it->second->series.emplace_back(query.Get<const char*>(3), Util::Fb2InpxParser::GetSeqNumber(query.Get<const char*>(4)), query.Get<int>(17), query.Get<double>(18));
