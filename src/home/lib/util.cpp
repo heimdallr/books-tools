@@ -91,11 +91,11 @@ InpData CreateInpData(const IDump& dump)
 		else
 		{
 			const QFileInfo fileInfo(fileName);
+			type = fileInfo.suffix().toLower();
 			if (const auto dir = fileInfo.dir(); dir.dirName() == '.')
 				fileName = fileInfo.completeBaseName();
 			else
 				fileName = dir.filePath(fileInfo.completeBaseName());
-			type = fileInfo.suffix().toLower();
 		}
 
 		auto index = fileName + "." + type;
@@ -128,6 +128,7 @@ InpData CreateInpData(const IDump& dump)
 						 })
 					 )
 			         .first;
+			it->second->title.replace(QChar { 0x2028 }, ' ');
 		}
 
 		it->second->series.emplace_back(query.Get<const char*>(3), Util::Fb2InpxParser::GetSeqNumber(query.Get<const char*>(4)), query.Get<int>(17), query.Get<double>(18));

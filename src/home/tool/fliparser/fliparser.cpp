@@ -746,7 +746,7 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 		PLOGV << folder << ", files count: " << bookFiles.size();
 		size_t counter = 0;
 
-		for (const auto& bookFile : bookFiles)
+		for (auto bookFile : bookFiles)
 		{
 			auto* book = inpDataProvider.GetBook({ folder, bookFile });
 			if (book)
@@ -776,18 +776,17 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				}
 			}
 
-			const auto bookFileName = book->GetFileName();
-			if (bookFileName.contains('\n') || bookFileName.contains('\r'))
-			{
-				PLOGW << bookFile << " contains bad symbols: " << bookFileName;
-				continue;
-			}
+			maxTime         = std::max(maxTime, zip.GetFileTime(bookFile));
+			book->insNo     = zip.GetFileIndex(bookFile);
+			book->sourceLib = sourceLib;
+			book->folder    = folder;
+
+			for (const auto& [from, to] : Inpx::PATH_FIX)
+				bookFile.replace(from, to);
 
 			const QFileInfo bookFileInfo(bookFile);
 
-			book->sourceLib = sourceLib;
-			book->folder    = folder;
-			book->ext       = bookFileInfo.suffix();
+			book->ext = bookFileInfo.suffix();
 			if (const auto dir = bookFileInfo.dir(); dir.dirName() == '.')
 				book->file = bookFileInfo.completeBaseName();
 			else
@@ -823,14 +822,10 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				book->series.emplace_back();
 			}
 
-			book->insNo = zip.GetFileIndex(bookFile);
-
 			inpDataProvider.AddLibToBook(book);
 
 			file << *book;
 			++counter;
-
-			maxTime = std::max(maxTime, zip.GetFileTime(bookFile));
 		}
 
 		if (static_cast<qsizetype>(counter) == bookFiles.size())
