@@ -1,5 +1,6 @@
 #include "util.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -78,7 +79,7 @@ InpData CreateInpData(const IDump& dump)
 	dump.CreateInpData([&](const DB::IQuery& query) {
 		QString libId = query.Get<const char*>(7);
 
-		QString fileName = query.Get<const char*>(5);
+		QString fileName = QDir::fromNativeSeparators(query.Get<const char*>(5));
 		auto    type     = query.Get<QString>(9).toLower();
 
 		if (fileName.isEmpty())
@@ -90,8 +91,11 @@ InpData CreateInpData(const IDump& dump)
 		else
 		{
 			const QFileInfo fileInfo(fileName);
-			fileName = fileInfo.completeBaseName();
-			type     = fileInfo.suffix().toLower();
+			if (const auto dir = fileInfo.dir(); dir.dirName() == '.')
+				fileName = fileInfo.completeBaseName();
+			else
+				fileName = dir.filePath(fileInfo.completeBaseName());
+			type = fileInfo.suffix().toLower();
 		}
 
 		auto index = fileName + "." + type;
