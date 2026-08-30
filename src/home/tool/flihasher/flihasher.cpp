@@ -102,19 +102,21 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 			.WriteAttribute("simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar{'0'}))
 			.WriteAttribute("title", file.parseResult.title);
 
-		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item) {
+		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item, const bool unlinked) {
 			const auto guard = bookGuard->Guard(nodeName);
 			if (!item.file.isEmpty())
 				guard->WriteAttribute("id", item.file);
 			if (item.pHash)
 				guard->WriteAttribute("pHash", QString::number(item.pHash, 16));
+			if (unlinked)
+				guard->WriteAttribute("linked", "false");
 			guard->WriteCharacters(item.hash);
 		};
 
 		if (!file.cover.hash.isEmpty())
-			writeImage(Global::COVER, file.cover);
+			writeImage(Global::COVER, file.cover, false);
 		for (const auto& item : file.images)
-			writeImage(Global::IMAGE, item);
+			writeImage(Global::IMAGE, item, !file.parseResult.linkedImages.contains(item.file));
 
 		SerializeHashSections(file.parseResult.hashSections, writer);
 
