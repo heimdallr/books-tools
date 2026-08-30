@@ -189,10 +189,13 @@ private:
 
 		m_progress.Increment(1, file.toStdString());
 
-		decltype(UniqueFile::images) imageItems;
-		std::ranges::transform(std::move(images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](auto&& item) {
-			return ImageItem { .fileName = std::move(item.id), .hash = std::move(item.hash), .pHash = item.pHash.toULongLong(nullptr, 16) };
-		});
+		auto imageItems = images | std::views::as_rvalue | std::views::filter([](auto&& item) {
+							  return item.linked;
+						  })
+		                | std::views::transform([](auto&& item) {
+							  return ImageItem { .fileName = std::move(item.id), .hash = std::move(item.hash), .pHash = item.pHash.toULongLong(nullptr, 16) };
+						  })
+		                | std::ranges::to<decltype(UniqueFile::images)>();
 
 		if (!m_bookFiles.contains(file))
 			return true;

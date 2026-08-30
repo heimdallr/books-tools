@@ -411,10 +411,13 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 				m_inpDataProvider->SetSourceLib(observerDataItem.first);
 				for (auto&& observerItem : observerDataItem.second)
 				{
-					decltype(UniqueFile::images) imageItems;
-					std::ranges::transform(std::move(observerItem.images) | std::views::as_rvalue, std::inserter(imageItems, imageItems.end()), [](auto&& item) {
-						return ImageItem { .fileName = std::move(item.id), .hash = std::move(item.hash), .pHash = item.pHash.toULongLong(nullptr, 16) };
-					});
+					auto imageItems = observerItem.images | std::views::as_rvalue | std::views::filter([](auto&& item) {
+										  return item.linked;
+									  })
+					                | std::views::transform([](auto&& item) {
+										  return ImageItem { .fileName = std::move(item.id), .hash = std::move(item.hash), .pHash = item.pHash.toULongLong(nullptr, 16) };
+									  })
+					                | std::ranges::to<decltype(UniqueFile::images)>();
 
 					const UniqueFile::Uid uid { observerItem.folder, observerItem.file };
 
