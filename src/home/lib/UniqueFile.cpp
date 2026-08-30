@@ -7,6 +7,8 @@
 #include <QDir>
 #include <QFile>
 
+#include "fnd/ScopedCall.h"
+
 #include "dump/Factory.h"
 #include "dump/IDump.h"
 #include "util/StrUtil.h"
@@ -445,6 +447,7 @@ UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold,
 					};
 
 					m_sizeToSimHash.emplace(uniqueFile.size, uniqueFile.simHash);
+					m_oldSimHash.emplace(uniqueFile.simHash, observerItem.id);
 
 					const auto index = m_files.size();
 					m_files.emplace_back(std::move(uniqueFile));
@@ -624,7 +627,9 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile fileSrc)
 
 	const auto indexFile = m_files.size();
 	auto&      file      = m_files.emplace_back(std::move(fileSrc));
-	m_sizeToSimHash.emplace(file.size, file.simHash);
+	ScopedCall sizeToSimHashGuard([&] {
+		m_sizeToSimHash.emplace(file.size, file.simHash);
+	});
 
 	const auto checkSimHash = [&](const SimHashToHash& simHashToHash, const auto& f) -> std::optional<UniqueFile*> {
 		for (auto it = m_sizeToSimHash.upper_bound(95 * file.size / 100), end = m_sizeToSimHash.upper_bound(105 * file.size / 100); it != end; ++it)
