@@ -38,7 +38,7 @@ class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileCo
 {
 	bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
-		return file.uid.file < duplicate.uid.file;
+		return file.uid.file > duplicate.uid.file;
 	}
 };
 

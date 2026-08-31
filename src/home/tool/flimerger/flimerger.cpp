@@ -71,13 +71,18 @@ public:
 private: // UniqueFileStorage::IUniqueFileConflictResolver
 	[[nodiscard]] bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
 	{
+		static constexpr std::pair<const char*, int> weights[] {
+			{ "flibusta", 1000 },
+			{ "librusec",  100 }
+		};
 		const auto toComparable = [this](const UniqueFile& item) {
-			const auto* book     = m_inpDataProvider.GetBook(item.uid);
-			const auto  isNotFb2 = QFileInfo(item.uid.file).suffix() != "fb2";
-			return book ? std::make_tuple(book->deleted, isNotFb2, book->date, book->sourceLib, book->libId) : std::make_tuple(true, isNotFb2, QString { "9999-99-99" }, QString {}, QString {});
+			const auto* book  = m_inpDataProvider.GetBook(item.uid);
+			const auto  isFb2 = QFileInfo(item.uid.file).suffix().toLower() == "fb2";
+			return book ? std::make_tuple(true, !book->deleted, isFb2, FindSecond(weights, book->sourceLib.toStdString().data(), 0, PszComparerCaseInsensitive{}), book->date, book->libId)
+			            : std::make_tuple(false, false, isFb2, 0, QString { "0000-00-00" }, item.uid.file);
 		};
 
-		return toComparable(file) < toComparable(duplicate);
+		return toComparable(file) > toComparable(duplicate);
 	}
 
 private:
