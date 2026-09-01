@@ -547,7 +547,7 @@ bool UniqueFileStorage::CheckForOld(const size_t indexDuplicate, const size_t in
 	if (imagesCompareResult == ImagesCompareResult::Varied)
 		return false;
 
-	if (imagesCompareResult == ImagesCompareResult::Inner || (imagesCompareResult == ImagesCompareResult::Equal && duplicate.hash != file.hash && m_conflictResolver->Resolve(duplicate, file)))
+	if (imagesCompareResult == ImagesCompareResult::Inner)
 	{
 		PLOGW << QString("old duplicate detected by %1/%2: %3/%4, %5").arg(duplicate.uid.folder, duplicate.uid.file, file.uid.folder, file.uid.file, duplicate.GetTitle());
 		return false;
