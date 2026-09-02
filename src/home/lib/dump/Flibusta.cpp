@@ -371,9 +371,27 @@ private: // IDatabase
 		return table;
 	}
 
+	const DictionaryTableDescription& GetBookTable() const noexcept override
+	{
+		static const DictionaryTableDescription table { "libbook", "BookId", { "Title" } };
+		return table;
+	}
+
 	const LinkTableDescription& GetAuthorLinkTable() const noexcept override
 	{
-		static constexpr LinkTableDescription table { .table = "libavtor", .bookId = "BookId", .objId = "AvtorId", .additional = "Pos" };
+		static const LinkTableDescription table {
+			.table  = "libavtor",
+			.fields = { "BookId", "AvtorId", "Pos" },
+		};
+		return table;
+	}
+
+	const LinkTableDescription& GetSeriesLinkTable() const noexcept override
+	{
+		static const LinkTableDescription table {
+			.table  = "libseq",
+			.fields = { "BookId", "SeqId", "SeqNumb", "Level" }
+		};
 		return table;
 	}
 
