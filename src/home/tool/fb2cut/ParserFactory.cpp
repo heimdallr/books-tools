@@ -210,9 +210,9 @@ public:
 	}
 
 private: // SaxParser
-	bool OnXMLDecl(const QString& /*versionStr*/, const QString& encodingStr, const QString& /*standaloneStr*/, const QString& /*actualEncodingStr*/) override
+	bool OnXMLDecl(QStringView /*versionStr*/, const QStringView encodingStr, QStringView /*standaloneStr*/, QStringView /*actualEncodingStr*/) override
 	{
-		m_encoding = encodingStr;
+		m_encoding = encodingStr.toString();
 		return false;
 	}
 

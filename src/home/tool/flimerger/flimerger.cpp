@@ -95,7 +95,7 @@ class HashCopier final : public Util::SaxParser
 
 public:
 	HashCopier(QIODevice& input, QIODevice& output, const Replacement& replacement)
-		: SaxParser(input, 512)
+		: SaxParser(input)
 		, m_replacement { replacement }
 		, m_writer { output }
 	{
@@ -103,22 +103,22 @@ public:
 	}
 
 private:
-	bool OnStartElement(const QString& name, const QString& path, const Util::XmlAttributes& attributes) override
+	bool OnStartElement(const QStringView name, const QStringView path, const Util::XmlAttributes& attributes) override
 	{
 		if (path == BOOK)
-			if (const auto it = m_replacement.find(BookItem { attributes.GetAttribute(Inpx::FOLDER), attributes.GetAttribute(Inpx::FILE) }); it != m_replacement.end())
+			if (const auto it = m_replacement.find(BookItem { attributes.GetAttribute(u"folder"), attributes.GetAttribute(u"file") }); it != m_replacement.end())
 				m_origin = it->second;
 
 		m_writer.WriteStartElement(name, attributes);
 		return true;
 	}
 
-	bool OnEndElement(const QString& /*name*/, const QString& path) override
+	bool OnEndElement(QStringView /*name*/, const QStringView path) override
 	{
 		if (path == BOOK && m_origin)
 		{
-			const auto originGuard = m_writer.Guard("origin");
-			originGuard->WriteAttribute(Inpx::FOLDER, m_origin->first).WriteAttribute(Inpx::FILE, m_origin->second);
+			const auto originGuard = m_writer.Guard(u"origin");
+			originGuard->WriteAttribute(u"folder", m_origin->first).WriteAttribute(u"file", m_origin->second);
 			m_origin.reset();
 		}
 
@@ -126,7 +126,7 @@ private:
 		return true;
 	}
 
-	bool OnCharacters(const QString& /*path*/, const QString& value) override
+	bool OnCharacters(QStringView /*path*/, const QStringView value) override
 	{
 		m_writer.WriteCharacters(value);
 		return true;
@@ -174,7 +174,7 @@ public:
 	}
 
 private:
-	void OnParseStarted(const QString& sourceLib) override
+	void OnParseStarted(const QStringView sourceLib) override
 	{
 		m_inpDataProvider.SetSourceLib(sourceLib);
 	}

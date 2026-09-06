@@ -60,7 +60,7 @@ public:
 	Book* GetBook(const UniqueFile::Uid& uid) const;
 	Book* GetBook(const QString& sourceLib, const QString& libId) const;
 	Book* GetBook(const QString& hash) const;
-	void  SetSourceLib(const QString& sourceLib);
+	void  SetSourceLib(QStringView sourceLib);
 	void  AddLibToBook(Book* book);
 	Book* SetFile(const UniqueFile::Uid& uid, QString id, size_t size);
 	bool  Enumerate(std::function<bool(const QString&, const IDump&)> functor) const;
