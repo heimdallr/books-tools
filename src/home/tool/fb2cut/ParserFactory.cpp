@@ -293,18 +293,20 @@ QString Validate(const Util::XmlValidator& validator, QByteArray& body)
 
 void WriteErrorFile(const QDir& dir, std::mutex& guard, const QString& name, const QString& ext, const QByteArray& body)
 {
-	std::scoped_lock lock(guard);
-
 	auto dstDir = dir;
 	dstDir.cdUp();
 	dstDir = dstDir.filePath(QString("error/%1").arg(dir.dirName()));
-	if (!dstDir.exists() && !dstDir.mkpath("."))
+
+	const auto filePath = dstDir.filePath(QString("%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
+	const QFileInfo fileInfo(filePath);
+
+	std::scoped_lock lock(guard);
+
+	if (const auto fileDir = fileInfo.dir(); !fileDir.exists() && !fileDir.mkpath("."))
 	{
 		PLOGE << QString("Cannot create folder %1").arg(dstDir.path());
 		return;
 	}
-
-	const auto filePath = dstDir.filePath(QString("%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
 
 	QFile file(filePath);
 	if (!file.open(QIODevice::WriteOnly))
