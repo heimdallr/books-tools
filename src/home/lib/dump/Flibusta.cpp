@@ -427,11 +427,12 @@ select
         join libgenre l on l.GenreId = g.GenreId and l.BookID = b.BookID 
         order by g.GenreID
     ) Genre,
-    b.Title, trim(s.SeqName), case when s.SeqId is null then null else ls.SeqNumb end, f.FileName, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, b.Hash, ls.Type, ls.Level
+    b.Title, trim(s.SeqName), case when s.SeqId is null then null else ls.SeqNumb end, f.FileName, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, b.Hash, ls.Type, ls.Level, a.Body
 from Books b
 left join libseq ls on ls.BookID = b.BookID
 left join libseqname s on s.SeqID = ls.SeqID
-left join libfilename f on f.BookId=b.BookID
+left join libfilename f on f.BookId = b.BookID
+left join libbannotations a on a.BookId = b.BookID
 )");
 
 		PLOGV << GetName() << " records selection started";

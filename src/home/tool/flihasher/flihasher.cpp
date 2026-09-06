@@ -133,8 +133,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 		if (!file.parseResult.annotation.isEmpty())
 		{
 			const auto guard = bookGuard->Guard(u"annotation");
-			for (const auto& str : file.parseResult.annotation)
-				guard->WriteStartElement(u"p").WriteCharacters(str).WriteEndElement();
+			guard->WriteCharacters(file.parseResult.annotation);
 		}
 	}
 }

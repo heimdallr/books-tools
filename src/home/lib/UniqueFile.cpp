@@ -179,8 +179,7 @@ private:
 		Util::HashParser::Section::Ptr      section,
 		size_t                              size,
 		uint64_t                            simHash,
-		Util::TextHistogram                 hist,
-		QStringList
+		Util::TextHistogram                 hist
 	) override
 	{
 		if (!originFolder.isEmpty())

@@ -125,6 +125,7 @@ InpData CreateInpData(const IDump& dump)
 							 .year      = query.Get<const char*>(15),
 							 .sourceLib = dump.GetName(),
 							 .hash      = query.Get<const char*>(16),
+							 .annotation = QString(query.Get<const char*>(19)).trimmed(),
 						 })
 					 )
 			         .first;
