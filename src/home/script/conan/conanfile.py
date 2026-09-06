@@ -11,6 +11,7 @@ def configure_boost(recipe):
 def configure_xercesc(recipe):
     recipe.options["xerces-c"].char_type = 'char16_t'
     recipe.options["xerces-c"].shared = False
+    recipe.options["xerces-c"].network = False
 
 def configure_icu(recipe):
     recipe.options["icu"].shared = True
