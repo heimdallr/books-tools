@@ -166,7 +166,7 @@ struct HashParserObserver final : Util::HashParser::IObserver
 	Data data;
 
 private:
-	void OnParseStarted(const QString& sourceLib) override
+	void OnParseStarted(const QStringView sourceLib) override
 	{
 		data.emplace_back(std::make_pair(sourceLib, Items {}));
 	}
@@ -283,7 +283,7 @@ Book* InpDataProvider::GetBook(const QString& hash) const
 	return it != m_hashToBook.end() ? it->second : nullptr;
 }
 
-void InpDataProvider::SetSourceLib(const QString& sourceLib)
+void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 {
 	if (const auto it = std::ranges::find_if(
 			m_cache,
@@ -298,7 +298,7 @@ void InpDataProvider::SetSourceLib(const QString& sourceLib)
 
 		m_currentInpData = &it->inpData;
 
-		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toLower()](const auto& item) {
+		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toString().toLower()](const auto& item) {
 			return std::make_pair(QString("%1_%2").arg(sourceLib, item->libId), item.get());
 		});
 

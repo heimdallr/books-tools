@@ -86,30 +86,30 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	threadPool.wait();
 
 	XmlWriter  writer(output);
-	const auto booksGuard = writer.Guard("books");
-	booksGuard->WriteAttribute("source", options.sourceLib);
+	const auto booksGuard = writer.Guard(u"books");
+	booksGuard->WriteAttribute(u"source", options.sourceLib);
 
 	PLOGV << "writing results";
 	for (const auto& file : bookHashItems)
 	{
-		const auto bookGuard = writer.Guard("book");
-		bookGuard->WriteAttribute("hash", file.parseResult.id)
-			.WriteAttribute("id", file.parseResult.hashText)
-			.WriteAttribute(Inpx::FOLDER, file.folder)
-			.WriteAttribute(Inpx::FILE, file.file)
-			.WriteAttribute("count", QString::number(file.parseResult.count))
-			.WriteAttribute("size", QString::number(file.parseResult.size))
-			.WriteAttribute("simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar{'0'}))
-			.WriteAttribute("title", file.parseResult.title);
+		const auto bookGuard = writer.Guard(u"book");
+		bookGuard->WriteAttribute(u"hash", file.parseResult.id)
+			.WriteAttribute(u"id", file.parseResult.hashText)
+			.WriteAttribute(u"folder", file.folder)
+			.WriteAttribute(u"file", file.file)
+			.WriteAttribute(u"count", QString::number(file.parseResult.count))
+			.WriteAttribute(u"size", QString::number(file.parseResult.size))
+			.WriteAttribute(u"simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar{'0'}))
+			.WriteAttribute(u"title", file.parseResult.title);
 
 		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item, const bool unlinked) {
 			const auto guard = bookGuard->Guard(nodeName);
 			if (!item.file.isEmpty())
-				guard->WriteAttribute("id", item.file);
+				guard->WriteAttribute(u"id", item.file);
 			if (item.pHash)
-				guard->WriteAttribute("pHash", QString::number(item.pHash, 16));
+				guard->WriteAttribute(u"pHash", QString::number(item.pHash, 16));
 			if (unlinked)
-				guard->WriteAttribute("linked", "false");
+				guard->WriteAttribute(u"linked", u"false");
 			guard->WriteCharacters(item.hash);
 		};
 
@@ -122,19 +122,19 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 
 		if (!file.parseResult.hashValues.empty())
 		{
-			const auto histogram = bookGuard->Guard("histogram");
+			const auto histogram = bookGuard->Guard(u"histogram");
 			for (const auto& [count, word] : file.parseResult.hashValues)
 			{
-				auto histogramItem = histogram->Guard("item");
-				histogramItem->WriteAttribute("count", QString::number(count)).WriteAttribute("word", word);
+				auto histogramItem = histogram->Guard(u"item");
+				histogramItem->WriteAttribute(u"count", QString::number(count)).WriteAttribute(u"word", word);
 			}
 		}
 
 		if (!file.parseResult.annotation.isEmpty())
 		{
-			const auto guard = bookGuard->Guard("annotation");
+			const auto guard = bookGuard->Guard(u"annotation");
 			for (const auto& str : file.parseResult.annotation)
-				guard->WriteStartElement("p").WriteCharacters(str).WriteEndElement();
+				guard->WriteStartElement(u"p").WriteCharacters(str).WriteEndElement();
 		}
 	}
 }

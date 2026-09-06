@@ -133,7 +133,7 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 			: m_zipFiles { zipFiles }
 			, m_folder { std::move(folder) }
 		{
-			(*m_folderGuard)->WriteAttribute("name", m_folder);
+			(*m_folderGuard)->WriteAttribute(u"name", m_folder);
 		}
 
 		~Data()
@@ -152,10 +152,10 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 
 			m_found = true;
 
-			auto item = (*m_folderGuard)->Guard("file");
-			item->WriteAttribute("name", file);
+			auto item = (*m_folderGuard)->Guard(u"file");
+			item->WriteAttribute(u"name", file);
 			for (const auto& str : annotation)
-				item->WriteStartElement("p").WriteCharacters(str).WriteEndElement();
+				item->WriteStartElement(u"p").WriteCharacters(str).WriteEndElement();
 		}
 
 	private:
@@ -173,7 +173,7 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 		QByteArray                                     m_data;
 		std::unique_ptr<QIODevice>                     m_stream { CreateStream(m_data) };
 		std::unique_ptr<Util::XmlWriter>               m_writer { std::make_unique<Util::XmlWriter>(*m_stream) };
-		std::unique_ptr<Util::XmlWriter::XmlNodeGuard> m_folderGuard { std::make_unique<Util::XmlWriter::XmlNodeGuard>(m_writer->Guard("folder")) };
+		std::unique_ptr<Util::XmlWriter::XmlNodeGuard> m_folderGuard { std::make_unique<Util::XmlWriter::XmlNodeGuard>(m_writer->Guard(u"folder")) };
 
 		bool m_found { false };
 	};
@@ -254,9 +254,9 @@ public:
 	}
 
 private: // HashParser::IObserver
-	void OnParseStarted(const QString& sourceLib) override
+	void OnParseStarted(const QStringView sourceLib) override
 	{
-		m_parseStorage.archive.get().sourceLib = sourceLib;
+		m_parseStorage.archive.get().sourceLib = sourceLib.toString();
 	}
 
 	bool OnBookParsed(
@@ -328,7 +328,7 @@ public:
 	}
 
 private: // HashParser::IObserver
-	void OnParseStarted(const QString&) override
+	void OnParseStarted(QStringView) override
 	{
 	}
 
@@ -1165,7 +1165,7 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 		for (auto& storageItem : storage)
 		{
 			annotationCollector.StartFolder();
-			for (const auto& [folder, file, annotation] : storageItem.data)
+			for (const auto& [folder, file, annotation, size, simHash] : storageItem.data)
 				annotationCollector.Add(folder, file, annotation);
 
 			for (auto&& obj : storageItem.compilations)

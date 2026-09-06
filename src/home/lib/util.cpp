@@ -161,18 +161,18 @@ void SerializeHashSections(const QStringList& sections, Util::XmlWriter& writer)
 		assert(ok);
 
 		const auto write = [&] {
-			writer.WriteStartElement("section");
+			writer.WriteStartElement(u"section");
 			if (it != split.end())
 			{
-				writer.WriteAttribute("id", *it++);
+				writer.WriteAttribute(u"id", *it++);
 				if (it != split.end())
 				{
-					writer.WriteAttribute("count", *it++);
+					writer.WriteAttribute(u"count", *it++);
 					if (it != split.end())
 					{
-						writer.WriteAttribute("size", *it++);
+						writer.WriteAttribute(u"size", *it++);
 						if (it != split.end())
-							writer.WriteAttribute("simHash", *it++);
+							writer.WriteAttribute(u"simHash", *it++);
 					}
 				}
 			}

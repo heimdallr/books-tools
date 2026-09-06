@@ -29,17 +29,17 @@ using namespace fb2cut;
 namespace
 {
 
-constexpr auto ID     = "id";
-constexpr auto L_HREF = "l:href";
+constexpr auto ID     = u"id";
+constexpr auto L_HREF = u"l:href";
 
-constexpr auto FICTION_BOOK    = "FictionBook";
-constexpr auto BODY            = "FictionBook/body";
-constexpr auto BINARY          = "FictionBook/binary";
-constexpr auto BODY_BINARY     = "FictionBook/body/binary";
-constexpr auto COVERPAGE_IMAGE = "FictionBook/description/title-info/coverpage/image";
-constexpr auto DESCRIPTION     = "FictionBook/description";
-constexpr auto DOCUMENT_INFO   = "FictionBook/description/document-info";
-constexpr auto PROGRAM_USED    = "FictionBook/description/document-info/program-used";
+constexpr auto FICTION_BOOK    = u"FictionBook";
+constexpr auto BODY            = u"FictionBook/body";
+constexpr auto BINARY          = u"FictionBook/binary";
+constexpr auto BODY_BINARY     = u"FictionBook/body/binary";
+constexpr auto COVERPAGE_IMAGE = u"FictionBook/description/title-info/coverpage/image";
+constexpr auto DESCRIPTION     = u"FictionBook/description";
+constexpr auto DOCUMENT_INFO   = u"FictionBook/description/document-info";
+constexpr auto PROGRAM_USED    = u"FictionBook/description/document-info/program-used";
 
 constexpr auto CUSTOM_INFO = "custom-info";
 constexpr auto BR          = "br";
@@ -325,7 +325,7 @@ bool CheckImpl(QByteArray& inputFileBody)
 		}
 
 	private: // SaxParser
-		bool OnStartElement(const QString&, const QString& path, const Util::XmlAttributes&) override
+		bool OnStartElement(const QStringView, const QStringView path, const Util::XmlAttributes&) override
 		{
 			if (path == FICTION_BOOK)
 			{
@@ -375,7 +375,7 @@ public:
 
 public:
 	Fb2ImageParser(QIODevice& input, IParser::OnBinaryFound binaryCallback)
-		: SaxParser(input, 512)
+		: SaxParser(input)
 		, m_binaryCallback { std::move(binaryCallback) }
 	{
 		SaxParser::Parse();
@@ -387,7 +387,7 @@ public:
 	}
 
 private: // Util::SaxParser
-	bool OnStartElement(const QString&, const QString& path, const Util::XmlAttributes& attributes) override
+	bool OnStartElement(const QStringView, const QStringView path, const Util::XmlAttributes& attributes) override
 	{
 		if (m_isBinary)
 			throw std::runtime_error("bad binary");
@@ -395,7 +395,7 @@ private: // Util::SaxParser
 		if (IsOneOf(path, BINARY, BODY_BINARY))
 		{
 			m_isBinary = true;
-			m_picId    = attributes.GetAttribute(ID).trimmed();
+			m_picId    = attributes.GetAttribute(ID).toString().trimmed();
 			if (const auto it = std::ranges::find_if(
 					m_picId,
 					[](const auto ch) {
@@ -413,7 +413,7 @@ private: // Util::SaxParser
 			{
 				auto attributeName  = attributes.GetName(i);
 				auto attributeValue = attributes.GetValue(i);
-				if (attributeName.endsWith(":href"))
+				if (attributeName.endsWith(u":href"))
 				{
 					if (const auto it = std::ranges::find_if(
 							attributeValue,
@@ -422,7 +422,7 @@ private: // Util::SaxParser
 							}
 						);
 					    it != attributeValue.end())
-						m_coverPage = attributeValue.last(std::distance(it, attributeValue.end())).trimmed();
+						m_coverPage = attributeValue.last(std::distance(it, attributeValue.end())).toString().trimmed();
 					break;
 				}
 			}
@@ -432,7 +432,7 @@ private: // Util::SaxParser
 		return true;
 	}
 
-	bool OnEndElement(const QString&, const QString& path) override
+	bool OnEndElement(QStringView, const QStringView path) override
 	{
 		if (IsOneOf(path, BINARY, BODY_BINARY))
 			m_isBinary = false;
@@ -440,7 +440,7 @@ private: // Util::SaxParser
 		return true;
 	}
 
-	bool OnCharacters([[maybe_unused]] const QString& path, const QString& value) override
+	bool OnCharacters([[maybe_unused]] const QStringView path, const QStringView value) override
 	{
 		m_text.append(' ').append(value);
 
@@ -484,7 +484,7 @@ public:
 
 public:
 	Fb2TextParser(QString fileName, QIODevice& input, QIODevice& output, const std::unordered_map<QString, int>& replaceId, const char* encoding)
-		: SaxParser(input, 512)
+		: SaxParser(input)
 		, m_fileName { std::move(fileName) }
 		, m_replaceId { replaceId }
 		, m_writer(output, Util::XmlWriter::Options { .type = Util::XmlWriter::Type::Xml, .indented = false, .encoding = encoding })
@@ -496,13 +496,13 @@ public:
 	}
 
 private: // Util::SaxParser
-	bool OnProcessingInstruction(const QString& target, const QString& data) override
+	bool OnProcessingInstruction(const QStringView target, const QStringView data) override
 	{
 		m_writer.WriteProcessingInstruction(target, data);
 		return true;
 	}
 
-	bool OnStartElement(const QString& name, const QString& path, const Util::XmlAttributes& attributes) override
+	bool OnStartElement(const QStringView name, const QStringView path, const Util::XmlAttributes& attributes) override
 	{
 		if (name == BR)
 			return true;
@@ -510,20 +510,20 @@ private: // Util::SaxParser
 		if (name == CUSTOM_INFO)
 			m_isCustomInfo = true;
 
-		if (!m_isCustomInfo && !FB2_TAGS_CACHE.contains(name.toLower()))
+		if (!m_isCustomInfo && !FB2_TAGS_CACHE.contains(name.toString().toLower()))
 		{
 			PLOGW << "Unexpected tag: " << name;
 			m_writer.WriteCharacters(QString("<%1").arg(name));
 			return true;
 		}
 
-		m_tags.push(name);
+		m_tags.push(name.toString());
 
 		if (path == FICTION_BOOK)
 		{
 			m_writer.WriteStartElement(name);
-			m_writer.WriteAttribute("xmlns", "http://www.gribuser.ru/xml/fictionbook/2.0");
-			m_writer.WriteAttribute("xmlns:l", "http://www.w3.org/1999/xlink");
+			m_writer.WriteAttribute(u"xmlns", u"http://www.gribuser.ru/xml/fictionbook/2.0");
+			m_writer.WriteAttribute(u"xmlns:l", u"http://www.w3.org/1999/xlink");
 			return true;
 		}
 
@@ -533,8 +533,8 @@ private: // Util::SaxParser
 		m_writer.WriteStartElement(name);
 		for (size_t i = 0, sz = attributes.GetCount(); i < sz; ++i)
 		{
-			auto attributeName  = attributes.GetName(i);
-			auto attributeValue = attributes.GetValue(i);
+			auto attributeName  = attributes.GetName(i).toString();
+			auto attributeValue = attributes.GetValue(i).toString();
 			ReplaceAttribute(attributeName, attributeValue);
 			m_writer.WriteAttribute(attributeName, attributeValue);
 		}
@@ -542,7 +542,7 @@ private: // Util::SaxParser
 		return true;
 	}
 
-	bool OnEndElement(const QString& name, const QString& path) override
+	bool OnEndElement(const QStringView name, const QStringView path) override
 	{
 		if (name == BR)
 			return true;
@@ -550,8 +550,8 @@ private: // Util::SaxParser
 		if (name == CUSTOM_INFO)
 			m_isCustomInfo = false;
 
-		if (!m_isCustomInfo && !FB2_TAGS_CACHE.contains(name.toLower()))
-			return m_writer.WriteCharacters(">"), true;
+		if (!m_isCustomInfo && !FB2_TAGS_CACHE.contains(name.toString().toLower()))
+			return m_writer.WriteCharacters(u">"), true;
 
 		if (m_tags.top() != name)
 			return false;
@@ -560,13 +560,13 @@ private: // Util::SaxParser
 
 		if (path == DOCUMENT_INFO && !m_hasProgramUsed)
 		{
-			m_writer.WriteStartElement("program-used").WriteCharacters(QString("fb2cut %2").arg(PRODUCT_VERSION)).WriteEndElement();
+			m_writer.WriteStartElement(u"program-used").WriteCharacters(QString("fb2cut %2").arg(PRODUCT_VERSION)).WriteEndElement();
 			m_hasProgramUsed = true;
 		}
 
 		if (path == DESCRIPTION && !m_hasProgramUsed)
 		{
-			m_writer.WriteStartElement("document-info").WriteStartElement("program-used").WriteCharacters(QString("fb2cut %2").arg(PRODUCT_VERSION)).WriteEndElement().WriteEndElement();
+			m_writer.WriteStartElement(u"document-info").WriteStartElement(u"program-used").WriteCharacters(QString("fb2cut %2").arg(PRODUCT_VERSION)).WriteEndElement().WriteEndElement();
 			m_hasProgramUsed = true;
 		}
 
@@ -578,7 +578,7 @@ private: // Util::SaxParser
 		return true;
 	}
 
-	bool OnCharacters(const QString& path, const QString& value) override
+	bool OnCharacters(const QStringView path, const QStringView value) override
 	{
 		if (IsOneOf(path, BINARY, BODY_BINARY))
 			return true;
@@ -590,7 +590,7 @@ private: // Util::SaxParser
 			return true;
 		}
 
-		auto valueCopy = value;
+		auto valueCopy = value.toString();
 
 		for (const auto& [before, after] : REPLACE_CHAR)
 			valueCopy.replace(before, after, Qt::CaseInsensitive);
@@ -626,7 +626,7 @@ private:
 		if (!name.endsWith(":href"))
 			return;
 
-		name = L_HREF;
+		name = QString::fromStdU16String(L_HREF);
 
 		if (!value.startsWith('#'))
 			return;
