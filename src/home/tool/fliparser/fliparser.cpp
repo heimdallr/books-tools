@@ -302,6 +302,8 @@ public:
 			QString     folder;
 			QString     file;
 			QStringList annotation;
+			size_t      size;
+			uint64_t    simHash;
 		};
 
 		std::reference_wrapper<const Archive> archive;
@@ -337,8 +339,8 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
-		size_t /*size*/,
-		uint64_t /*simHash*/,
+		size_t                         size,
+		uint64_t                       simHash,
 		Util::TextHistogram,
 		QStringList annotation
 	) override
@@ -351,7 +353,7 @@ private: // HashParser::IObserver
 				folder = folder.first(pos + 1) + m_folderExt;
 
 		if (!annotation.isEmpty())
-			m_parseStorage.data.emplace_back(folder, file, std::move(annotation));
+			m_parseStorage.data.emplace_back(folder, file, std::move(annotation), size, simHash);
 
 		const auto enumerate =
 			[this](const Book* book, const Util::HashParser::Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {

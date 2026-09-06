@@ -506,17 +506,25 @@ private: // QAbstractItemModel
 		if (sourceRow < 0 || sourceRow + count > rowCount(sourceParent) + 1 || destinationChild < 0 || destinationChild > rowCount(destinationParent))
 			return false;
 
+		auto* parentSourceItem      = sourceParent.isValid() ? static_cast<Item*>(sourceParent.internalPointer()) : m_root.get();
+		auto* parentDestinationItem = destinationParent.isValid() ? static_cast<Item*>(destinationParent.internalPointer()) : m_root.get();
+
 		const ScopedCall removeGuard(
 			[&] {
-				beginMoveRows(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild);
+				[[maybe_unused]] const auto ok = beginMoveRows(
+					sourceParent,
+					sourceRow,
+					sourceRow + count - 1,
+					destinationParent,
+					destinationChild + (parentSourceItem == parentDestinationItem && destinationChild > sourceRow ? count : 0)
+				);
+				assert(ok);
 			},
 			[this] {
 				endMoveRows();
 			}
 		);
 
-		auto* parentSourceItem      = sourceParent.isValid() ? static_cast<Item*>(sourceParent.internalPointer()) : m_root.get();
-		auto* parentDestinationItem = destinationParent.isValid() ? static_cast<Item*>(destinationParent.internalPointer()) : m_root.get();
 		Items buffer;
 		buffer.reserve(count);
 		std::ranges::move(std::next(parentSourceItem->children.begin(), sourceRow), std::next(parentSourceItem->children.begin(), sourceRow + count), std::back_inserter(buffer));
