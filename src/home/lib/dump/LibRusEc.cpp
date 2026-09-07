@@ -193,6 +193,12 @@ private: // IDatabase
 		return table;
 	}
 
+	const DictionaryTableDescription& GetAnnotationTable() const noexcept override
+	{
+		static const DictionaryTableDescription table {};
+		return table;
+	}
+
 	const LinkTableDescription& GetAuthorLinkTable() const noexcept override
 	{
 		static const LinkTableDescription table {
@@ -273,7 +279,12 @@ left join libseqs s on s.sid = ls.sid
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(const std::filesystem::path& /*dstDir*/, const std::filesystem::path& /*sqlDir*/, const AdditionalType /*additionalType*/) const override
+	void CreateAdditional(
+		const std::filesystem::path& /*dstDir*/,
+		const std::filesystem::path& /*sqlDir*/,
+		const AdditionalType /*additionalType*/,
+		const std::function<void(const DB::IQuery&)>& /*functor*/
+	) const override
 	{
 	}
 

@@ -43,6 +43,7 @@ struct Book
 	QString             sourceLib;
 	size_t              insNo { 0 };
 	QString             hash;
+	QString             annotation;
 
 	QString id;
 	QString folder;

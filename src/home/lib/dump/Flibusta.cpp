@@ -176,6 +176,7 @@ constexpr const char* g_indices[] {
 	"CREATE INDEX ix_libseqname_primary_key ON libseqname (SeqId)",
 	"CREATE INDEX ix_libreviews_Time ON libreviews (Time)",
 	"CREATE INDEX ix_libaannotations_nid ON libaannotations (nid)",
+	"CREATE INDEX ix_libbannotations_BookId ON libbannotations (BookId)",
 	"CREATE INDEX ix_libapics_AvtorId ON libapics (AvtorId)",
 	"delete from libseq where not exists(select 42 from libseqname where libseqname.SeqId = libseq.SeqId)",
 };
@@ -377,6 +378,12 @@ private: // IDatabase
 		return table;
 	}
 
+	const DictionaryTableDescription& GetAnnotationTable() const noexcept override
+	{
+		static const DictionaryTableDescription table { "libbannotations", "BookId", { "Body" } };
+		return table;
+	}
+
 	const LinkTableDescription& GetAuthorLinkTable() const noexcept override
 	{
 		static const LinkTableDescription table {
@@ -431,7 +438,7 @@ select
 from Books b
 left join libseq ls on ls.BookID = b.BookID
 left join libseqname s on s.SeqID = ls.SeqID
-left join libfilename f on f.BookId=b.BookID
+left join libfilename f on f.BookId = b.BookID
 )");
 
 		PLOGV << GetName() << " records selection started";
@@ -456,10 +463,13 @@ left join libfilename f on f.BookId=b.BookID
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, const AdditionalType additionalType) const override
+	void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, const AdditionalType additionalType, const std::function<void(const DB::IQuery&)>& functor) const override
 	{
 		if (!!(additionalType & AdditionalType::AuthorInfo))
 			CreateAuthorAnnotations(sqlDir, dstDir);
+
+		if (!!(additionalType & AdditionalType::Annotation))
+			CreateBookAnnotations(functor);
 	}
 
 private:
@@ -489,6 +499,13 @@ private:
 			write(authorsFolder, id, ".7z", annotation);
 			write(authorImagesFolder, id, ".zip", images);
 		}
+	}
+
+	void CreateBookAnnotations(const std::function<void(const DB::IQuery&)>& functor) const
+	{
+		const auto query = m_db->CreateQuery("select BookId, Body from libbannotations");
+		for (query->Execute(); !query->Eof(); query->Next())
+			functor(*query);
 	}
 
 private:

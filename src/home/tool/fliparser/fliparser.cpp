@@ -15,6 +15,7 @@
 
 #include <plog/Appenders/ConsoleAppender.h>
 
+#include "fnd/IsOneOf.h"
 #include "fnd/ScopedCall.h"
 #include "fnd/StrUtil.h"
 #include "fnd/try.h"
@@ -97,9 +98,9 @@ struct FileInfo
 class IAnnotationCollector // NOLINT(cppcoreguidelines-special-member-functions)
 {
 public:
-	virtual ~IAnnotationCollector()                                                             = default;
-	virtual void StartFolder()                                                                  = 0;
-	virtual void Add(const QString& folder, const QString& file, const QStringList& annotation) = 0;
+	virtual ~IAnnotationCollector()                                                         = default;
+	virtual void StartFolder()                                                              = 0;
+	virtual void Add(const QString& folder, const QString& file, const QString& annotation) = 0;
 };
 
 class AnnotationCollectorStub final : virtual public IAnnotationCollector
@@ -115,7 +116,7 @@ private: // IAnnotationCollector
 	{
 	}
 
-	void Add(const QString&, const QString&, const QStringList&) override
+	void Add(const QString&, const QString&, const QString&) override
 	{
 	}
 };
@@ -145,7 +146,7 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 				m_zipFiles.AddFile(std::move(m_folder), m_data);
 		}
 
-		void Add(const QString& file, const QStringList& annotation)
+		void Add(const QString& file, const QString& annotation)
 		{
 			if (annotation.isEmpty())
 				return;
@@ -153,9 +154,7 @@ class AnnotationCollector final : virtual public IAnnotationCollector
 			m_found = true;
 
 			auto item = (*m_folderGuard)->Guard(u"file");
-			item->WriteAttribute(u"name", file);
-			for (const auto& str : annotation)
-				item->WriteStartElement(u"p").WriteCharacters(str).WriteEndElement();
+			item->WriteAttribute(u"name", file).WriteCharacters(annotation);
 		}
 
 	private:
@@ -208,7 +207,7 @@ private: // IAnnotationCollector
 		m_data.reset();
 	}
 
-	void Add(const QString& folder, const QString& file, const QStringList& annotation) override
+	void Add(const QString& folder, const QString& file, const QString& annotation) override
 	{
 		if (annotation.isEmpty())
 			return;
@@ -268,8 +267,7 @@ private: // HashParser::IObserver
 		Util::HashParser::Section::Ptr section,
 		size_t /*size*/,
 		uint64_t /*simHash*/,
-		Util::TextHistogram,
-		QStringList
+		Util::TextHistogram
 	) override
 	{
 		if (!m_folderExt.isEmpty())
@@ -297,24 +295,14 @@ class CompilationHandler final : Util::HashParser::IObserver
 public:
 	struct ParseStorage
 	{
-		struct DataItem
-		{
-			QString     folder;
-			QString     file;
-			QStringList annotation;
-			size_t      size;
-			uint64_t    simHash;
-		};
-
 		std::reference_wrapper<const Archive> archive;
 		QByteArray                            bytes;
 		std::vector<QJsonObject>              compilations;
-		std::vector<DataItem>                 data;
 	};
 
 public:
-	CompilationHandler(const InpDataProvider& inpDataProvider, const SectionToBook& sectionToBook, ParseStorage& parseStorage)
-		: m_inpDataProvider { inpDataProvider }
+	CompilationHandler(const std::unordered_map<QString, Book*>& added, const SectionToBook& sectionToBook, ParseStorage& parseStorage)
+		: m_added { added }
 		, m_sectionToBook { sectionToBook }
 		, m_folderExt { QFileInfo(parseStorage.archive.get().filePath).suffix().toLower() }
 		, m_parseStorage { parseStorage }
@@ -339,10 +327,9 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
-		size_t                         size,
-		uint64_t                       simHash,
-		Util::TextHistogram,
-		QStringList annotation
+		size_t /*size*/,
+		uint64_t /*simHash*/,
+		Util::TextHistogram
 	) override
 	{
 		if (!originFolder.isEmpty())
@@ -352,8 +339,15 @@ private: // HashParser::IObserver
 			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
 				folder = folder.first(pos + 1) + m_folderExt;
 
-		if (!annotation.isEmpty())
-			m_parseStorage.data.emplace_back(folder, file, std::move(annotation), size, simHash);
+		auto* book = [&]() -> Book* {
+			const auto it = m_added.find(QString("%1#%2").arg(folder, file));
+			return it != m_added.end() ? it->second : nullptr;
+		}();
+		if (!book)
+			return true;
+
+		if (book->annotation.isEmpty())
+			book->annotation = std::move(annotation);
 
 		const auto enumerate =
 			[this](const Book* book, const Util::HashParser::Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
@@ -393,10 +387,6 @@ private: // HashParser::IObserver
 			}
 		};
 
-		const auto* book = m_inpDataProvider.GetBook({ folder, file });
-		if (!book)
-			return true;
-
 		QJsonArray                  found;
 		std::unordered_set<QString> idNotFound;
 		std::unordered_set<QString> idFound;
@@ -425,10 +415,10 @@ private: // HashParser::IObserver
 	}
 
 private:
-	const InpDataProvider& m_inpDataProvider;
-	const SectionToBook&   m_sectionToBook;
-	const QString          m_folderExt;
-	ParseStorage&          m_parseStorage;
+	const std::unordered_map<QString, Book*>& m_added;
+	const SectionToBook&                      m_sectionToBook;
+	const QString                             m_folderExt;
+	ParseStorage&                             m_parseStorage;
 };
 
 FileInfo GetFileHash(const Zip& zip, const QString& fileName)
@@ -1124,12 +1114,17 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	const auto sectionToBook = inpDataProvider.Books() | std::views::transform([](Book* book) {
 								   return std::make_pair(book->id, book);
 							   })
-	                         | std::ranges::to<std::unordered_multimap<QString, Book*>>();
+	                         | std::ranges::to<std::unordered_multimap>();
 	if (sectionToBook.empty())
 		return;
 
 	std::vector<CompilationHandler::ParseStorage> storage;
 	storage.reserve(archives.size());
+
+	const auto added = inpDataProvider.Books() | std::views::transform([](Book* item) {
+						   return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
+					   })
+	                 | std::ranges::to<std::unordered_map>();
 
 	{
 		Util::Progress   progress(archives.size(), "parsing");
@@ -1149,7 +1144,7 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 			}
 
 			threadPool.enqueue([&](auto, const auto&) {
-				[[maybe_unused]] const CompilationHandler compilationHandler(inpDataProvider, sectionToBook, storageItem);
+				[[maybe_unused]] const CompilationHandler compilationHandler(added, sectionToBook, storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});
 		}
@@ -1159,25 +1154,41 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 
 	QJsonArray jsonArray;
 
-	size_t totalData = 0, totalCompilations = 0;
+	size_t totalAnnotations = 0, totalCompilations = 0;
 	{
 		Util::Progress progress(storage.size(), "store parsed data");
 		for (auto& storageItem : storage)
 		{
-			annotationCollector.StartFolder();
-			for (const auto& [folder, file, annotation, size, simHash] : storageItem.data)
-				annotationCollector.Add(folder, file, annotation);
-
 			for (auto&& obj : storageItem.compilations)
 				jsonArray.append(std::move(obj));
 
-			progress.Increment(1, QString("%1 (%2, %3)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.data.size()).arg(storageItem.compilations.size()).toStdString());
-			totalData         += storageItem.data.size();
+			progress.Increment(1, QString("%1 (%2)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.compilations.size()).toStdString());
 			totalCompilations += storageItem.compilations.size();
 		}
 	}
 
-	PLOGI << "total annotations: " << totalData << ", compilations: " << totalCompilations;
+	auto books = added | std::views::values | std::ranges::to<std::vector>();
+	std::ranges::sort(books, {}, [](const Book* book) {
+		return book->folder;
+	});
+
+	QString folder;
+	for (const auto* book : books)
+	{
+		if (folder != book->folder)
+		{
+			folder = book->folder;
+			annotationCollector.StartFolder();
+		}
+
+		if (!book->annotation.isEmpty())
+		{
+			annotationCollector.Add(book->folder, book->GetFileName(), book->annotation);
+			++totalAnnotations;
+		}
+	}
+
+	PLOGI << "total annotations: " << totalAnnotations << ", compilations: " << totalCompilations;
 
 	const auto data = QJsonDocument(jsonArray).toJson();
 
@@ -1281,6 +1292,8 @@ void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& re
 				std::ranges::copy(file->series, std::back_inserter(origin.series));
 
 				origin.deleted = origin.deleted && file->deleted;
+				if (origin.annotation.isEmpty())
+					origin.annotation = file->annotation;
 			}
 			r(origin, *item, r);
 		}

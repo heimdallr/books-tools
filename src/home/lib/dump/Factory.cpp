@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QRegularExpression>
 
+#include "fnd/IsOneOf.h"
 #include "fnd/StrUtil.h"
 
 #include "database/interface/ICommand.h"
@@ -307,6 +308,94 @@ void ReplaceImpl(
 	tr->Commit();
 }
 
+void UpdateImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& table, const auto& additional)
+{
+	if (!table.table)
+		return;
+
+	std::vector<std::tuple<long long, bool, std::vector<QString>>> values;
+
+	{
+		std::string names = table.id;
+		for (const auto* name : table.names)
+			names.append(", ").append(name);
+
+		PLOGV << "select " << table.table;
+		const auto query = db.CreateQuery(std::format("select {} from {}", names, table.table));
+		for (query->Execute(); !query->Eof(); query->Next())
+		{
+			std::vector<QString> value;
+			for (size_t i = 1, sz = table.names.size(); i <= sz; ++i)
+				value.emplace_back(query->Get<const char*>(i));
+			values.emplace_back(query->Get<long long>(0), false, std::move(value));
+
+			PLOGV_IF(values.size() % 50000 == 0) << values.size() << " records selected";
+		}
+	}
+	{
+		PLOGV << "update " << table.table;
+		for (auto&& [valueItem, n] : std::views::zip(values, std::views::iota(1)))
+		{
+			auto& [_, changes, value] = valueItem;
+			changes                   = additional(value);
+			PLOGV_IF(n % 50000 == 0) << n << " records updated";
+		}
+	}
+
+	const auto tr = db.CreateTransaction();
+
+	const auto allEmpty = [](const auto& items) {
+		return std::ranges::all_of(items, [](const auto& item) {
+			return item.isEmpty();
+		});
+	};
+
+	std::vector<long long> toRemove;
+	{
+		std::string names;
+		for (const auto* name : table.names)
+			names.append(name).append(" = ?,");
+		names.pop_back();
+
+		PLOGV << "write " << table.table;
+		const auto sz      = table.names.size();
+		const auto command = tr->CreateCommand(std::format("update {} set {} where {} = ?", table.table, names, table.id));
+		for (auto&& [valueItem, n] : std::views::zip(
+				 values | std::views::filter([&](const auto& item) {
+					 return std::get<1>(item);
+				 }),
+				 std::views::iota(1)
+			 ))
+		{
+			auto& [id, _, value] = valueItem;
+			if (allEmpty(value))
+			{
+				toRemove.emplace_back(id);
+				continue;
+			}
+
+			for (size_t i = 0; i < sz; ++i)
+				command->Bind(i, value[i]);
+			command->Bind(sz, id);
+			command->Execute();
+			PLOGV_IF(n % 50000 == 0) << n << " records written";
+		}
+	}
+	if (!toRemove.empty())
+	{
+		PLOGV << "delete from " << table.table << "  " << toRemove.size() << " records";
+		const auto command = tr->CreateCommand(std::format("delete from {} where {} = ?", table.table, table.id));
+		for (auto&& [id, n] : std::views::zip(toRemove, std::views::iota(1)))
+		{
+			command->Bind(0, id);
+			command->Execute();
+			PLOGV_IF(n % 50000 == 0) << n << " records deleted";
+		}
+	}
+
+	tr->Commit();
+}
+
 void Append(DB::IDatabase& db, const IDump::LinkTableDescription& tableDescription, DB::IDatabase& dbSource, const QString& tableSource, const QStringList& fieldsSource, const QString& dumpName)
 {
 	const auto query   = dbSource.CreateQuery(std::format("select {} from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", fieldsSource.join(','), tableSource, dumpName));
@@ -371,6 +460,41 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 	});
 	Append(db, dump.GetAuthorLinkTable(), *dbReplacement, "AuthorList", { "t.BookId", "t.Id", "t.Additional" }, dump.GetName());
 	Append(db, dump.GetSeriesLinkTable(), *dbReplacement, "SeriesList", { "t.BookId", "t.Id", "t.SeqNumber", "t.Additional" }, dump.GetName());
+
+	const QRegularExpression noClass { QRegularExpression { R"(<p\s*class="{0,1}book"{0,1}>\s*(.*?)\s*<\/p>)" } };
+	const QRegularExpression bbCodeToHtml { QRegularExpression { R"(\[(.*?)\]\s*(.*?)\s*\[\/(.*?)\])" } };
+
+	const auto updateAnnotation = [&](std::vector<QString>& strings) {
+		assert(!strings.empty());
+		auto annotation = strings.front();
+		if (annotation.isEmpty())
+			return true;
+
+		annotation = annotation.trimmed();
+
+		annotation.removeIf([](const QChar ch) {
+			return IsOneOf(ch.category(), QChar::Category::Other_Control, QChar::Other_PrivateUse);
+		});
+
+		annotation.replace(noClass, R"(<p>\1</p>)");
+		annotation.replace(bbCodeToHtml, R"(<\1>\2</\3>)");
+
+		if (annotation == "<p></p>")
+			annotation.clear();
+
+		if (!annotation.isEmpty() && !annotation.startsWith("<p>"))
+			annotation.prepend("<p>").append("</p>");
+
+		if (strings.front() == annotation)
+			return false;
+
+		strings.front() = annotation;
+		return true;
+	};
+	UpdateImpl(db, dump.GetAnnotationTable(), updateAnnotation);
+
+	PLOGV << "vacuum";
+	db.CreateQuery("vacuum")->Execute();
 }
 
 } // namespace
