@@ -15,6 +15,7 @@
 
 #include <plog/Appenders/ConsoleAppender.h>
 
+#include "fnd/IsOneOf.h"
 #include "fnd/ScopedCall.h"
 #include "fnd/StrUtil.h"
 #include "fnd/try.h"
@@ -294,22 +295,14 @@ class CompilationHandler final : Util::HashParser::IObserver
 public:
 	struct ParseStorage
 	{
-		struct DataItem
-		{
-			QString  folder;
-			QString  file;
-			QString  annotation;
-		};
-
 		std::reference_wrapper<const Archive> archive;
 		QByteArray                            bytes;
 		std::vector<QJsonObject>              compilations;
-		std::vector<DataItem>                 data;
 	};
 
 public:
-	CompilationHandler(const InpDataProvider& inpDataProvider, const SectionToBook& sectionToBook, ParseStorage& parseStorage)
-		: m_inpDataProvider { inpDataProvider }
+	CompilationHandler(const std::unordered_map<QString, Book*>& added, const SectionToBook& sectionToBook, ParseStorage& parseStorage)
+		: m_added { added }
 		, m_sectionToBook { sectionToBook }
 		, m_folderExt { QFileInfo(parseStorage.archive.get().filePath).suffix().toLower() }
 		, m_parseStorage { parseStorage }
@@ -334,8 +327,8 @@ private: // HashParser::IObserver
 			Util::HashParser::HashImageItem /*cover*/,
 		Util::HashParser::HashImageItems /*images*/,
 		Util::HashParser::Section::Ptr section,
-		size_t                         /*size*/,
-		uint64_t                       /*simHash*/,
+		size_t /*size*/,
+		uint64_t /*simHash*/,
 		Util::TextHistogram
 	) override
 	{
@@ -346,8 +339,15 @@ private: // HashParser::IObserver
 			if (const auto pos = folder.lastIndexOf('.'); pos > 0)
 				folder = folder.first(pos + 1) + m_folderExt;
 
-		if (!annotation.isEmpty())
-			m_parseStorage.data.emplace_back(folder, file, std::move(annotation));
+		auto* book = [&]() -> Book* {
+			const auto it = m_added.find(QString("%1#%2").arg(folder, file));
+			return it != m_added.end() ? it->second : nullptr;
+		}();
+		if (!book)
+			return true;
+
+		if (book->annotation.isEmpty())
+			book->annotation = std::move(annotation);
 
 		const auto enumerate =
 			[this](const Book* book, const Util::HashParser::Section& parent, QJsonArray& found, std::unordered_set<QString>& idNotFound, std::unordered_set<QString>& idFound, const auto& r) -> void {
@@ -387,10 +387,6 @@ private: // HashParser::IObserver
 			}
 		};
 
-		const auto* book = m_inpDataProvider.GetBook({ folder, file });
-		if (!book)
-			return true;
-
 		QJsonArray                  found;
 		std::unordered_set<QString> idNotFound;
 		std::unordered_set<QString> idFound;
@@ -419,10 +415,10 @@ private: // HashParser::IObserver
 	}
 
 private:
-	const InpDataProvider& m_inpDataProvider;
-	const SectionToBook&   m_sectionToBook;
-	const QString          m_folderExt;
-	ParseStorage&          m_parseStorage;
+	const std::unordered_map<QString, Book*>& m_added;
+	const SectionToBook&                      m_sectionToBook;
+	const QString                             m_folderExt;
+	ParseStorage&                             m_parseStorage;
 };
 
 FileInfo GetFileHash(const Zip& zip, const QString& fileName)
@@ -1118,12 +1114,17 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 	const auto sectionToBook = inpDataProvider.Books() | std::views::transform([](Book* book) {
 								   return std::make_pair(book->id, book);
 							   })
-	                         | std::ranges::to<std::unordered_multimap<QString, Book*>>();
+	                         | std::ranges::to<std::unordered_multimap>();
 	if (sectionToBook.empty())
 		return;
 
 	std::vector<CompilationHandler::ParseStorage> storage;
 	storage.reserve(archives.size());
+
+	const auto added = inpDataProvider.Books() | std::views::transform([](Book* item) {
+						   return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
+					   })
+	                 | std::ranges::to<std::unordered_map>();
 
 	{
 		Util::Progress   progress(archives.size(), "parsing");
@@ -1143,7 +1144,7 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 			}
 
 			threadPool.enqueue([&](auto, const auto&) {
-				[[maybe_unused]] const CompilationHandler compilationHandler(inpDataProvider, sectionToBook, storageItem);
+				[[maybe_unused]] const CompilationHandler compilationHandler(added, sectionToBook, storageItem);
 				progress.Increment(1, QFileInfo(archive.hashPath).fileName().toStdString());
 			});
 		}
@@ -1153,29 +1154,41 @@ void ProcessCompilations(const std::filesystem::path& outputFolder, const Archiv
 
 	QJsonArray jsonArray;
 
-	size_t totalData = 0, totalCompilations = 0;
+	size_t totalAnnotations = 0, totalCompilations = 0;
 	{
 		Util::Progress progress(storage.size(), "store parsed data");
 		for (auto& storageItem : storage)
 		{
-			annotationCollector.StartFolder();
-			for (auto&& [folder, file, annotation] : storageItem.data)
-			{
-				if (const auto* book = inpDataProvider.GetBook({ folder, file }); book && !book->annotation.isEmpty())
-					annotation = book->annotation;
-				annotationCollector.Add(folder, file, annotation);
-			}
-
 			for (auto&& obj : storageItem.compilations)
 				jsonArray.append(std::move(obj));
 
-			progress.Increment(1, QString("%1 (%2, %3)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.data.size()).arg(storageItem.compilations.size()).toStdString());
-			totalData         += storageItem.data.size();
+			progress.Increment(1, QString("%1 (%2)").arg(QFileInfo(storageItem.archive.get().hashPath).fileName()).arg(storageItem.compilations.size()).toStdString());
 			totalCompilations += storageItem.compilations.size();
 		}
 	}
 
-	PLOGI << "total annotations: " << totalData << ", compilations: " << totalCompilations;
+	auto books = added | std::views::values | std::ranges::to<std::vector>();
+	std::ranges::sort(books, {}, [](const Book* book) {
+		return book->folder;
+	});
+
+	QString folder;
+	for (const auto* book : books)
+	{
+		if (folder != book->folder)
+		{
+			folder = book->folder;
+			annotationCollector.StartFolder();
+		}
+
+		if (!book->annotation.isEmpty())
+		{
+			annotationCollector.Add(book->folder, book->GetFileName(), book->annotation);
+			++totalAnnotations;
+		}
+	}
+
+	PLOGI << "total annotations: " << totalAnnotations << ", compilations: " << totalCompilations;
 
 	const auto data = QJsonDocument(jsonArray).toJson();
 

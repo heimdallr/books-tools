@@ -75,6 +75,7 @@ InpData CreateInpData(const IDump& dump)
 {
 	InpData inpData;
 
+	PLOGV << "select books";
 	size_t n = 0;
 	dump.CreateInpData([&](const DB::IQuery& query) {
 		QString libId = query.Get<const char*>(7);
@@ -125,7 +126,6 @@ InpData CreateInpData(const IDump& dump)
 							 .year      = query.Get<const char*>(15),
 							 .sourceLib = dump.GetName(),
 							 .hash      = query.Get<const char*>(16),
-							 .annotation = QString(query.Get<const char*>(19)).trimmed(),
 						 })
 					 )
 			         .first;
@@ -137,13 +137,39 @@ InpData CreateInpData(const IDump& dump)
 		++n;
 		PLOGV_IF(n % 50000 == 0) << n << " records selected";
 	});
-
 	PLOGV << n << " total records selected";
 
+	PLOGV << "select books annotation";
+	std::unordered_map<long long, QString> annotations;
+	n = 0;
+	dump.CreateAdditional({}, {}, IDump::AdditionalType::Annotation, [&](const DB::IQuery& query) {
+		annotations.try_emplace(query.Get<long long>(0), query.Get<const char*>(1));
+		++n;
+		PLOGV_IF(n % 50000 == 0) << n << " records selected";
+	});
+	PLOGV << n << " total records selected";
+
+	PLOGV << "update books data";
+	n = 0;
 	for (auto& [_, book] : inpData)
+	{
 		std::ranges::sort(book->series, {}, [](const Series& item) {
 			return std::tuple(item.type, -item.level);
 		});
+		bool ok = false;
+		if (const auto bookId = book->libId.toLongLong(&ok); ok)
+		{
+			if (const auto it = annotations.find(bookId); it != annotations.end())
+			{
+				if (!book->annotation.isEmpty())
+					book->annotation.append('\n');
+				book->annotation.append(it->second);
+			}
+		}
+		++n;
+		PLOGV_IF(n % 50000 == 0) << n << " records updated";
+	}
+	PLOGV << n << " total records updated";
 
 	return inpData;
 }

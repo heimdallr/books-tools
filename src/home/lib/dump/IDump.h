@@ -34,6 +34,7 @@ public:
 	{
 		None       = 0,
 		AuthorInfo = 1 << 0,
+		Annotation = 1 << 1,
 	};
 
 public:
@@ -47,11 +48,13 @@ public:
 	virtual void CreateTables(const std::function<void(std::string_view)>& functor) const   = 0;
 	virtual void CreateIndices(const std::function<void(std::string_view)>& functor) const  = 0;
 
-	virtual void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, AdditionalType additionalType) const = 0;
+	virtual void
+	CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, AdditionalType additionalType, const std::function<void(const DB::IQuery&)>& functor = {}) const = 0;
 
 	virtual const DictionaryTableDescription& GetAuthorTable() const noexcept     = 0;
 	virtual const DictionaryTableDescription& GetSeriesTable() const noexcept     = 0;
 	virtual const DictionaryTableDescription& GetBookTable() const noexcept       = 0;
+	virtual const DictionaryTableDescription& GetAnnotationTable() const noexcept = 0;
 	virtual const LinkTableDescription&       GetAuthorLinkTable() const noexcept = 0;
 	virtual const LinkTableDescription&       GetSeriesLinkTable() const noexcept = 0;
 

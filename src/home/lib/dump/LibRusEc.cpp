@@ -193,6 +193,12 @@ private: // IDatabase
 		return table;
 	}
 
+	const DictionaryTableDescription& GetAnnotationTable() const noexcept override
+	{
+		static const DictionaryTableDescription table {};
+		return table;
+	}
+
 	const LinkTableDescription& GetAuthorLinkTable() const noexcept override
 	{
 		static const LinkTableDescription table {
@@ -237,7 +243,7 @@ select
         join libgenre l on l.gid = g.gid and l.bid = b.BookID 
         order by g.gid
     ) Genre,
-    b.Title, trim(s.seqname), case when ls.sid is null then null else ls.sn end, null, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, b.Hash, 0, -ls.sort, ''
+    b.Title, trim(s.seqname), case when ls.sid is null then null else ls.sn end, null, b.FileSize, b.LibID, b.Deleted, b.FileType, b.Time, b.Lang, b.LibRateSum, b.LibRateCount, b.keywords, b.Year, b.Hash, 0, -ls.sort
 from Books b
 left join libseq ls on ls.bid = b.BookID
 left join libseqs s on s.sid = ls.sid
@@ -273,7 +279,12 @@ left join libseqs s on s.sid = ls.sid
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(const std::filesystem::path& /*dstDir*/, const std::filesystem::path& /*sqlDir*/, const AdditionalType /*additionalType*/) const override
+	void CreateAdditional(
+		const std::filesystem::path& /*dstDir*/,
+		const std::filesystem::path& /*sqlDir*/,
+		const AdditionalType /*additionalType*/,
+		const std::function<void(const DB::IQuery&)>& /*functor*/
+	) const override
 	{
 	}
 
