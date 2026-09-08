@@ -26,6 +26,7 @@
 #include "util/LogConsoleFormatter.h"
 
 #include "log.h"
+#include "zip.h"
 
 #include "config/version.h"
 
@@ -129,12 +130,28 @@ bool Validate(const QString& path, const QString& ext)
 	};
 	const auto signature = FindSecond(signatures, ext.toStdString().data(), empty, PszComparer {});
 
+	if (signature == empty)
+		return true;
+
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly))
 		return false;
 
 	const auto content = file.read(static_cast<qsizetype>(signature.size()));
-	return content.startsWith(signature);
+	if (!content.startsWith(signature))
+		return false;
+
+	file.seek(0);
+
+	const Zip  zip(file);
+	const auto test = zip.Test();
+	if (!test.has_value())
+	{
+		PLOGE << test.error();
+		return false;
+	}
+
+	return true;
 }
 
 struct Task

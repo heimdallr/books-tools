@@ -8,4 +8,5 @@
 	LINK_TARGETS
 		logging
 		network
+		zip
 )
