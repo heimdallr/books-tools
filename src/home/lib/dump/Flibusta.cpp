@@ -503,7 +503,7 @@ private:
 
 	void CreateBookAnnotations(const std::function<void(const DB::IQuery&)>& functor) const
 	{
-		const auto query = m_db->CreateQuery("select BookId, Body from libbannotations");
+		const auto query = m_db->CreateQuery("select BookId, Body, max(nid) from libbannotations group by BookId");
 		for (query->Execute(); !query->Eof(); query->Next())
 			functor(*query);
 	}
