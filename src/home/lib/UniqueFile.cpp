@@ -293,7 +293,7 @@ void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 	    it != m_cache.end())
 	{
 		if (it->inpData.empty())
-			it->inpData = CreateInpData(*it->dump);
+			it->inpData = CreateInpData(*it->dump, m_series);
 
 		m_currentInpData = &it->inpData;
 

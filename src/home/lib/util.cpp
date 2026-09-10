@@ -71,7 +71,7 @@ QString& ReplaceTags(QString& str)
 	return str;
 }
 
-InpData CreateInpData(const IDump& dump)
+InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& series)
 {
 	InpData inpData;
 
@@ -132,7 +132,24 @@ InpData CreateInpData(const IDump& dump)
 			it->second->title.replace(QChar { 0x2028 }, ' ');
 		}
 
-		it->second->series.emplace_back(query.Get<const char*>(3), Util::Fb2InpxParser::GetSeqNumber(query.Get<const char*>(4)), query.Get<int>(17), query.Get<double>(18));
+		QString seriesTitleSrc = query.Get<const char*>(3);
+		auto    seriesTitleKey = seriesTitleSrc;
+		std::ranges::transform(seriesTitleKey, seriesTitleKey.begin(), [](const QChar& ch) {
+			return IsOneOf(
+					   ch.category(),
+					   QChar::Category::Letter_Lowercase,
+					   QChar::Category::Letter_Uppercase,
+					   QChar::Category::Letter_Titlecase,
+					   QChar::Category::Number_DecimalDigit,
+					   QChar::Category::Number_Letter
+				   )
+			         ? ch.toLower()
+			         : QChar { ' ' };
+		});
+		seriesTitleKey   = seriesTitleKey.split(' ', Qt::SkipEmptyParts).join(' ');
+		auto seriesTitle = series.try_emplace(std::move(seriesTitleKey), std::move(seriesTitleSrc)).first->second;
+
+		it->second->series.emplace_back(std::move(seriesTitle), Util::Fb2InpxParser::GetSeqNumber(query.Get<const char*>(4)), query.Get<int>(17), query.Get<double>(18));
 
 		++n;
 		PLOGV_IF(n % 50000 == 0) << n << " records selected";

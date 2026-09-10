@@ -84,6 +84,8 @@ private:
 	const std::unordered_set<QString> m_commonLibFolders { "fb2-000024-030559", "fb2-030560-060423", "fb2-060424-074391", "fb2-074392-091839", "fb2-091841-104214", "fb2-104215-113436",
 		                                                   "fb2-113437-119690", "fb2-119691-132107", "fb2-132108-141328", "fb2-141329-147517", "fb2-147519-153549", "fb2-153556-158325",
 		                                                   "fb2-158328-161830", "fb2-161831-166042", "fb2-166043-168102", "fb2-168103-172702" };
+
+	std::unordered_map<QString, QString> m_series;
 };
 
 class LIB_EXPORT UniqueFileStorage

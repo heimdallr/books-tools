@@ -23,6 +23,6 @@ using InpData = std::unordered_map<QString, std::shared_ptr<Book>, Util::CaseIns
 
 LIB_EXPORT void     Write(const QString& fileName, const QByteArray& data);
 LIB_EXPORT QString& ReplaceTags(QString& str);
-LIB_EXPORT InpData  CreateInpData(const IDump& db);
+LIB_EXPORT InpData  CreateInpData(const IDump& db, std::unordered_map<QString, QString>& series);
 
 }
