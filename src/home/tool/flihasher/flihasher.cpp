@@ -53,6 +53,62 @@ struct Options
 	unsigned int maxThreadCount { std::thread::hardware_concurrency() };
 };
 
+void SerializeHashSections(const QStringList& sections, XmlWriter& writer)
+{
+	qsizetype depth = -1;
+	for (const auto& str : sections)
+	{
+		const auto split = str.split('\t');
+		auto       it    = split.begin();
+		assert(it != split.end());
+
+		bool ok       = false;
+		auto newDepth = (it++)->toInt(&ok);
+		assert(ok);
+
+		const auto write = [&] {
+			writer.WriteStartElement(u"section");
+			if (it != split.end())
+			{
+				writer.WriteAttribute(u"id", *it++);
+				if (it != split.end())
+				{
+					writer.WriteAttribute(u"count", *it++);
+					if (it != split.end())
+					{
+						writer.WriteAttribute(u"size", *it++);
+						if (it != split.end())
+							writer.WriteAttribute(u"simHash", *it++);
+					}
+				}
+			}
+		};
+
+		if (depth == newDepth)
+		{
+			writer.WriteEndElement();
+			write();
+			continue;
+		}
+
+		if (depth < newDepth)
+		{
+			write();
+			depth = newDepth;
+			continue;
+		}
+
+		writer.WriteEndElement();
+		for (; newDepth < depth; --depth)
+			writer.WriteEndElement();
+
+		write();
+	}
+
+	for (; depth >= 0; --depth)
+		writer.WriteEndElement();
+}
+
 void ProcessArchive(const Options& options, const QString& filePath, Progress& progress)
 {
 	PLOGI << "process " << filePath;
@@ -99,7 +155,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 			.WriteAttribute(u"file", file.file)
 			.WriteAttribute(u"count", QString::number(file.parseResult.count))
 			.WriteAttribute(u"size", QString::number(file.parseResult.size))
-			.WriteAttribute(u"simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar{'0'}))
+			.WriteAttribute(u"simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }))
 			.WriteAttribute(u"title", file.parseResult.title);
 
 		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item, const bool unlinked) {
@@ -225,9 +281,9 @@ int main(int argc, char* argv[])
 
 	options.dstDir = parser.value(OUTPUT);
 
-	options.sourceLib = parser.value(LIBRARY);
+	options.sourceLib = parser.value(LIBRARY).toLower();
 	if (options.sourceLib.isEmpty())
-		options.sourceLib = availableLibraries.front();
+		options.sourceLib = availableLibraries.front().toLower();
 
 	if (parser.isSet(THREADS))
 		options.maxThreadCount = parser.value(THREADS).toUInt();
