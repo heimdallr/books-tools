@@ -1,6 +1,6 @@
 ﻿#include <ranges>
 
-#include <QGuiApplication>
+#include <QCoreApplication>
 #include <QStandardPaths>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -41,7 +41,7 @@ void go(const int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
-	const QGuiApplication app(argc, argv);
+	const QCoreApplication app(argc, argv);
 
 	Log::LoggingInitializer                    logging(QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID));
 	plog::ConsoleAppender<LogConsoleFormatter> consoleAppender;

@@ -3,9 +3,9 @@
 #include <thread>
 
 #include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
-#include <QGuiApplication>
 #include <QStandardPaths>
 
 #include <plog/Appenders/ConsoleAppender.h>
@@ -190,7 +190,7 @@ int run(const Options& options)
 
 int main(int argc, char* argv[])
 {
-	const QGuiApplication app(argc, argv);
+	const QCoreApplication app(argc, argv);
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 	XMLPlatformInitializer xmlPlatformInitializer;

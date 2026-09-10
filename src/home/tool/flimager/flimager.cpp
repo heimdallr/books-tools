@@ -8,7 +8,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
-#include <QPixmap>
+#include <QImage>
 #include <QSize>
 #include <QStandardPaths>
 #include <QString>
@@ -207,7 +207,7 @@ private:
 
 	QByteArray Recode(const QByteArray& src) const
 	{
-		auto image = Util::Decode(src).toImage();
+		auto image = Util::Decode(src);
 		if (image.isNull())
 			return {};
 

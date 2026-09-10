@@ -7,8 +7,7 @@
 #include <QCommandLineParser>
 #include <QCryptographicHash>
 #include <QDirIterator>
-#include <QGuiApplication>
-#include <QImageReader>
+#include <QImage>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -114,18 +113,6 @@ struct ImageStatisticsItem
 };
 
 using ImageStatistics = std::vector<ImageStatisticsItem>;
-
-std::expected<QImage, QString> ToImage(QByteArray& body)
-{
-	QBuffer buffer(&body);
-	buffer.open(QBuffer::ReadOnly);
-	QImageReader imageReader(&buffer);
-	auto         result = imageReader.read();
-	if (result.isNull()) [[unlikely]]
-		return std::unexpected(imageReader.errorString());
-
-	return result;
-}
 
 class Worker
 {
@@ -445,10 +432,10 @@ private:
 			return ReadImage(body, settings, imageFile, fail, needSaveBody);
 		}
 
-		auto image = ToImage(body);
-		if (image)
+		auto image = Util::Decode(body);
+		if (!image.isNull())
 		{
-			auto result = std::move(image.value());
+			auto result = std::move(image);
 			return result;
 		}
 
@@ -466,7 +453,7 @@ private:
 			);
 		    it != std::end(signatures))
 			return (fail = it->extension),
-			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(image.error()), needSaveBody && it->needSaveBody, it->extension);
+			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged").arg(settings.type).arg(imageFile), needSaveBody && it->needSaveBody, it->extension);
 
 		if (const auto it = std::ranges::find_if(
 				unsupportedSignatures,
@@ -491,7 +478,7 @@ private:
 		if (QString::fromUtf8(body).contains("!doctype html", Qt::CaseInsensitive))
 			return fail = knownSignatures[0].extension, AddError(settings, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(settings.type).arg(imageFile).arg("html"), false, "html", false);
 
-		return AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile).arg(image.error()), needSaveBody);
+		return AddError(settings, imageFile, body, QString("%1 %2 may be damaged: %3").arg(settings.type).arg(imageFile), needSaveBody);
 	}
 
 	QImage AddError(const ImageSettings& settings, const QString& file, const QByteArray& body, const QString& errorText, const bool needSaveBody, const QString& ext = {}, const bool tryToFix = true) const
@@ -552,14 +539,14 @@ private:
 		if (fixed.isEmpty())
 			return {};
 
-		auto image = ToImage(fixed);
-		if (image)
+		auto image = Util::Decode(fixed);
+		if (!image.isNull())
 		{
-			auto result = std::move(image.value());
+			auto result = std::move(image);
 			return result;
 		}
 
-		PLOGW << image.error();
+		PLOGW << "Cannot decode image";
 		return {};
 	}
 
@@ -1140,7 +1127,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 
 bool run(int argc, char* argv[])
 {
-	const QGuiApplication app(argc, argv); //-V821
+	const QCoreApplication app(argc, argv); //-V821
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 	Util::XMLPlatformInitializer xmlPlatformInitializer;
