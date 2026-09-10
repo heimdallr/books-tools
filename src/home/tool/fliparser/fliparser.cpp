@@ -539,7 +539,7 @@ std::optional<Book> ParseEpub(
 	{
 		static constexpr const char* textExt[] { ".htm", ".html", ".xhtml", ".xml" };
 		QCryptographicHash           md5 { QCryptographicHash::Md5 };
-		auto                         parseResult = Util::EpubParser::Parse(zip, fileName, Util::CommonParser::Mode::All);
+		auto                         parseResult = Util::EpubParser::Parse(zip, fileName, Util::CommonParser::Mode::Images | Util::CommonParser::Mode::Texts);
 		size_t                       size        = 0;
 		for (auto&& [id, body] : parseResult.texts | std::views::filter([](const auto& item) {
 									 return std::ranges::any_of(textExt, [&](const char* ext) {
