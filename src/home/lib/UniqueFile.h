@@ -14,6 +14,13 @@
 
 #include "export/lib.h"
 
+namespace HomeCompa::DB
+{
+
+class IDatabase;
+
+}
+
 namespace HomeCompa::FliLib
 {
 
@@ -26,10 +33,9 @@ struct LIB_EXPORT UniqueFile
 	};
 
 	Uid                  uid;
-	QString              hash;
+	QString              md5;
 	std::set<QString>    title;
-	QString              hashText;
-	QStringList          hashSections;
+	QString              hash;
 	ImageItem            cover;
 	std::set<ImageItem>  images;
 	size_t               size;
@@ -131,7 +137,12 @@ public:
 	};
 
 public:
-	explicit UniqueFileStorage(QString dstDir, int hammingThreshold = 10, std::shared_ptr<InpDataProvider> inpDataProvider = std::make_shared<InpDataProvider>());
+	explicit UniqueFileStorage(
+		DB::IDatabase&                     db,
+		const std::unordered_set<QString>& skipFolders      = {},
+		int                                hammingThreshold = 10,
+		std::shared_ptr<InpDataProvider>   inpDataProvider  = std::make_shared<InpDataProvider>()
+	);
 
 public:
 	std::pair<ImageItem, std::set<ImageItem>> GetImages(UniqueFile& file);
@@ -147,7 +158,6 @@ private:
 	std::optional<UniqueFile*> CheckForNew(const QString& hash, size_t indexDuplicate, bool histCheck);
 
 private:
-	const QString                                m_hashDir;
 	const std::unique_ptr<const ImageComparer>   m_imageComparer;
 	std::mutex                                   m_guard;
 	std::shared_ptr<InpDataProvider>             m_inpDataProvider;
@@ -168,5 +178,7 @@ private:
 
 	const QString m_si;
 };
+
+LIB_EXPORT std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, long long folderId, const QString& folderName);
 
 } // namespace HomeCompa::FliLib

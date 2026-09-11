@@ -12,7 +12,6 @@ namespace HomeCompa::FliLib
 struct Archive
 {
 	QString filePath;
-	QString hashPath;
 	QString sourceLib;
 };
 
