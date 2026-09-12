@@ -6,6 +6,7 @@ AddTarget(flicmp	 app_console
 		Boost::headers
 		Qt${QT_MAJOR_VERSION}::Core
 	LINK_TARGETS
+		dbfactory
 		lib
 		logging
 		util

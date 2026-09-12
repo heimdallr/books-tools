@@ -151,61 +151,6 @@ private:
 	const int m_threshold;
 };
 
-struct HashParserObserver final : Util::HashParser::IObserver
-{
-	struct Item
-	{
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME;
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-		Util::HashParser::HashImageItem  cover;
-		Util::HashParser::HashImageItems images;
-		size_t                           size { 0 };
-		uint64_t                         simHash { 0 };
-		Util::TextHistogram              hist;
-	};
-
-	using Items = std::vector<Item>;
-	using Data  = std::vector<std::pair<QString, Items>>;
-	Data data;
-
-private:
-	void OnParseStarted(const QStringView sourceLib) override
-	{
-		data.emplace_back(std::make_pair(sourceLib, Items {}));
-	}
-	bool OnBookParsed(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-			Util::HashParser::HashImageItem cover,
-		Util::HashParser::HashImageItems    images,
-		Util::HashParser::Section::Ptr      section,
-		size_t                              size,
-		uint64_t                            simHash,
-		Util::TextHistogram                 hist
-	) override
-	{
-		if (!originFolder.isEmpty())
-			return true;
-
-		const auto it = section->children.find(id);
-
-		assert(!data.empty());
-		data.back().second.emplace_back(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) std::move(NAME),
-			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-				std::move(cover),
-			std::move(images),
-			size,
-			simHash,
-			std::move(hist)
-		);
-		return true;
-	}
-};
-
 std::unique_ptr<UniqueFileStorage::ImageComparer> GetImageCompared(const int hammingThreshold)
 {
 	return hammingThreshold >= 64 ? std::unique_ptr<UniqueFileStorage::ImageComparer> { std::make_unique<ImageComparerSub>() } : std::make_unique<ImageComparerHamming>(hammingThreshold);
