@@ -67,11 +67,11 @@ constexpr auto SKIP_CONTENTS                = "skip-contents";
 constexpr auto SKIP_REVIEWS                 = "skip-reviews";
 constexpr auto SKIP_COMPILATIONS            = "skip-compilations";
 constexpr auto SKIP_ANNOTATIONS             = "skip-annotations";
+constexpr auto SKIP_MERGE                   = "skip-merge";
 constexpr auto DELETED                      = "deleted";
 constexpr auto DATABASE                     = "database";
 constexpr auto OUTPUT_INPX                  = "output-inpx";
 constexpr auto COLLECTION_INFO_DATE_FORMAT  = "collection-info-date-format";
-constexpr auto SKIP_MERGE                   = "skip-merge";
 
 constexpr auto APP_ID = "fliparser";
 
