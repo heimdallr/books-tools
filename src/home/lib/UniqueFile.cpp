@@ -76,13 +76,24 @@ private: // UniqueFileStorage::ImageComparer
 		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 		using ImageHash   = std::pair<uint64_t, QString>;
 
+		const auto filterLinked = [this](const std::set<ImageItem>& items) {
+			return items | std::views::filter([&](const auto& item) {
+					   return item.linked;
+				   })
+			     | std::views::transform([](const auto& item) {
+					   return std::reference_wrapper(item);
+				   }) | std::ranges::to<std::vector>();
+		};
+
+		const auto lhsImages = filterLinked(lhs.images), rhsImages = filterLinked(rhs.images);
+
 		ImageHashes lpHashes, rpHashes;
 
-		auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
-		while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
+		auto lIt = lhsImages.cbegin(), rIt = rhsImages.cbegin();
+		while (lIt != lhsImages.cend() && rIt != rhsImages.cend())
 		{
-			const auto& lRef = *lIt;
-			const auto& rRef = *rIt;
+			const auto& lRef = lIt->get();
+			const auto& rRef = rIt->get();
 			if (lRef.hash < rRef.hash)
 			{
 				lpHashes.emplace(lRef.pHash, lRef.fileName);
@@ -102,10 +113,10 @@ private: // UniqueFileStorage::ImageComparer
 		}
 
 		const auto transform = [](const auto& item) {
-			return std::make_pair(item.pHash, item.fileName);
+			return std::make_pair(item.get().pHash, item.get().fileName);
 		};
-		std::transform(lIt, lhs.images.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
-		std::transform(rIt, rhs.images.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
+		std::transform(lIt, lhsImages.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
+		std::transform(rIt, rhsImages.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
 
 		auto lIds = lpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
 		auto rIds = rpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
@@ -654,11 +665,12 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		}
 	};
 
-	process("select i.FileId, i.Name, i.Md5, i.PHash from Image i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
+	process("select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
 		ImageItem imageItem {
 			.fileName = query.Get<const char*>(1),
 			.hash     = query.Get<const char*>(2),
 			.pHash    = query.Get<QString>(3).toULongLong(nullptr, 16),
+			.linked   = query.Get<int>(4) != 0,
 		};
 
 		if (imageItem.fileName == Global::COVER)
