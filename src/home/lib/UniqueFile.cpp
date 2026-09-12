@@ -377,31 +377,6 @@ UniqueFileStorage::UniqueFileStorage(DB::IDatabase& db, const std::unordered_set
 	PLOGI << "ready books found: " << m_files.size();
 }
 
-std::pair<ImageItem, std::set<ImageItem>> UniqueFileStorage::GetImages(UniqueFile& file)
-{
-	std::lock_guard lock(m_guard);
-	return std::make_pair(file.cover, file.images);
-}
-
-void UniqueFileStorage::SetImages(const QString& hash, const QString& fileName, ImageItem cover, std::set<ImageItem> images)
-{
-	std::lock_guard lock(m_guard);
-	const auto      it = m_new.find(hash);
-	if (it == m_new.end())
-		return;
-
-	for (const auto& index : it->second | std::views::keys)
-	{
-		auto& file = m_files[index];
-		if (file.uid.file == fileName)
-		{
-			file.cover  = std::move(cover);
-			file.images = std::move(images);
-			return;
-		}
-	}
-}
-
 void LogIt(const UniqueFile& duplicate, const UniqueFile& file)
 {
 	PLOGV << QString("duplicates detected: %1/%2 vs %3/%4, %5").arg(duplicate.uid.folder, duplicate.uid.file, file.uid.folder, file.uid.file, duplicate.GetTitle());
@@ -536,8 +511,6 @@ std::optional<UniqueFile*> UniqueFileStorage::CheckForNew(const QString& hash, c
 UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile fileSrc)
 {
 	fileSrc.title.erase(m_si);
-
-	std::lock_guard lock(m_guard);
 
 	const auto indexFile = m_files.size();
 	auto&      file      = m_files.emplace_back(std::move(fileSrc));

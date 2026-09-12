@@ -145,8 +145,6 @@ public:
 	);
 
 public:
-	std::pair<ImageItem, std::set<ImageItem>> GetImages(UniqueFile& file);
-	void                                      SetImages(const QString& hash, const QString& fileName, ImageItem cover, std::set<ImageItem> images);
 	UniqueFile*                               Add(QString hash, UniqueFile file);
 	std::pair<ImageItems, ImageItems>         GetNewImages();
 	void                                      SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
@@ -159,7 +157,6 @@ private:
 
 private:
 	const std::unique_ptr<const ImageComparer>   m_imageComparer;
-	std::mutex                                   m_guard;
 	std::shared_ptr<InpDataProvider>             m_inpDataProvider;
 	std::unique_ptr<IDuplicateObserver>          m_duplicateObserver;
 	std::shared_ptr<IUniqueFileConflictResolver> m_conflictResolver;

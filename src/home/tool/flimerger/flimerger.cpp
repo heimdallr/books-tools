@@ -160,25 +160,6 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
 
-//void ProcessHash(DB::IDatabase& db, const Archive& archive, const Replacement& replacement)
-//{
-//	PLOGI << "parsing " << archive.hashPath;
-//	hashDir.mkpath(".");
-//	QFileInfo fileInfo(archive.hashPath);
-//
-//	QFile input(archive.hashPath);
-//	if (!input.open(QIODevice::ReadOnly))
-//		throw std::ios_base::failure(std::format("Cannot read from {}", archive.hashPath));
-//
-//	const auto outputFilePath = hashDir.filePath(fileInfo.fileName());
-//
-//	QFile output(outputFilePath);
-//	if (!output.open(QIODevice::WriteOnly))
-//		throw std::ios_base::failure(std::format("Cannot write to", outputFilePath));
-//
-//	[[maybe_unused]] const HashCopier parser(input, output, replacement);
-//}
-
 void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement)
 {
 	const QFileInfo fileInfo(path);
