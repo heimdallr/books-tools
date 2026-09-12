@@ -76,16 +76,16 @@ private: // UniqueFileStorage::ImageComparer
 		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 		using ImageHash   = std::pair<uint64_t, QString>;
 
-		const auto filterLinked = [this](const std::set<ImageItem>& items) {
+		const auto filterLinked = [this](const std::set<ImageItem>& items, const ImageItem& cover) {
 			return items | std::views::filter([&](const auto& item) {
-					   return item.linked;
+					   return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
 				   })
 			     | std::views::transform([](const auto& item) {
 					   return std::reference_wrapper(item);
 				   }) | std::ranges::to<std::vector>();
 		};
 
-		const auto lhsImages = filterLinked(lhs.images), rhsImages = filterLinked(rhs.images);
+		const auto lhsImages = filterLinked(lhs.images, rhs.cover), rhsImages = filterLinked(rhs.images, lhs.cover);
 
 		ImageHashes lpHashes, rpHashes;
 
