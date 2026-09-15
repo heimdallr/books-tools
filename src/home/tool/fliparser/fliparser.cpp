@@ -207,56 +207,49 @@ private:
 	std::unique_ptr<Data>               m_data;
 };
 
-Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, const Zip& zip, const QJsonObject& unIndexed)
+Book* GetBookCustom(const QString& folder, const QString& fileName, InpDataProvider& inpDataProvider, DB::IDatabase& db)
 {
-	const auto [key, size] = GetFileHash(zip, fileName);
-
-	const auto it = unIndexed.constFind(key);
-	if (it == unIndexed.constEnd())
+	const auto query = db.CreateQuery(R"(select c.Author, c.Genre, c.Title, c.Series, f.SymbolCount, c.Updated, c.Lang, c.Keywords, c.PublishYear, c.Annotation
+from FileCustom c
+join File f on f.FileId = c.FileId and f.Name = ?
+join Folder d on d.FolderId = f.FolderId and d.Name = ?)");
+	query->Bind(0, fileName);
+	query->Bind(1, folder);
+	query->Execute();
+	if (query->Eof())
 		return nullptr;
 
 	QFileInfo fileInfo(fileName);
 
-	const auto value = it.value().toObject();
-
-	std::vector<Series> series;
-	if (const auto seriesObj = value["series"]; seriesObj.isArray())
-		std::ranges::transform(seriesObj.toArray(), std::back_inserter(series), [](const auto& item) {
-			const auto obj = item.toObject();
-			return Series { obj["title"].toString(), obj["number"].toString() };
-		});
+	auto series = [&] {
+		return query->IsNull(3) ? std::vector<Series> {} : query->Get<QString>(5).split('|', Qt::SkipEmptyParts) | std::views::transform([](const QString& item) {
+			return item.split('#', Qt::KeepEmptyParts);
+		}) | std::views::as_rvalue | std::views::transform([](QStringList&& item) {
+			assert(item.size() == 2);
+			return Series { .title = std::move(item.front()), .serNo = std::move(item.back()) };
+		}) | std::ranges::to<std::vector>();
+	}();
 	if (series.empty())
 		series.emplace_back();
 
 	return inpDataProvider.AddBook(std::make_unique<Book>(Book {
-		.author   = value["author"].toString(),
-		.genre    = value["genre"].toString(),
-		.title    = value["title"].toString(),
-		.series   = std::move(series),
-		.file     = fileInfo.completeBaseName(),
-		.size     = QString::number(size),
-		.libId    = fileInfo.completeBaseName(),
-		.deleted  = true,
-		.ext      = fileInfo.suffix(),
-		.date     = value["date"].toString(),
-		.lang     = value["lang"].toString(),
-		.keywords = value["keywords"].toString(),
-		.year     = value["year"].toString(),
+		.author     = query->Get<const char*>(0),
+		.genre      = query->Get<const char*>(1),
+		.title      = query->Get<const char*>(2),
+		.series     = std::move(series),
+		.file       = fileInfo.completeBaseName(),
+		.size       = query->Get<const char*>(4),
+		.libId      = fileInfo.completeBaseName(),
+		.deleted    = true,
+		.ext        = fileInfo.suffix(),
+		.date       = query->Get<const char*>(5),
+		.lang       = query->Get<const char*>(6),
+		.keywords   = query->Get<const char*>(7),
+		.year       = query->Get<const char*>(8),
+		.annotation = query->Get<const char*>(9),
 	}));
 }
-void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvider& inpDataProvider)
-{
-	const auto unIndexed = []() -> QJsonObject {
-		QFile                       file(":/data/unindexed.json");
-		[[maybe_unused]] const auto ok = file.open(QIODevice::ReadOnly);
-		assert(ok);
 
-		QJsonParseError jsonParserError;
-		const auto      doc = QJsonDocument::fromJson(file.readAll(), &jsonParserError);
-		assert(jsonParserError.error == QJsonParseError::NoError && doc.isObject());
-
-		return doc.object();
-	}();
 void WriteToDatabase(DB::IDatabase& db, QString folder, Book& book)
 {
 	const auto tr = db.CreateTransaction();
@@ -265,6 +258,8 @@ void WriteToDatabase(DB::IDatabase& db, QString folder, Book& book)
 	tr->Commit();
 }
 
+void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvider& inpDataProvider)
+{
 	const auto seriesUniquePredicate = [](const auto& item) {
 		return item.title;
 	};
@@ -306,15 +301,16 @@ void WriteToDatabase(DB::IDatabase& db, QString folder, Book& book)
 				}
 				else
 				{
-					book = GetBookCustom(bookFile, inpDataProvider, zip, unIndexed);
-					if (book && settings.database)
-						WriteToDatabase(*settings.database, folder, *book);
+					book = GetBookCustom(folder, bookFile, inpDataProvider, *settings.database);
 					if (!book)
 					{
-						book = ParseBook(bookFile, inpDataProvider, folder, zip, zipFileInfo.birthTime(), settings.isDeleted);
-						if (book && settings.database)
-							WriteToDatabase(*settings.database, folder, *book);
-						if (!book)
+						PLOGW << zipFileInfo.filePath() << "/" << bookFile << " need to parse ";
+						if ((book = ParseBook(bookFile, inpDataProvider, folder, zip, zipFileInfo.birthTime(), settings.isDeleted)))
+						{
+							if (settings.database)
+								WriteToDatabase(*settings.database, folder, *book);
+						}
+						else
 						{
 							PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
 							continue;
