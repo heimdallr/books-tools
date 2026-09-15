@@ -136,7 +136,11 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	const auto insertQuery = [&](const std::string_view queryText, const std::vector<QString>& parameters, const bool needInsertedId = false) {
 		const auto command = tr->CreateCommand(queryText);
 		for (auto&& [parameter, index] : std::views::zip(parameters, std::views::iota(0)))
-			command->Bind(index, parameter);
+			if (parameter.isEmpty())
+				command->Bind(index);
+			else
+				command->Bind(index, parameter);
+
 		command->Execute();
 
 		if (needInsertedId)
