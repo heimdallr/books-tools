@@ -12,8 +12,7 @@
 class QDate;
 class QIODevice;
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 struct Series
 {

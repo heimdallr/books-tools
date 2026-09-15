@@ -4,8 +4,7 @@
 
 #include "export/lib.h"
 
-namespace HomeCompa::Util
-{
+namespace HomeCompa::Util {
 
 class XmlWriter;
 
@@ -13,8 +12,7 @@ class XmlWriter;
 
 class QByteArray;
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 class IDump;
 struct Book;

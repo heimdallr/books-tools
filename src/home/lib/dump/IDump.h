@@ -3,16 +3,14 @@
 #include "fnd/EnumBitmask.h"
 #include "fnd/algorithm.h"
 
-namespace HomeCompa::DB
-{
+namespace HomeCompa::DB {
 
 class IDatabase;
 class IQuery;
 
 }
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 class IDump // NOLINT(cppcoreguidelines-special-member-functions)
 {

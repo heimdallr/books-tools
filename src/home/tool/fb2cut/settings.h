@@ -9,8 +9,7 @@
 #include "Constant.h"
 #include "zip.h"
 
-namespace HomeCompa::fb2cut
-{
+namespace HomeCompa::fb2cut {
 
 constexpr auto MAX_SIZE = std::numeric_limits<int>::max();
 

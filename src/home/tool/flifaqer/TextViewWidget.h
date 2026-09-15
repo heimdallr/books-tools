@@ -9,8 +9,7 @@
 
 class QAbstractItemModel;
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 class TextViewWidget final : public QWidget
 {

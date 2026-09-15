@@ -24,8 +24,7 @@
 using namespace HomeCompa::FliFaq;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto LANGUAGE = "language";
 constexpr auto MACRO    = "macro";
@@ -60,9 +59,8 @@ QString ToString(const QJsonValue& value)
 	return (value.isNull() || value.isUndefined()) ? QString {}
 	     : value.isString()                        ? value.toString()
 	     : value.isArray()                         ? (value.toArray() | std::views::transform([](const auto& item) {
-								  return item.toString();
-													  })
-	                                                  | std::ranges::to<QStringList>())
+			   return item.toString();
+		   }) | std::ranges::to<QStringList>())
 	                                                     .join(STRING_SEPARATOR)
 	                                               : (assert(false && "unknown type"), QString {});
 }
@@ -156,13 +154,11 @@ struct Profile
 
 		std::ranges::transform(obj.value(QUESTION).toArray(), std::back_inserter(profile.question), [](const auto& item) {
 			const auto itemObj = item.toObject();
-			return std::make_pair(
-				itemObj.value(NAME).toString(),
+			return std::make_pair(itemObj.value(NAME).toString(),
 				ProfileQuestion {
 					ITEM(, itemObj, before),
 					ITEM(, itemObj, after),
-				}
-			);
+				});
 		});
 
 		std::ranges::transform(obj.value(TAGS).toArray(), std::back_inserter(profile.tags), [](const auto& item) {
@@ -463,16 +459,15 @@ private: // QAbstractItemModel
 			},
 			[this] {
 				endInsertRows();
-			}
-		);
+			});
 
 		auto* parentItem = parent.isValid() ? static_cast<Item*>(parent.internalPointer()) : m_root.get();
 		parentItem->children.insert_range(std::next(parentItem->children.begin(), row), std::views::iota(row, row + count) | std::views::transform([&](const int n) {
-																							auto item = std::make_shared<Item>(parentItem, n);
-																							for (const auto& language : m_files | std::views::keys)
-																								item->question.Set(language, Tr(NEW_ITEM));
-																							return item;
-																						}));
+			auto item = std::make_shared<Item>(parentItem, n);
+			for (const auto& language : m_files | std::views::keys)
+				item->question.Set(language, Tr(NEW_ITEM));
+			return item;
+		}));
 		for (const auto& item : parentItem->children | std::views::drop(row + count))
 			item->row += count;
 
@@ -490,8 +485,7 @@ private: // QAbstractItemModel
 			},
 			[this] {
 				endRemoveRows();
-			}
-		);
+			});
 
 		auto* parentItem = parent.isValid() ? static_cast<Item*>(parent.internalPointer()) : m_root.get();
 		parentItem->children.erase(std::next(parentItem->children.begin(), row), std::next(parentItem->children.begin(), row + count));
@@ -511,19 +505,16 @@ private: // QAbstractItemModel
 
 		const ScopedCall removeGuard(
 			[&] {
-				[[maybe_unused]] const auto ok = beginMoveRows(
-					sourceParent,
+				[[maybe_unused]] const auto ok = beginMoveRows(sourceParent,
 					sourceRow,
 					sourceRow + count - 1,
 					destinationParent,
-					destinationChild + (parentSourceItem == parentDestinationItem && destinationChild > sourceRow ? count : 0)
-				);
+					destinationChild + (parentSourceItem == parentDestinationItem && destinationChild > sourceRow ? count : 0));
 				assert(ok);
 			},
 			[this] {
 				endMoveRows();
-			}
-		);
+			});
 
 		Items buffer;
 		buffer.reserve(count);
@@ -561,9 +552,8 @@ private:
 
 			case Role::Macro:
 				return (m_replacements | std::views::transform([this](const auto& item) {
-							return QString("%1=%2").arg(item.first, item.second(m_language));
-						})
-				        | std::ranges::to<QStringList>())
+					return QString("%1=%2").arg(item.first, item.second(m_language));
+				}) | std::ranges::to<QStringList>())
 				    .join(STRING_SEPARATOR);
 
 			case Role::Validate:
@@ -587,12 +577,10 @@ private:
 				return item->question(m_language);
 
 			case Qt::ForegroundRole:
-				return std::ranges::any_of(
-						   m_files | std::views::keys,
+				return std::ranges::any_of(m_files | std::views::keys,
 						   [&](const QString& language) {
 							   return item->answer(language).isEmpty() || item->question(language).isEmpty() || item->question(language) == Tr(NEW_ITEM);
-						   }
-					   )
+						   })
 				         ? QBrush(Qt::red)
 				         : QVariant {};
 
@@ -653,8 +641,7 @@ private:
 					},
 					[this] {
 						endResetModel();
-					}
-				);
+					});
 
 			case Role::ReferenceLanguage:
 				return Util::Set(m_referenceLanguage, value.toString());

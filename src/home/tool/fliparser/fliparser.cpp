@@ -51,8 +51,7 @@
 using namespace HomeCompa::FliLib;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
 constexpr auto COLLECTION_INFO_TEMPLATE     = "collection-info-template";
@@ -247,23 +246,21 @@ Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, c
 	if (series.empty())
 		series.emplace_back();
 
-	return inpDataProvider.AddBook(
-		std::make_unique<Book>(Book {
-			.author   = value["author"].toString(),
-			.genre    = value["genre"].toString(),
-			.title    = value["title"].toString(),
-			.series   = std::move(series),
-			.file     = fileInfo.completeBaseName(),
-			.size     = QString::number(size),
-			.libId    = fileInfo.completeBaseName(),
-			.deleted  = true,
-			.ext      = fileInfo.suffix(),
-			.date     = value["date"].toString(),
-			.lang     = value["lang"].toString(),
-			.keywords = value["keywords"].toString(),
-			.year     = value["year"].toString(),
-		})
-	);
+	return inpDataProvider.AddBook(std::make_unique<Book>(Book {
+		.author   = value["author"].toString(),
+		.genre    = value["genre"].toString(),
+		.title    = value["title"].toString(),
+		.series   = std::move(series),
+		.file     = fileInfo.completeBaseName(),
+		.size     = QString::number(size),
+		.libId    = fileInfo.completeBaseName(),
+		.deleted  = true,
+		.ext      = fileInfo.suffix(),
+		.date     = value["date"].toString(),
+		.lang     = value["lang"].toString(),
+		.keywords = value["keywords"].toString(),
+		.year     = value["year"].toString(),
+	}));
 }
 
 void SetOriginalNames(Book& book, const QString& originBaseName, const QString& originSuffix)
@@ -274,8 +271,7 @@ void SetOriginalNames(Book& book, const QString& originBaseName, const QString& 
 		book.ext = originSuffix;
 }
 
-std::optional<Book> ParseStub(
-	QString& /*parserName*/,
+std::optional<Book> ParseStub(QString& /*parserName*/,
 	const QString& /*folder*/,
 	const Zip& /*zip*/,
 	const QString& /*fileName*/,
@@ -288,16 +284,14 @@ std::optional<Book> ParseStub(
 	return std::nullopt;
 }
 
-std::optional<Book> ParseFb2(
-	QString&         parserName,
-	const QString&   folder,
-	const Zip&       zip,
-	const QString&   fileName,
-	const QDateTime& zipDateTime,
-	const bool       isDeleted,
-	const QString&   originBaseName = {},
-	const QString&   originSuffix   = {}
-)
+std::optional<Book> ParseFb2(QString& parserName,
+	const QString&                    folder,
+	const Zip&                        zip,
+	const QString&                    fileName,
+	const QDateTime&                  zipDateTime,
+	const bool                        isDeleted,
+	const QString&                    originBaseName = {},
+	const QString&                    originSuffix   = {})
 {
 	parserName      = "fb2";
 	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, isDeleted).line);
@@ -305,16 +299,14 @@ std::optional<Book> ParseFb2(
 	return parsedBook;
 }
 
-std::optional<Book> ParseEpub(
-	QString&         parserName,
-	const QString&   folder,
-	const Zip&       zip,
-	const QString&   fileName,
-	const QDateTime& zipDateTime,
-	const bool       isDeleted,
-	const QString&   originBaseName = {},
-	const QString&   originSuffix   = {}
-)
+std::optional<Book> ParseEpub(QString& parserName,
+	const QString&                     folder,
+	const Zip&                         zip,
+	const QString&                     fileName,
+	const QDateTime&                   zipDateTime,
+	const bool                         isDeleted,
+	const QString&                     originBaseName = {},
+	const QString&                     originSuffix   = {})
 {
 	parserName                 = "epub";
 	const auto authorsToString = [](std::vector<QStringList> authors) {
@@ -338,10 +330,10 @@ std::optional<Book> ParseEpub(
 		auto                         parseResult = Util::EpubParser::Parse(zip, fileName, Util::CommonParser::Mode::Images | Util::CommonParser::Mode::Texts);
 		size_t                       size        = 0;
 		for (auto&& [id, body] : parseResult.texts | std::views::filter([](const auto& item) {
-									 return std::ranges::any_of(textExt, [&](const char* ext) {
-										 return item.id.endsWith(ext, Qt::CaseInsensitive);
-									 });
-								 }))
+				 return std::ranges::any_of(textExt, [&](const char* ext) {
+					 return item.id.endsWith(ext, Qt::CaseInsensitive);
+				 });
+			 }))
 		{
 			auto hist  = Util::CollectHistogram(std::move(body), md5);
 			size      += Util::CalculateHash(hist).size;
@@ -373,16 +365,14 @@ std::optional<Book> ParseEpub(
 	return std::nullopt;
 }
 
-std::optional<Book> ParseFbd(
-	QString&         parserName,
-	const QString&   folder,
-	const Zip&       zip,
-	const QString&   fileName,
-	const QDateTime& zipDateTime,
-	const bool       isDeleted,
+std::optional<Book> ParseFbd(QString& parserName,
+	const QString&                    folder,
+	const Zip&                        zip,
+	const QString&                    fileName,
+	const QDateTime&                  zipDateTime,
+	const bool                        isDeleted,
 	const QString& /*originBaseName*/ = {},
-	const QString& /*originSuffix*/   = {}
-)
+	const QString& /*originSuffix*/   = {})
 {
 	const ScopedCall parserNameGuard([&] {
 		parserName = "fbd";
@@ -395,19 +385,16 @@ std::optional<Book> ParseFbd(
 	return std::nullopt;
 }
 
-std::optional<Book> ParseZip(
-	QString&         parserName,
-	const QString&   folder,
-	const Zip&       zip,
-	const QString&   fileName,
-	const QDateTime& zipDateTime,
-	bool             isDeleted,
+std::optional<Book> ParseZip(QString& parserName,
+	const QString&                    folder,
+	const Zip&                        zip,
+	const QString&                    fileName,
+	const QDateTime&                  zipDateTime,
+	bool                              isDeleted,
 	const QString& /*originBaseName*/ = {},
-	const QString& /*originSuffix*/   = {}
-);
+	const QString& /*originSuffix*/   = {});
 
-using FileParser = std::optional<Book> (*)(
-	QString& /*parserName*/,
+using FileParser = std::optional<Book> (*)(QString& /*parserName*/,
 	const QString& /*folder*/,
 	const Zip&,
 	const QString& /*fileName*/,
@@ -418,20 +405,19 @@ using FileParser = std::optional<Book> (*)(
 );
 constexpr std::pair<const char*, std::pair<FileParser, bool /*parser exists*/>> FILE_PARSERS[] {
 	{  ".fb2",   { &ParseFb2, true } },
-    { ".epub",  { &ParseEpub, true } },
-    {  ".fbd", { &ParseStub, false } },
-    {  ".zip",  { &ParseZip, false } },
-    {   ".7z",  { &ParseZip, false } },
-    {  ".rar",  { &ParseZip, false } },
+	{ ".epub",  { &ParseEpub, true } },
+	{  ".fbd", { &ParseStub, false } },
+	{  ".zip",  { &ParseZip, false } },
+	{   ".7z",  { &ParseZip, false } },
+	{  ".rar",  { &ParseZip, false } },
 };
 
-std::optional<Book> ParseZip(
-	QString&         parserName,
-	const QString&   folder,
-	const Zip&       zip,
-	const QString&   fileName,
-	const QDateTime& zipDateTime,
-	const bool       isDeleted,
+std::optional<Book> ParseZip(QString& parserName,
+	const QString&                    folder,
+	const Zip&                        zip,
+	const QString&                    fileName,
+	const QDateTime&                  zipDateTime,
+	const bool                        isDeleted,
 	const QString& /*originBaseName*/,
 	const QString& /*originSuffix*/
 )
@@ -445,12 +431,12 @@ std::optional<Book> ParseZip(
 		return {};
 	const auto subZipFiles = subZip->GetFileNameList();
 	for (const auto& [ext, parserPair] : FILE_PARSERS | std::views::filter([](const auto& item) {
-											 return item.second.second;
-										 }))
+			 return item.second.second;
+		 }))
 	{
 		for (const auto& subZipFile : subZipFiles | std::views::filter([](const auto& item) {
-										  return !item.startsWith("__MACOSX");
-									  }))
+				 return !item.startsWith("__MACOSX");
+			 }))
 		{
 			if (subZipFile.endsWith(ext, Qt::CaseInsensitive))
 			{
@@ -527,8 +513,8 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 	size_t totalCounter = 0;
 
 	for (const auto& [zipFileInfo, sourceLib] : archives | std::views::reverse | std::views::transform([](const auto& item) {
-													return std::make_pair(QFileInfo(item.filePath), item.sourceLib);
-												}))
+			 return std::make_pair(QFileInfo(item.filePath), item.sourceLib);
+		 }))
 	{
 		QByteArray file;
 		Zip        zip(zipFileInfo.filePath());
@@ -667,17 +653,15 @@ QByteArray CreateReviewAdditional(const InpDataProvider& inpDataProvider)
 {
 	QJsonArray jsonArray;
 	for (const auto& book : inpDataProvider.Books() | std::views::filter([&](const Book* item) {
-								return item->rate > std::numeric_limits<double>::epsilon();
-							}))
+			 return item->rate > std::numeric_limits<double>::epsilon();
+		 }))
 	{
-		jsonArray.append(
-			QJsonObject {
-				{ Inpx::FOLDER,                 book->folder },
-				{   Inpx::FILE, book->file + '.' + book->ext },
-				{    Inpx::SUM,                   book->rate },
-				{  Inpx::COUNT,              book->rateCount },
-        }
-		);
+		jsonArray.append(QJsonObject {
+			{ Inpx::FOLDER,                 book->folder },
+			{   Inpx::FILE, book->file + '.' + book->ext },
+			{    Inpx::SUM,                   book->rate },
+			{  Inpx::COUNT,              book->rateCount },
+		});
 	}
 
 	if (jsonArray.isEmpty())
@@ -704,8 +688,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 			},
 			[=] {
 				PLOGI << archiveName << " finished";
-			}
-		);
+			});
 
 		auto additional = CreateReviewAdditional(inpDataProvider);
 		if (additional.isEmpty())
@@ -720,8 +703,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				},
 				[&] {
 					buffer.close();
-				}
-			);
+				});
 			Zip  zip(buffer, Zip::Format::Zip);
 			auto zipFiles = Zip::CreateZipFileController();
 			zipFiles->AddFile(Inpx::REVIEWS_ADDITIONAL_BOOKS_FILE_NAME, additional);
@@ -745,8 +727,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				},
 				[archiveName, &counter] {
 					PLOGI << archiveName << " finished, records: " << counter;
-				}
-			);
+				});
 
 			std::map<std::pair<QString, QString>, std::map<std::pair<QString, QString>, QString>> sorted;
 			for (auto&& [folder, file, name, time, text] : data)
@@ -759,13 +740,11 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 				{
 					text.prepend(' ');
 					text.append(' ');
-					array.append(
-						QJsonObject {
-							{ Inpx::NAME,         id.second.simplified() },
-							{ Inpx::TIME,                       id.first },
-							{ Inpx::TEXT, ReplaceTags(text).simplified() },
-                    }
-					);
+					array.append(QJsonObject {
+						{ Inpx::NAME,         id.second.simplified() },
+						{ Inpx::TIME,                       id.first },
+						{ Inpx::TEXT, ReplaceTags(text).simplified() },
+					});
 					++counter;
 				}
 				zipFiles->AddFile(QString("%1#%2").arg(value.first.first, value.first.second), QJsonDocument(array).toJson(JSON_FORMAT));
@@ -780,8 +759,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 					},
 					[&] {
 						buffer.close();
-					}
-				);
+					});
 				Zip zip(buffer, Zip::Format::SevenZip);
 				zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 				zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
@@ -880,14 +858,12 @@ void CreateBookList(const std::filesystem::path& outputFolder, const InpDataProv
 		{
 			const auto& series = book->series.front();
 			data.append(QString("%1\t%2\t%3\t%4\t%5\x0d\x0a")
-			                .arg(
-								book->author,
-								book->title,
-								book->series.empty() || series.title.isEmpty() ? QString() : QString("[%1%2]").arg(series.title, series.serNo.isEmpty() ? QString {} : QString(" #%1").arg(series.serNo)),
-								book->folder,
-								book->GetFileName()
-							)
-			                .toUtf8());
+					.arg(book->author,
+						book->title,
+						book->series.empty() || series.title.isEmpty() ? QString() : QString("[%1%2]").arg(series.title, series.serNo.isEmpty() ? QString {} : QString(" #%1").arg(series.serNo)),
+						book->folder,
+						book->GetFileName())
+					.toUtf8());
 		}
 
 		zipFiles->AddFile(value.first + ".txt", data);
@@ -911,9 +887,8 @@ void ProcessAnnotation(const Settings& settings, const Archives& archives, const
 	PLOGI << "collect annotation";
 
 	const auto added = inpDataProvider.Books() | std::views::transform([](Book* item) {
-						   return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
-					   })
-	                 | std::ranges::to<std::unordered_map>();
+		return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
+	}) | std::ranges::to<std::unordered_map>();
 
 	const auto     query = settings.database->CreateQuery("select f.Name, f.Annotation from File f join Folder d on d.FolderId = f.FolderId and d.Name = ?");
 	Util::Progress progress(archives.size(), "select annotation data");
@@ -954,18 +929,16 @@ void ProcessCompilations(const Settings& settings, const Archives& archives, con
 	PLOGI << "collect compilation info";
 
 	const auto sectionToBook = inpDataProvider.Books() | std::views::transform([](Book* book) {
-								   return std::make_pair(book->id, book);
-							   })
-	                         | std::ranges::to<std::unordered_multimap>();
+		return std::make_pair(book->id, book);
+	}) | std::ranges::to<std::unordered_multimap>();
 	if (sectionToBook.empty())
 		return;
 
 	QJsonArray jsonArray;
 
 	const auto added = inpDataProvider.Books() | std::views::transform([](const Book* item) {
-						   return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
-					   })
-	                 | std::ranges::to<std::unordered_map>();
+		return std::make_pair(QString("%1#%2").arg(item->folder, item->GetFileName()), item);
+	}) | std::ranges::to<std::unordered_map>();
 
 	{
 		const auto query = settings.database->CreateQuery(R"(
@@ -1014,13 +987,11 @@ order by f.Name
 						if (it->second->folder == folder && fileName == currentFile)
 							continue;
 
-						parts.append(
-							QJsonObject {
-								{   Inpx::PART, static_cast<qlonglong>(parts.size()) },
-								{ Inpx::FOLDER,                   it->second->folder },
-								{   Inpx::FILE,            it->second->GetFileName() },
-                        }
-						);
+						parts.append(QJsonObject {
+							{   Inpx::PART, static_cast<qlonglong>(parts.size()) },
+							{ Inpx::FOLDER,                   it->second->folder },
+							{   Inpx::FILE,            it->second->GetFileName() },
+						});
 						found.emplace(section);
 					}
 					if (foundCount < parts.count())
@@ -1029,14 +1000,12 @@ order by f.Name
 
 				if (!parts.isEmpty())
 				{
-					jsonArray.append(
-						QJsonObject {
-							{      Inpx::FOLDER,                 folder },
-							{        Inpx::FILE,            currentFile },
-							{ Inpx::COMPILATION,       std::move(parts) },
-							{     Inpx::COVERED, sectionsUnique.empty() },
-                    }
-					);
+					jsonArray.append(QJsonObject {
+						{      Inpx::FOLDER,                 folder },
+						{        Inpx::FILE,            currentFile },
+						{ Inpx::COMPILATION,       std::move(parts) },
+						{     Inpx::COVERED, sectionsUnique.empty() },
+					});
 				}
 
 				sections.clear();
@@ -1190,8 +1159,8 @@ void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& re
 	};
 
 	for (const auto& indexItem : index | std::views::filter([&](const auto& item) {
-									 return !replacement.contains(item.first);
-								 }) | std::views::values)
+			 return !replacement.contains(item.first);
+		 }) | std::views::values)
 	{
 		if (auto* origin = inpDataProvider.GetBook({ indexItem.uid.first, indexItem.uid.second }))
 		{
@@ -1217,25 +1186,23 @@ int main(int argc, char* argv[])
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives with hashes (required)");
-	parser.addOptions(
-		{
-			{ { QString { OUTPUT[0] }, OUTPUT }, "Output folder (required)", FOLDER },
-			{ { QString { DATABASE[0] }, DATABASE }, "Books statistics database", PATH },
-			{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
-			{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template", PATH },
-			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
-			{ MAX_SERIES, "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
-			{ DELETED, "Mark books missing from the dump as deleted" },
-			{ SKIP_CONTENTS, "Skip contents" },
-			{ SKIP_REVIEWS, "Skip size readers reviews" },
-			{ SKIP_COMPILATIONS, "Skip compilations info" },
-			{ SKIP_ANNOTATIONS, "Skip annotations" },
-			{ SKIP_MERGE, "Skip merge duplicated data" },
-			{ INPX_ONLY, "Skip all except inpx" },
-			{ OUTPUT_INPX, "Output inpx file", PATH },
-			{ COLLECTION_INFO_DATE_FORMAT, "Date format for collection.info", QString("[%1]").arg(settings.collectionInfoDateFormat) },
-    }
-	);
+	parser.addOptions({
+		{ { QString { OUTPUT[0] }, OUTPUT }, "Output folder (required)", FOLDER },
+		{ { QString { DATABASE[0] }, DATABASE }, "Books statistics database", PATH },
+		{ DUMP, "Dump database wildcards", "Semicolon separated wildcard list" },
+		{ { "i", COLLECTION_INFO_TEMPLATE }, "Collection info template", PATH },
+		{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
+		{ MAX_SERIES, "Maximum series per book", QString("[%1]").arg(settings.maxSeriesPerBook) },
+		{ DELETED, "Mark books missing from the dump as deleted" },
+		{ SKIP_CONTENTS, "Skip contents" },
+		{ SKIP_REVIEWS, "Skip size readers reviews" },
+		{ SKIP_COMPILATIONS, "Skip compilations info" },
+		{ SKIP_ANNOTATIONS, "Skip annotations" },
+		{ SKIP_MERGE, "Skip merge duplicated data" },
+		{ INPX_ONLY, "Skip all except inpx" },
+		{ OUTPUT_INPX, "Output inpx file", PATH },
+		{ COLLECTION_INFO_DATE_FORMAT, "Date format for collection.info", QString("[%1]").arg(settings.collectionInfoDateFormat) },
+	});
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);

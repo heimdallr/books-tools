@@ -36,8 +36,7 @@
 using namespace HomeCompa::FliLib;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID = "flimerger";
 
@@ -138,14 +137,12 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	}
 
 	auto toRemove = Zip(dstFilePath).GetFileNameList() | std::views::filter([&](const QString& fileName) {
-						const auto key    = std::make_pair(fileInfo.fileName(), fileName);
-						const auto result = replacement.contains(key);
-						return result;
-					})
-	              | std::views::transform([&, n = 0](const QString& fileName) mutable {
-						return Util::Remove::Book { ++n, fileInfo.fileName(), fileName };
-					})
-	              | std::ranges::to<Util::Remove::Books>();
+		const auto key    = std::make_pair(fileInfo.fileName(), fileName);
+		const auto result = replacement.contains(key);
+		return result;
+	}) | std::views::transform([&, n = 0](const QString& fileName) mutable {
+		return Util::Remove::Book { ++n, fileInfo.fileName(), fileName };
+	}) | std::ranges::to<Util::Remove::Books>();
 
 	if (toRemove.empty())
 		return;
@@ -180,9 +177,8 @@ void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& r
 			command->Execute();
 		}
 	}
-	tr->CreateCommand(
-		  std::format(
-			  R"(
+	tr->CreateCommand(std::format(
+						  R"(
 update File set OriginId = Id.FileIdOrigin from (
 select f.FileId as FileId, f1.FileId as FileIdOrigin
 from {} t
@@ -193,9 +189,7 @@ join File f1 on f1.FolderId = d1.FolderId and f1.Name = t.FileOrigin
 ) as Id 
 where File.FileId = Id.FileId
 )",
-			  tmpTable->GetName()
-		  )
-	)
+						  tmpTable->GetName()))
 		->Execute();
 	tr->Commit();
 }
@@ -254,14 +248,12 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives (required)");
-	parser.addOptions(
-		{
-			{					   { "o", FOLDER },   "Output folder (required)",                                                        FOLDER },
-			{								  DUMP,    "Dump database wildcards",                           "Semicolon separated wildcard list" },
-			{ { QString { DATABASE[0] }, DATABASE },  "Books statistics database",                                                          PATH },
-			{					 HAMMING_THRESHOLD, "Hamming distance threshold", QString("number [0, 64] [%1]").arg(settings.hammingThreshold) },
-    }
-	);
+	parser.addOptions({
+		{                       { "o", FOLDER },   "Output folder (required)",                                                        FOLDER },
+		{                                  DUMP,    "Dump database wildcards",                           "Semicolon separated wildcard list" },
+		{ { QString { DATABASE[0] }, DATABASE },  "Books statistics database",                                                          PATH },
+		{                     HAMMING_THRESHOLD, "Hamming distance threshold", QString("number [0, 64] [%1]").arg(settings.hammingThreshold) },
+	});
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
@@ -288,14 +280,12 @@ void run(const Settings& settings)
 
 	auto inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
 
-	UniqueFileStorage uniqueFileStorage(
-		*settings.database,
+	UniqueFileStorage uniqueFileStorage(*settings.database,
 		archives | std::views::transform([](const auto& item) {
 			return QFileInfo(item.filePath).fileName();
 		}) | std::ranges::to<std::unordered_set>(),
 		settings.hammingThreshold,
-		inpDataProvider
-	);
+		inpDataProvider);
 
 	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(*inpDataProvider);
 	uniqueFileStorage.SetConflictResolver(conflictResolver);

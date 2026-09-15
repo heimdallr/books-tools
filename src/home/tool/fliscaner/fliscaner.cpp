@@ -32,8 +32,7 @@
 
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID             = "fliscaner";
 constexpr auto OUTPUT_FOLDER      = "output-folder";
@@ -185,8 +184,7 @@ struct Task
 						PLOGI << file << " " << bytesReceived << " (" << bytesTotal << ") " << pct << "%";
 					}
 				}
-			}
-		);
+			});
 
 		PLOGI << file << " started";
 	}
@@ -349,17 +347,15 @@ int main(int argc, char* argv[])
 	parser.setApplicationDescription(QString("%1 downloads files from Flibusta").arg(APP_ID));
 	parser.addHelpOption();
 	parser.addVersionOption();
-	parser.addOptions(
-		{
-			{ { "o", OUTPUT_FOLDER }, "Output folder", DST_PATH },
-			{ { "c", CONFIG }, "Config file path (required)", "config" },
-			{ TIMEOUT, "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
-			{ ATTEMPTS, "Maximum number of download attempts per file", QString::number(MAX_ATTEMPTS) },
-			{ COUNT, "Number of files downloaded simultaneously", QString::number(DEFAULT_COUNT) },
-			{ READY_LIST, "Already downloaded files list file", "file" },
-			{ READY_LIST_CLEANUP, "Cleanup already downloaded files list file" },
-    }
-	);
+	parser.addOptions({
+		{ { "o", OUTPUT_FOLDER }, "Output folder", DST_PATH },
+		{ { "c", CONFIG }, "Config file path (required)", "config" },
+		{ TIMEOUT, "Pause between download attempts, ms", QString::number(DEFAULT_TIMEOUT) },
+		{ ATTEMPTS, "Maximum number of download attempts per file", QString::number(MAX_ATTEMPTS) },
+		{ COUNT, "Number of files downloaded simultaneously", QString::number(DEFAULT_COUNT) },
+		{ READY_LIST, "Already downloaded files list file", "file" },
+		{ READY_LIST_CLEANUP, "Cleanup already downloaded files list file" },
+	});
 	parser.addPositionalArgument("sql", "Download dump files");
 	parser.addPositionalArgument("zip", "Download book archives");
 

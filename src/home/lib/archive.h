@@ -6,8 +6,7 @@
 
 #include "export/lib.h"
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 struct Archive
 {

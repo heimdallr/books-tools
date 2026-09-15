@@ -13,7 +13,7 @@
   AccessModifierOffset: -4
 
   AlignArrayOfStructures: Right
-  AlignAfterOpenBracket: BlockIndent
+  AlignAfterOpenBracket: DontAlign
   AlignConsecutiveMacros: None
   AlignEscapedNewlines: Left
   AlignOperands: AlignAfterOperator
@@ -60,12 +60,13 @@
     AfterControlStatement: Always
     AfterEnum: true
     AfterFunction: true
-    AfterNamespace: true
+    AfterNamespace: false
     AfterStruct: true
     AfterUnion: true
     AfterExternBlock: true
     BeforeCatch: true
     BeforeElse: true
+    BeforeLambdaBody: false
     BeforeWhile: true
 
   CommentPragmas: '^ IWYU pragma:'
@@ -90,6 +91,7 @@
 
   JavaScriptQuotes: Double
   KeepEmptyLinesAtTheStartOfBlocks: false
+  LambdaBodyIndentation: Signature
   MacroBlockBegin: ''
   MacroBlockEnd: ''
   MaxEmptyLinesToKeep: 1
@@ -98,6 +100,7 @@
   ObjCSpaceAfterProperty: true
   ObjCSpaceBeforeProtocolList: true
 
+  PackConstructorInitializers: Never
   PenaltyBreakBeforeFirstCallParameter: 19
   PenaltyBreakComment: 300
   PenaltyBreakFirstLessLess: 120
@@ -111,6 +114,7 @@
   RemoveSemicolon: true
   SeparateDefinitionBlocks: Always
   ShortNamespaceLines: 16
+  SkipMacroDefinitionBody: true
   SortIncludes: CaseSensitive
   SortUsingDeclarations: true
 

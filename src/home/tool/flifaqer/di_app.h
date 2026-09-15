@@ -2,16 +2,14 @@
 
 #include <memory>
 
-namespace Hypodermic
-{
+namespace Hypodermic {
 
 class Container;
 class ContainerBuilder;
 
 }
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 inline constexpr auto APP_ID = "fliFAQer";
 

@@ -28,8 +28,7 @@
 
 using namespace HomeCompa::FliFaq;
 
-namespace
-{
+namespace {
 
 constexpr auto MAIN_WINDOW = "MainWindow";
 
@@ -76,15 +75,14 @@ void OnActionTriggered(P& parent, O& obj, void (O::*invoker)(const ARGS&...), co
 } // namespace
 
 class MainWindow::Impl final
-	: Util::GeometryRestorable
-	, Util::GeometryRestorableObserver
-	, virtual plog::IAppender
+    : Util::GeometryRestorable
+    , Util::GeometryRestorableObserver
+    , virtual plog::IAppender
 {
 	NON_COPY_MOVABLE(Impl)
 
 public:
-	Impl(
-		MainWindow&                                self,
+	Impl(MainWindow&                               self,
 		std::shared_ptr<ISettings>                 settings,
 		std::shared_ptr<QAbstractItemModel>        model,
 		std::shared_ptr<TranslationWidget>         templateWidget,
@@ -92,8 +90,7 @@ public:
 		std::shared_ptr<TranslationWidget>         translationWidget,
 		std::shared_ptr<TextViewWidget>            referenceTextView,
 		std::shared_ptr<TextViewWidget>            translationTextView,
-		std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation
-	)
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation)
 		: GeometryRestorable(*this, settings, MAIN_WINDOW)
 		, GeometryRestorableObserver(self)
 		, m_self { self }
@@ -306,12 +303,11 @@ private:
 				m_model->setData(currentIndex, clipboardText, Role::ReferenceQuestion);
 			m_ui.navigatorView->setCurrentIndex(currentIndex);
 		});
-		menu.addAction(
-				Tr(REMOVE),
+		menu.addAction(Tr(REMOVE),
 				[&] {
 					m_model->removeRow(index.row(), index.parent());
-				}
-		)->setEnabled(index.isValid());
+				})
+			->setEnabled(index.isValid());
 		menu.addAction(m_ui.actionQuestionUp);
 		menu.addAction(m_ui.actionQuestionDown);
 		menu.addSeparator();
@@ -341,21 +337,18 @@ private:
 	{
 		auto languages =
 			LANGUAGES
-			| std::views::filter([un = QString(UNDEFINED_KEY), addedLanguages = m_model->data({}, Role::LanguageList).toStringList() | std::ranges::to<std::unordered_set<QString>>()](const auto& item) {
+		    | std::views::filter([un = QString(UNDEFINED_KEY), addedLanguages = m_model->data({}, Role::LanguageList).toStringList() | std::ranges::to<std::unordered_set<QString>>()](const auto& item) {
 				  return !(item.key == un || addedLanguages.contains(item.key));
 			  })
-			| std::ranges::to<std::vector<Language>>();
+		    | std::ranges::to<std::vector<Language>>();
 		std::ranges::sort(languages, {}, [](const auto& item) {
 			return std::pair(item.priority, QString(item.title));
 		});
 
 		QInputDialog inputDialog(&m_self);
-		inputDialog.setComboBoxItems(
-			languages | std::views::transform([](const auto& item) {
-				return item.title;
-			})
-			| std::ranges::to<QStringList>()
-		);
+		inputDialog.setComboBoxItems(languages | std::views::transform([](const auto& item) {
+			return item.title;
+		}) | std::ranges::to<QStringList>());
 		inputDialog.setFont(m_self.font());
 		inputDialog.setLabelText("Select language");
 		if (inputDialog.exec() != QDialog::Accepted)
@@ -508,7 +501,7 @@ private:
 	void Validate()
 	{
 		m_model->setData({}, {}, Role::Validate) ? QMessageBox::information(&m_self, Tr(VALIDATION_RESULT), Tr(OK))
-												 : QMessageBox::warning(&m_self, Tr(VALIDATION_RESULT), m_model->data({}, Role::Validate).toString());
+		                                         : QMessageBox::warning(&m_self, Tr(VALIDATION_RESULT), m_model->data({}, Role::Validate).toString());
 	}
 
 	void MoveQuestion(const bool up)
@@ -547,20 +540,17 @@ private:
 	Ui::MainWindow m_ui;
 };
 
-MainWindow::MainWindow(
-	std::shared_ptr<ISettings>                 settings,
-	std::shared_ptr<QAbstractItemModel>        model,
-	std::shared_ptr<TranslationWidget>         templateWidget,
-	std::shared_ptr<TranslationWidget>         referenceWidget,
-	std::shared_ptr<TranslationWidget>         translationWidget,
-	std::shared_ptr<TextViewWidget>            referenceTextView,
-	std::shared_ptr<TextViewWidget>            translationTextView,
-	std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation,
-	QWidget*                                   parent
-)
+MainWindow::MainWindow(std::shared_ptr<ISettings> settings,
+	std::shared_ptr<QAbstractItemModel>           model,
+	std::shared_ptr<TranslationWidget>            templateWidget,
+	std::shared_ptr<TranslationWidget>            referenceWidget,
+	std::shared_ptr<TranslationWidget>            translationWidget,
+	std::shared_ptr<TextViewWidget>               referenceTextView,
+	std::shared_ptr<TextViewWidget>               translationTextView,
+	std::shared_ptr<Util::ScrollBarController>    scrollBarControllerNavigation,
+	QWidget*                                      parent)
 	: QMainWindow(parent)
-	, m_impl(
-		  *this,
+	, m_impl(*this,
 		  std::move(settings),
 		  std::move(model),
 		  std::move(templateWidget),
@@ -568,8 +558,7 @@ MainWindow::MainWindow(
 		  std::move(translationWidget),
 		  std::move(referenceTextView),
 		  std::move(translationTextView),
-		  std::move(scrollBarControllerNavigation)
-	  )
+		  std::move(scrollBarControllerNavigation))
 {
 }
 

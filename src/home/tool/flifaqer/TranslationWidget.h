@@ -10,8 +10,7 @@
 
 class QAbstractItemModel;
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 class TranslationWidget final : public QWidget
 {
@@ -34,13 +33,11 @@ signals:
 	void RowChanged(int row) const;
 
 public:
-	TranslationWidget(
-		std::shared_ptr<ISettings>                 settings,
+	TranslationWidget(std::shared_ptr<ISettings>   settings,
 		std::shared_ptr<QAbstractItemModel>        model,
 		std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
 		std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit,
-		QWidget*                                   parent = nullptr
-	);
+		QWidget*                                   parent = nullptr);
 	~TranslationWidget() override;
 
 public:

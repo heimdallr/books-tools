@@ -16,8 +16,7 @@
 #include "book.h"
 #include "log.h"
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 void Write(const QString& fileName, const QByteArray& data)
 {
@@ -39,12 +38,12 @@ QString& ReplaceTags(QString& str)
 {
 	static constexpr std::pair<const char*, const char*> tags[] {
 		{    "br",    "br" },
-        {    "hr",    "hr" },
-        { "quote",     "q" },
-        { "table", "table" },
-        {    "tr",    "tr" },
-        {    "th",    "th" },
-        {    "td",    "td" },
+		{    "hr",    "hr" },
+		{ "quote",     "q" },
+		{ "table", "table" },
+		{    "tr",    "tr" },
+		{    "th",    "th" },
+		{    "td",    "td" },
 	};
 
 	str.replace("<p>&nbsp;</p>", "");
@@ -107,8 +106,7 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 			const auto* deleted = query.Get<const char*>(8);
 
 			it = inpData
-			         .try_emplace(
-						 std::move(index),
+			         .try_emplace(std::move(index),
 						 std::make_unique<Book>(Book {
 							 .author    = query.Get<const char*>(0),
 							 .genre     = query.Get<const char*>(1),
@@ -126,8 +124,7 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 							 .year      = query.Get<const char*>(15),
 							 .sourceLib = dump.GetName(),
 							 .hash      = query.Get<const char*>(16),
-						 })
-					 )
+						 }))
 			         .first;
 			it->second->title.replace(QChar { 0x2028 }, ' ');
 		}
@@ -135,14 +132,12 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 		QString seriesTitleSrc = query.Get<const char*>(3);
 		auto    seriesTitleKey = seriesTitleSrc;
 		std::ranges::transform(seriesTitleKey, seriesTitleKey.begin(), [](const QChar& ch) {
-			return IsOneOf(
-					   ch.category(),
+			return IsOneOf(ch.category(),
 					   QChar::Category::Letter_Lowercase,
 					   QChar::Category::Letter_Uppercase,
 					   QChar::Category::Letter_Titlecase,
 					   QChar::Category::Number_DecimalDigit,
-					   QChar::Category::Number_Letter
-				   )
+					   QChar::Category::Number_Letter)
 			         ? ch.toLower()
 			         : QChar { ' ' };
 		});

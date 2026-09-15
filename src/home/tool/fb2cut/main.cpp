@@ -47,8 +47,7 @@ using namespace HomeCompa::FliLib;
 using namespace HomeCompa::fb2cut;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID                     = "fb2cut";
 constexpr auto MAX_SIZE_OPTION_NAME       = "max-size";
@@ -128,8 +127,7 @@ public:
 	};
 
 public:
-	Worker(
-		const Settings&          settings,
+	Worker(const Settings&       settings,
 		QString                  folder,
 		const IEncodingDetector& encodingDetector,
 		std::condition_variable& queueCondition,
@@ -140,8 +138,7 @@ public:
 		std::atomic_int&         queueSize,
 		Util::Progress&          progress,
 		IClient&                 client,
-		const Decoder&           decoder
-	)
+		const Decoder&           decoder)
 		: m_settings { settings }
 		, m_folder { std::move(folder) }
 		, m_encodingDetector { encodingDetector }
@@ -298,13 +295,11 @@ private:
 			});
 
 			const QFileInfo imageFileInfo(name);
-			if (const auto it = std::ranges::find_if(
-					passThruBinTypes,
+			if (const auto it = std::ranges::find_if(passThruBinTypes,
 					[ext = imageFileInfo.suffix().toLower()](const char* type) {
 						return ext == type;
-					}
-				);
-			    it != std::end(passThruBinTypes))
+					});
+				it != std::end(passThruBinTypes))
 			{
 				fail           = *it;
 				auto imageFile = m_settings.image.fileNameGetter(completeFileName, name);
@@ -420,13 +415,11 @@ private:
 			"iVBORw",
 		};
 
-		if (const auto it = std::ranges::find_if(
-				base64Signatures,
+		if (const auto it = std::ranges::find_if(base64Signatures,
 				[&](const auto* item) {
 					return body.startsWith(item);
-				}
-			);
-		    it != std::end(base64Signatures))
+				});
+			it != std::end(base64Signatures))
 		{
 			body = QByteArray::fromBase64(body);
 			return ReadImage(body, settings, imageFile, fail, needSaveBody);
@@ -445,33 +438,26 @@ private:
 			return {};
 		}
 
-		if (const auto it = std::ranges::find_if(
-				signatures,
+		if (const auto it = std::ranges::find_if(signatures,
 				[&](const auto& item) {
 					return body.startsWith(item.signature);
-				}
-			);
-		    it != std::end(signatures))
-			return (fail = it->extension),
-			       AddError(settings, imageFile, body, QString("%1 %2 may be damaged").arg(settings.type).arg(imageFile), needSaveBody && it->needSaveBody, it->extension);
+				});
+			it != std::end(signatures))
+			return (fail = it->extension), AddError(settings, imageFile, body, QString("%1 %2 may be damaged").arg(settings.type).arg(imageFile), needSaveBody && it->needSaveBody, it->extension);
 
-		if (const auto it = std::ranges::find_if(
-				unsupportedSignatures,
+		if (const auto it = std::ranges::find_if(unsupportedSignatures,
 				[&](const auto& item) {
 					return body.startsWith(item.signature);
-				}
-			);
-		    it != std::end(unsupportedSignatures))
+				});
+			it != std::end(unsupportedSignatures))
 			return (fail = it->extension),
 			       AddError(settings, imageFile, body, QString("possibly an %1 %2 in %3 format").arg(settings.type).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension);
 
-		if (const auto it = std::ranges::find_if(
-				knownSignatures,
+		if (const auto it = std::ranges::find_if(knownSignatures,
 				[&](const auto& item) {
 					return body.startsWith(item.signature);
-				}
-			);
-		    it != std::end(knownSignatures))
+				});
+			it != std::end(knownSignatures))
 			return (fail = it->extension),
 			       AddError(settings, imageFile, body, QString("%1 %2 is %3").arg(settings.type).arg(imageFile).arg(it->extension), needSaveBody && it->needSaveBody, it->extension, false);
 
@@ -587,17 +573,15 @@ QString GetImagesFolder(const QDir& dir, const QString& type)
 class FileProcessor final : public Worker::IClient
 {
 public:
-	FileProcessor(
-		const Settings&          settings,
-		const QString&           folder,
-		const IEncodingDetector& encodingDetector,
-		std::condition_variable& queueCondition,
-		std::mutex&              queueGuard,
-		const int                poolSize,
-		Util::Progress&          progress,
-		QTextStream*             imageStatisticsStream,
-		const Decoder&           decoder
-	)
+	FileProcessor(const Settings& settings,
+		const QString&            folder,
+		const IEncodingDetector&  encodingDetector,
+		std::condition_variable&  queueCondition,
+		std::mutex&               queueGuard,
+		const int                 poolSize,
+		Util::Progress&           progress,
+		QTextStream*              imageStatisticsStream,
+		const Decoder&            decoder)
 		: m_queueCondition { queueCondition }
 		, m_queueGuard { queueGuard }
 		, m_dstDir { settings.dstDir }
@@ -696,7 +680,7 @@ private:
 
 		for (const auto& [folder, fileName, imageId, fail, isCover, size, width, height, schema, hash] : m_imageStatistics)
 			(*m_imageStatisticsStream) << folder << '|' << fileName << '|' << imageId << '|' << fail << '|' << (isCover ? 1 : 0) << '|' << static_cast<int>(schema) << '|' << size << '|' << width << '|'
-									   << height << '|' << hash << '\n';
+			                           << height << '|' << hash << '\n';
 
 		m_imageStatisticsStream->flush();
 	}
@@ -1041,35 +1025,33 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument("wildcard [wildcard [...]]", "Input archive files (required)");
-	parser.addOptions(
-		{
-			{ { "o", FOLDER }, "Output folder (required)", FOLDER },
-			{ { QString(QUALITY[0]), QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
-			{ { QString(THREADS[0]), MAX_THREAD_COUNT_OPTION_NAME }, "Maximum number of CPU threads", QString(THREADS).arg(settings.maxThreadCount) },
-			{ { QString(FORMAT[0]), FORMAT }, "Output fb2 archive format [7z | zip]", QString("%1 [%2]").arg(FORMAT, "7z") },
-			{ { QString(ARCHIVER_OPTION_NAME[0]), ARCHIVER_OPTION_NAME }, "Path to external archiver executable", QString("%1 [embedded zip archiver]").arg(PATH) },
+	parser.addOptions({
+		{ { "o", FOLDER }, "Output folder (required)", FOLDER },
+		{ { QString(QUALITY[0]), QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
+		{ { QString(THREADS[0]), MAX_THREAD_COUNT_OPTION_NAME }, "Maximum number of CPU threads", QString(THREADS).arg(settings.maxThreadCount) },
+		{ { QString(FORMAT[0]), FORMAT }, "Output fb2 archive format [7z | zip]", QString("%1 [%2]").arg(FORMAT, "7z") },
+		{ { QString(ARCHIVER_OPTION_NAME[0]), ARCHIVER_OPTION_NAME }, "Path to external archiver executable", QString("%1 [embedded zip archiver]").arg(PATH) },
 
-			{ ARCHIVER_COMMANDLINE_OPTION_NAME, "External archiver command line options", COMMANDLINE },
-			{ COVER_QUALITY_OPTION_NAME, "Covers compression quality", QUALITY },
-			{ IMAGE_QUALITY_OPTION_NAME, "Images compression quality", QUALITY },
-			{ MAX_SIZE_OPTION_NAME, "Maximum any images size", SIZE },
-			{ MAX_COVER_SIZE_OPTION_NAME, "Maximum cover size", SIZE },
-			{ MAX_IMAGE_SIZE_OPTION_NAME, "Maximum image size", SIZE },
+		{ ARCHIVER_COMMANDLINE_OPTION_NAME, "External archiver command line options", COMMANDLINE },
+		{ COVER_QUALITY_OPTION_NAME, "Covers compression quality", QUALITY },
+		{ IMAGE_QUALITY_OPTION_NAME, "Images compression quality", QUALITY },
+		{ MAX_SIZE_OPTION_NAME, "Maximum any images size", SIZE },
+		{ MAX_COVER_SIZE_OPTION_NAME, "Maximum cover size", SIZE },
+		{ MAX_IMAGE_SIZE_OPTION_NAME, "Maximum image size", SIZE },
 
-			{ MIN_IMAGE_FILE_SIZE_OPTION_NAME, "Minimum image file size threshold for writing to error folder", QString("size [%1]").arg(settings.minImageFileSize) },
-			{ FFMPEG_OPTION_NAME, "Path to ffmpeg executable", PATH },
-			{ IMAGE_STATISTICS, "Image statistics output path", PATH },
+		{ MIN_IMAGE_FILE_SIZE_OPTION_NAME, "Minimum image file size threshold for writing to error folder", QString("size [%1]").arg(settings.minImageFileSize) },
+		{ FFMPEG_OPTION_NAME, "Path to ffmpeg executable", PATH },
+		{ IMAGE_STATISTICS, "Image statistics output path", PATH },
 
-			{ { QString(GRAYSCALE_OPTION_NAME[0]), GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
-			{ COVER_GRAYSCALE_OPTION_NAME, "Convert covers to grayscale" },
-			{ IMAGE_GRAYSCALE_OPTION_NAME, "Convert images to grayscale" },
+		{ { QString(GRAYSCALE_OPTION_NAME[0]), GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
+		{ COVER_GRAYSCALE_OPTION_NAME, "Convert covers to grayscale" },
+		{ IMAGE_GRAYSCALE_OPTION_NAME, "Convert images to grayscale" },
 
-			{ NO_ARCHIVE_FB2_OPTION_NAME, "Don't archive fb2" },
-			{ NO_FB2_OPTION_NAME, "Don't save fb2" },
-			{ NO_IMAGES_OPTION_NAME, "Don't save image" },
-			{ COVERS_ONLY_OPTION_NAME, "Save covers only" },
-    }
-	);
+		{ NO_ARCHIVE_FB2_OPTION_NAME, "Don't archive fb2" },
+		{ NO_FB2_OPTION_NAME, "Don't save fb2" },
+		{ NO_IMAGES_OPTION_NAME, "Don't save image" },
+		{ COVERS_ONLY_OPTION_NAME, "Save covers only" },
+	});
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);

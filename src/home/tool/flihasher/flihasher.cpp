@@ -38,8 +38,7 @@ using namespace HomeCompa::FliLib;
 using namespace HomeCompa::Util;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID = "flihasher";
 
@@ -150,8 +149,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	};
 
 	const auto insertImage = [&](const long long fileId, const QString& name, const ImageHashItem& item, const bool linked) {
-		insertQuery(
-			"insert into Image(FileId, Name, EncodedSize, DecodedSize, Width, Height, PHash, Md5, Linked, HasAlpha) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		insertQuery("insert into Image(FileId, Name, EncodedSize, DecodedSize, Width, Height, PHash, Md5, Linked, HasAlpha) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			{
 				QString::number(fileId),
 				name,
@@ -163,8 +161,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 				item.hash,
 				linked ? "1" : "0",
 				item.hasAlpha ? "1" : "0",
-			}
-		);
+			});
 	};
 
 	const auto folderId = insertQuery("insert into Folder(SourceLibraryId, Name) select SourceLibraryId, ? from SourceLibrary where SourceLibrary.Name = ?", { fileInfo.fileName(), options.sourceLib }, true);
@@ -173,19 +170,17 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	{
 		assert(file.folder == fileInfo.fileName());
 
-		const auto fileId = insertQuery(
-			"insert into File(FolderId, Name, Md5, Hash, WordCount, SymbolCount, SimHash, Title, Annotation) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		const auto fileId = insertQuery("insert into File(FolderId, Name, Md5, Hash, WordCount, SymbolCount, SimHash, Title, Annotation) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			{ QString::number(folderId),
-		      file.file,
-		      file.parseResult.id,
-		      file.parseResult.hashText,
-		      QString::number(file.parseResult.count),
-		      QString::number(file.parseResult.size),
-		      QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }),
-		      file.parseResult.title,
-		      file.parseResult.annotation },
-			true
-		);
+				file.file,
+				file.parseResult.id,
+				file.parseResult.hashText,
+				QString::number(file.parseResult.count),
+				QString::number(file.parseResult.size),
+				QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }),
+				file.parseResult.title,
+				file.parseResult.annotation },
+			true);
 
 		SerializeHashSections(fileId, file.parseResult.hashSections, *tr);
 
@@ -264,13 +259,11 @@ int main(int argc, char* argv[])
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives wildcards");
-	parser.addOptions(
-		{
-			{ { QString(DATABASE[0]), DATABASE }, "Output database path (required)", PATH },
-			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
-			{ { QString(THREADS[0]), THREADS }, "Maximum number of CPU threads", QString("Thread count [%1]").arg(options.maxThreadCount) },
-    }
-	);
+	parser.addOptions({
+		{ { QString(DATABASE[0]), DATABASE }, "Output database path (required)", PATH },
+		{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
+		{ { QString(THREADS[0]), THREADS }, "Maximum number of CPU threads", QString("Thread count [%1]").arg(options.maxThreadCount) },
+	});
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);

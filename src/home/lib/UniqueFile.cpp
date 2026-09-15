@@ -28,8 +28,7 @@
 using namespace HomeCompa::FliLib;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 class DuplicateObserverStub final : public UniqueFileStorage::IDuplicateObserver
 {
@@ -78,11 +77,10 @@ private: // UniqueFileStorage::ImageComparer
 
 		const auto filterLinked = [this](const std::set<ImageItem>& items, const ImageItem& cover) {
 			return items | std::views::filter([&](const auto& item) {
-					   return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
-				   })
-			     | std::views::transform([](const auto& item) {
-					   return std::reference_wrapper(item);
-				   }) | std::ranges::to<std::vector>();
+				return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
+			}) | std::views::transform([](const auto& item) {
+				return std::reference_wrapper(item);
+			}) | std::ranges::to<std::vector>();
 		};
 
 		const auto lhsImages = filterLinked(lhs.images, rhs.cover), rhsImages = filterLinked(rhs.images, lhs.cover);
@@ -212,8 +210,8 @@ Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 		return it->second.get();
 
 	if (!std::ranges::empty(m_cache | std::views::filter([this](const auto& item) {
-								return &item.inpData != m_currentInpData && !item.inpData.empty();
-							})))
+			return &item.inpData != m_currentInpData && !item.inpData.empty();
+		})))
 		return nullptr;
 
 	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
@@ -244,13 +242,11 @@ Book* InpDataProvider::GetBook(const QString& hash) const
 
 void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 {
-	if (const auto it = std::ranges::find_if(
-			m_cache,
+	if (const auto it = std::ranges::find_if(m_cache,
 			[&](const auto& item) {
 				return item.sourceLib.compare(sourceLib, Qt::CaseInsensitive) == 0;
-			}
-		);
-	    it != m_cache.end())
+			});
+		it != m_cache.end())
 	{
 		if (it->inpData.empty())
 		{
@@ -385,15 +381,13 @@ void LogIt(const UniqueFile& duplicate, const UniqueFile& file)
 bool HistCheck(const std::vector<QString>& lhs, const std::vector<QString>& rhs)
 {
 	const auto rhsOrder = std::views::zip(rhs, std::views::iota(0)) | std::views::transform([](const auto& item) {
-							  const auto& [word, index] = item;
-							  return std::make_pair(word, index);
-						  })
-	                    | std::ranges::to<std::unordered_map>();
+		const auto& [word, index] = item;
+		return std::make_pair(word, index);
+	}) | std::ranges::to<std::unordered_map>();
 
 	const auto lhsFiltered = std::views::zip(lhs, std::views::iota(0)) | std::views::filter([&](const auto& item) {
-								 return rhsOrder.contains(std::get<0>(item));
-							 })
-	                       | std::views::values | std::ranges::to<std::vector>();
+		return rhsOrder.contains(std::get<0>(item));
+	}) | std::views::values | std::ranges::to<std::vector>();
 
 	const auto need = lhs.size() - 1;
 	if (lhsFiltered.size() < need)
@@ -590,8 +584,7 @@ void UniqueFileStorage::SetConflictResolver(std::shared_ptr<IUniqueFileConflictR
 	m_conflictResolver = std::move(conflictResolver);
 }
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, const long long folderId, const QString& folderName)
 {
@@ -603,8 +596,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		for (query->Execute(); !query->Eof(); query->Next())
 		{
 			auto& uniqueFile = uniqueFiles
-			                       .try_emplace(
-									   query->Get<long long>(0),
+			                       .try_emplace(query->Get<long long>(0),
 									   UniqueFile {
 										   .uid     = { folderName, query->Get<const char*>(1) },
 										   .md5     = query->Get<const char*>(2),
@@ -612,8 +604,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 										   .hash    = query->Get<const char*>(4),
 										   .size    = query->Get<size_t>(5),
 										   .simHash = query->Get<QString>(6).toULongLong(nullptr, 16),
-            }
-								   )
+			})
 			                       .first->second;
 
 			uniqueFile.hist.reserve(10);

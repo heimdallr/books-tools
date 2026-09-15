@@ -10,8 +10,7 @@
 
 class QDir;
 
-namespace HomeCompa::Util
-{
+namespace HomeCompa::Util {
 
 class XmlValidator;
 
@@ -19,8 +18,7 @@ class XmlValidator;
 
 class QIODevice;
 
-namespace HomeCompa::fb2cut
-{
+namespace HomeCompa::fb2cut {
 
 class IEncodingDetector // NOLINT(cppcoreguidelines-special-member-functions)
 {

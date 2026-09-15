@@ -15,8 +15,7 @@
 #include "util.h"
 #include "zip.h"
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 Archives GetArchives(const QStringList& wildCards)
 {
@@ -25,13 +24,11 @@ Archives GetArchives(const QStringList& wildCards)
 	const QRegularExpression    rx("^.*?([0-9]+).*?$");
 
 	for (const auto& wildCard : wildCards)
-		std::ranges::move(
-			Util::ResolveWildcard(wildCard) | std::views::as_rvalue | std::views::transform([&](QString&& item) {
-				const auto match = rx.match(QFileInfo(item).fileName());
-				return std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, Archive { .filePath = std::move(item), .sourceLib = {} });
-			}),
-			std::inserter(sorted, sorted.end())
-		);
+		std::ranges::move(Util::ResolveWildcard(wildCard) | std::views::as_rvalue | std::views::transform([&](QString&& item) {
+			const auto match = rx.match(QFileInfo(item).fileName());
+			return std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, Archive { .filePath = std::move(item), .sourceLib = {} });
+		}),
+			std::inserter(sorted, sorted.end()));
 
 	auto result = std::move(sorted) | std::views::values | std::views::reverse | std::ranges::to<Archives>();
 	if (result.empty())

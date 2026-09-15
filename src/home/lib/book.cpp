@@ -66,8 +66,7 @@ QString Book::GetUid() const
 	return QString("%1#%2").arg(folder, GetFileName());
 }
 
-namespace HomeCompa::FliLib
-{
+namespace HomeCompa::FliLib {
 
 //"AUTHOR;GENRE;TITLE;SERIES;SERNO;FILE;SIZE;LIBID;DEL;EXT;DATE;INSNO;LANG;LIBRATE;KEYWORDS;YEAR;SOURCELIB"
 QByteArray& operator<<(QByteArray& bytes, const Book& book)

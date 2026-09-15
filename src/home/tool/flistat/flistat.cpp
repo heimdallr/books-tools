@@ -19,8 +19,7 @@
 
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID = "flistat";
 

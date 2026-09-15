@@ -20,8 +20,7 @@
 using namespace HomeCompa::Util;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 constexpr auto APP_ID = "flicmp";
 
@@ -32,15 +31,13 @@ void go(const int argc, char* argv[])
 		throw std::invalid_argument(std::format("cannot open database{}", argv[1]));
 
 	const auto items = std::views::iota(2, argc) | std::views::filter([](const int n) {
-						   return (n & 1) == 0;
-					   })
-	                 | std::views::transform([&](const int n) {
-						   assert(n < argc - 1);
-						   auto bookHashItem = GetHash(*db, argv[n], argv[n + 1]);
-						   bookHashItem.body.clear();
-						   return bookHashItem;
-					   })
-	                 | std::ranges::to<std::vector<BookHashItem>>();
+		return (n & 1) == 0;
+	}) | std::views::transform([&](const int n) {
+		assert(n < argc - 1);
+		auto bookHashItem = GetHash(*db, argv[n], argv[n + 1]);
+		bookHashItem.body.clear();
+		return bookHashItem;
+	}) | std::ranges::to<std::vector<BookHashItem>>();
 
 	for (const auto& item : items | std::views::drop(1))
 		PLOGW << Compare(items.front(), item).join('\n');

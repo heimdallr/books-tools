@@ -4,11 +4,9 @@
 #include "IDump.h"
 #include "log.h"
 
-namespace HomeCompa::FliLib::Dump
-{
+namespace HomeCompa::FliLib::Dump {
 
-namespace
-{
+namespace {
 
 constexpr auto g_libavtor = R"(CREATE TABLE libavtor (
   bid INTEGER,
@@ -140,9 +138,14 @@ constexpr auto g_libseqs = R"(CREATE TABLE libseqs (
 constexpr const char* g_commands[] { g_libavtor, g_libavtors, g_libbook, g_libgenre, g_libgenres, g_libmag, g_libmags, g_libpolka, g_libquality, g_librate, g_libseq, g_libseqs };
 
 constexpr const char* g_indices[] {
-	"CREATE INDEX ix_libbook_primary_key ON libbook (bid)", "CREATE INDEX ix_libavtor_bid ON libavtor (bid)",           "CREATE INDEX ix_libavtors_primary_key ON libavtors (aid)",
-	"CREATE INDEX ix_libgenre_bid ON libgenre (bid)",       "CREATE INDEX ix_libgenres_primary_key ON libgenres (gid)", "CREATE INDEX ix_libseq_bid ON libseq (bid)",
-	"CREATE INDEX ix_libseqs_primary_key ON libseqs (sid)", "CREATE INDEX ix_libpolka_time ON libpolka (Time)",
+	"CREATE INDEX ix_libbook_primary_key ON libbook (bid)",
+	"CREATE INDEX ix_libavtor_bid ON libavtor (bid)",
+	"CREATE INDEX ix_libavtors_primary_key ON libavtors (aid)",
+	"CREATE INDEX ix_libgenre_bid ON libgenre (bid)",
+	"CREATE INDEX ix_libgenres_primary_key ON libgenres (gid)",
+	"CREATE INDEX ix_libseq_bid ON libseq (bid)",
+	"CREATE INDEX ix_libseqs_primary_key ON libseqs (sid)",
+	"CREATE INDEX ix_libpolka_time ON libpolka (Time)",
 };
 
 class Dump final : public IDump
@@ -279,11 +282,7 @@ left join libseqs s on s.sid = ls.sid
 			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
 	}
 
-	void CreateAdditional(
-		const std::filesystem::path& /*dstDir*/,
-		const std::filesystem::path& /*sqlDir*/,
-		const AdditionalType /*additionalType*/,
-		const std::function<void(const DB::IQuery&)>& /*functor*/
+	void CreateAdditional(const std::filesystem::path& /*dstDir*/, const std::filesystem::path& /*sqlDir*/, const AdditionalType /*additionalType*/, const std::function<void(const DB::IQuery&)>& /*functor*/
 	) const override
 	{
 	}

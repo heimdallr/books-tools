@@ -2,8 +2,7 @@
 
 #include <QTableView>
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 class TableView final : public QTableView
 {

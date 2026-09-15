@@ -13,8 +13,7 @@
 
 class QAbstractItemModel;
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 class MainWindow final : public QMainWindow
 {
@@ -22,8 +21,7 @@ class MainWindow final : public QMainWindow
 	NON_COPY_MOVABLE(MainWindow)
 
 public:
-	MainWindow(
-		std::shared_ptr<ISettings>                 settings,
+	MainWindow(std::shared_ptr<ISettings>          settings,
 		std::shared_ptr<QAbstractItemModel>        model,
 		std::shared_ptr<TranslationWidget>         templateWidget,
 		std::shared_ptr<TranslationWidget>         referenceWidget,
@@ -31,8 +29,7 @@ public:
 		std::shared_ptr<TextViewWidget>            referenceTextView,
 		std::shared_ptr<TextViewWidget>            translationTextView,
 		std::shared_ptr<Util::ScrollBarController> scrollBarControllerNavigation,
-		QWidget*                                   parent = nullptr
-	);
+		QWidget*                                   parent = nullptr);
 	~MainWindow() override;
 
 private: // QWidget

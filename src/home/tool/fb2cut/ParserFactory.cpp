@@ -19,8 +19,7 @@
 	PARSER_ITEM(fb2, <?xml)  \
 	PARSER_ITEM(epub, \x50\x4B\x03\x04)
 
-namespace HomeCompa::fb2cut
-{
+namespace HomeCompa::fb2cut {
 
 #define PARSER_ITEM(NAME, _) \
 	std::unique_ptr<IParser> create_##NAME##_parser(QString /*file name*/, QByteArray /*file body*/, QByteArray /*fbd body*/, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
@@ -32,8 +31,7 @@ PARSER_ITEMS_X_MACRO
 using namespace HomeCompa::fb2cut;
 using namespace HomeCompa;
 
-namespace
-{
+namespace {
 
 using ParserImpl = std::unique_ptr<IParser> (*)(QString, QByteArray, QByteArray, const IEncodingDetector&, const Decoder&, const Util::XmlValidator&);
 
@@ -281,8 +279,7 @@ QString Decoder::Decode(const QString& id, const QByteArray& src) const
 	return m_impl->GetDecoder(id)->toUnicode(src);
 }
 
-namespace HomeCompa::fb2cut
-{
+namespace HomeCompa::fb2cut {
 
 QString Validate(const Util::XmlValidator& validator, QByteArray& body)
 {
@@ -297,7 +294,7 @@ void WriteErrorFile(const QDir& dir, std::mutex& guard, const QString& name, con
 	dstDir.cdUp();
 	dstDir = dstDir.filePath(QString("error/%1").arg(dir.dirName()));
 
-	const auto filePath = dstDir.filePath(QString("%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
+	const auto      filePath = dstDir.filePath(QString("%1.%2").arg(name, !ext.isEmpty() ? ext : "bad"));
 	const QFileInfo fileInfo(filePath);
 
 	std::scoped_lock lock(guard);

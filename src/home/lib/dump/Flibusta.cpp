@@ -19,11 +19,9 @@
 #include "util.h"
 #include "zip.h"
 
-namespace HomeCompa::FliLib::Dump
-{
+namespace HomeCompa::FliLib::Dump {
 
-namespace
-{
+namespace {
 
 constexpr auto g_libaannotations = R"(CREATE TABLE libaannotations (
   AvtorId INTEGER,
@@ -181,8 +179,23 @@ constexpr const char* g_indices[] {
 	"delete from libseq where not exists(select 42 from libseqname where libseqname.SeqId = libseq.SeqId)",
 };
 
-constexpr const char* g_commands[] { g_libaannotations, g_libapics,       g_libbannotations, g_libbpics, g_libavtor, g_libavtorname, g_libbook,       g_libfilename, g_libgenre,
-	                                 g_libgenrelist,    g_libjoinedbooks, g_librate,         g_librecs,  g_libseq,   g_libseqname,   g_libtranslator, g_libreviews };
+constexpr const char* g_commands[] { g_libaannotations,
+	g_libapics,
+	g_libbannotations,
+	g_libbpics,
+	g_libavtor,
+	g_libavtorname,
+	g_libbook,
+	g_libfilename,
+	g_libgenre,
+	g_libgenrelist,
+	g_libjoinedbooks,
+	g_librate,
+	g_librecs,
+	g_libseq,
+	g_libseqname,
+	g_libtranslator,
+	g_libreviews };
 
 std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData(DB::IDatabase& db, const std::filesystem::path& sqlPath)
 {
@@ -225,8 +238,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 				},
 				[currentId, &pictureCount] {
 					PLOGI << "Authors pack " << currentId << " finished, pictures: " << pictureCount;
-				}
-			);
+				});
 
 			QByteArray annotation;
 
@@ -245,8 +257,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 					},
 					[&] {
 						buffer.close();
-					}
-				);
+					});
 				Zip zip(buffer, Zip::Format::SevenZip);
 				zip.SetProperty(ZipDetails::PropertyId::SolidArchive, false);
 				zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Ppmd));
@@ -291,8 +302,7 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 					},
 					[&] {
 						buffer.close();
-					}
-				);
+					});
 
 				std::lock_guard zipLock(zipGuard);
 				Zip             zip(buffer, Zip::Format::Zip);

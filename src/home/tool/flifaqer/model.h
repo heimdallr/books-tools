@@ -5,8 +5,7 @@
 #include "fnd/NonCopyMovable.h"
 #include "fnd/memory.h"
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 class Model final : public QIdentityProxyModel
 {

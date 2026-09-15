@@ -2,8 +2,7 @@
 
 #include "qnamespace.h"
 
-namespace HomeCompa::FliFaq
-{
+namespace HomeCompa::FliFaq {
 
 struct Role
 {
@@ -33,4 +32,4 @@ struct Role
 	};
 };
 
-}
+} // namespace HomeCompa::FliFaq
