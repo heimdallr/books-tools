@@ -222,7 +222,7 @@ join Folder d on d.FolderId = f.FolderId and d.Name = ?)");
 	QFileInfo fileInfo(fileName);
 
 	auto series = [&] {
-		return query->IsNull(3) ? std::vector<Series> {} : query->Get<QString>(5).split('|', Qt::SkipEmptyParts) | std::views::transform([](const QString& item) {
+		return query->IsNull(3) ? std::vector<Series> {} : query->Get<QString>(3).split('|', Qt::SkipEmptyParts) | std::views::transform([](const QString& item) {
 			return item.split('#', Qt::KeepEmptyParts);
 		}) | std::views::as_rvalue | std::views::transform([](QStringList&& item) {
 			assert(item.size() == 2);
