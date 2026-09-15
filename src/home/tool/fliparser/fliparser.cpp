@@ -5,7 +5,6 @@
 
 #include <QBuffer>
 #include <QCommandLineParser>
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -21,6 +20,7 @@
 
 #include "database/interface/IDatabase.h"
 #include "database/interface/IQuery.h"
+#include "database/interface/ITransaction.h"
 
 #include "database/factory/Factory.h"
 #include "lib/UniqueFile.h"
@@ -31,11 +31,8 @@
 #include "lib/util.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
-#include "util/EpubParser.h"
-#include "util/Fb2InpxParser.h"
 #include "util/GenresLocalization.h"
 #include "util/LogConsoleFormatter.h"
-#include "util/bookhash/hashbook.h"
 #include "util/executor/ThreadPool.h"
 #include "util/language.h"
 #include "util/progress.h"
@@ -97,12 +94,6 @@ struct Settings
 	ptrdiff_t                      maxSeriesPerBook { std::numeric_limits<ptrdiff_t>::max() };
 	bool                           isDeleted { false };
 	std::unique_ptr<DB::IDatabase> database;
-};
-
-struct FileInfo
-{
-	QByteArray hash;
-	qsizetype  size;
 };
 
 class IAnnotationCollector // NOLINT(cppcoreguidelines-special-member-functions)
@@ -216,15 +207,6 @@ private:
 	std::unique_ptr<Data>               m_data;
 };
 
-FileInfo GetFileHash(const Zip& zip, const QString& fileName)
-{
-	const auto fileData = zip.Read(fileName)->GetStream().readAll();
-
-	QCryptographicHash hash(QCryptographicHash::Algorithm::Md5);
-	hash.addData(fileData);
-	return { hash.result().toHex(), fileData.size() };
-}
-
 Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, const Zip& zip, const QJsonObject& unIndexed)
 {
 	const auto [key, size] = GetFileHash(zip, fileName);
@@ -262,230 +244,6 @@ Book* GetBookCustom(const QString& fileName, InpDataProvider& inpDataProvider, c
 		.year     = value["year"].toString(),
 	}));
 }
-
-void SetOriginalNames(Book& book, const QString& originBaseName, const QString& originSuffix)
-{
-	if (!originBaseName.isEmpty())
-		book.libId = book.file = originBaseName;
-	if (!originSuffix.isEmpty())
-		book.ext = originSuffix;
-}
-
-std::optional<Book> ParseStub(QString& /*parserName*/,
-	const QString& /*folder*/,
-	const Zip& /*zip*/,
-	const QString& /*fileName*/,
-	const QDateTime& /*zipDateTime*/,
-	const bool /*isDeleted*/,
-	const QString& /*originBaseName*/,
-	const QString& /*originSuffix*/
-)
-{
-	return std::nullopt;
-}
-
-std::optional<Book> ParseFb2(QString& parserName,
-	const QString&                    folder,
-	const Zip&                        zip,
-	const QString&                    fileName,
-	const QDateTime&                  zipDateTime,
-	const bool                        isDeleted,
-	const QString&                    originBaseName = {},
-	const QString&                    originSuffix   = {})
-{
-	parserName      = "fb2";
-	auto parsedBook = Book::FromString(Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, isDeleted).line);
-	SetOriginalNames(parsedBook, originBaseName, originSuffix);
-	return parsedBook;
-}
-
-std::optional<Book> ParseEpub(QString& parserName,
-	const QString&                     folder,
-	const Zip&                         zip,
-	const QString&                     fileName,
-	const QDateTime&                   zipDateTime,
-	const bool                         isDeleted,
-	const QString&                     originBaseName = {},
-	const QString&                     originSuffix   = {})
-{
-	parserName                 = "epub";
-	const auto authorsToString = [](std::vector<QStringList> authors) {
-		QStringList values;
-		values.reserve(static_cast<int>(authors.size()));
-		std::ranges::transform(authors, std::back_inserter(values), [](const auto& author) {
-			return author.join(Util::Fb2InpxParser::NAMES_SEPARATOR);
-		});
-		return values.join(Inpx::LIST_SEPARATOR) + Inpx::LIST_SEPARATOR;
-	};
-
-	const auto genresToString = [](const QStringList& genres) {
-		return genres.empty() ? QString {} : genres.join(Inpx::LIST_SEPARATOR) + Inpx::LIST_SEPARATOR;
-	};
-
-	const QFileInfo fileInfo(fileName);
-	try
-	{
-		static constexpr const char* textExt[] { ".htm", ".html", ".xhtml", ".xml" };
-		QCryptographicHash           md5 { QCryptographicHash::Md5 };
-		auto                         parseResult = Util::EpubParser::Parse(zip, fileName, Util::CommonParser::Mode::Images | Util::CommonParser::Mode::Texts);
-		size_t                       size        = 0;
-		for (auto&& [id, body] : parseResult.texts | std::views::filter([](const auto& item) {
-				 return std::ranges::any_of(textExt, [&](const char* ext) {
-					 return item.id.endsWith(ext, Qt::CaseInsensitive);
-				 });
-			 }))
-		{
-			auto hist  = Util::CollectHistogram(std::move(body), md5);
-			size      += Util::CalculateHash(hist).size;
-		}
-		Book book {
-			.author  = authorsToString(std::move(parseResult.authors)),
-			.genre   = genresToString(parseResult.genres),
-			.title   = std::move(parseResult.title),
-			.series  = { {} },
-			.file    = fileInfo.completeBaseName(),
-			.size    = QString::number(size),
-			.libId   = fileInfo.completeBaseName(),
-			.deleted = isDeleted,
-			.ext     = fileInfo.suffix(),
-			.date    = zipDateTime.toString("yyyy-MM-dd"),
-			.lang    = GetLanguage(parseResult.language).toString(),
-		};
-		SetOriginalNames(book, originBaseName, originSuffix);
-		return book;
-	}
-	catch (const std::exception& ex)
-	{
-		PLOGE << QString("%1/%2: %3").arg(folder, fileName, ex.what());
-	}
-	catch (...)
-	{
-		PLOGE << QString("%1/%2: unknown error").arg(folder, fileName);
-	}
-	return std::nullopt;
-}
-
-std::optional<Book> ParseFbd(QString& parserName,
-	const QString&                    folder,
-	const Zip&                        zip,
-	const QString&                    fileName,
-	const QDateTime&                  zipDateTime,
-	const bool                        isDeleted,
-	const QString& /*originBaseName*/ = {},
-	const QString& /*originSuffix*/   = {})
-{
-	const ScopedCall parserNameGuard([&] {
-		parserName = "fbd";
-	});
-	const QFileInfo  fileInfo(fileName);
-	if (const auto fbdFileName = fileName + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
-		return ParseFb2(parserName, folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
-	if (const auto fbdFileName = fileInfo.completeBaseName() + ".fbd"; zip.GetFileIndex(fbdFileName) != Zip::INVALID_INDEX)
-		return ParseFb2(parserName, folder, zip, fbdFileName, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
-	return std::nullopt;
-}
-
-std::optional<Book> ParseZip(QString& parserName,
-	const QString&                    folder,
-	const Zip&                        zip,
-	const QString&                    fileName,
-	const QDateTime&                  zipDateTime,
-	bool                              isDeleted,
-	const QString& /*originBaseName*/ = {},
-	const QString& /*originSuffix*/   = {});
-
-using FileParser = std::optional<Book> (*)(QString& /*parserName*/,
-	const QString& /*folder*/,
-	const Zip&,
-	const QString& /*fileName*/,
-	const QDateTime& /*zipDateTime*/,
-	bool /*isDeleted*/,
-	const QString& /*originBaseName*/,
-	const QString& /*originSuffix*/
-);
-constexpr std::pair<const char*, std::pair<FileParser, bool /*parser exists*/>> FILE_PARSERS[] {
-	{  ".fb2",   { &ParseFb2, true } },
-	{ ".epub",  { &ParseEpub, true } },
-	{  ".fbd", { &ParseStub, false } },
-	{  ".zip",  { &ParseZip, false } },
-	{   ".7z",  { &ParseZip, false } },
-	{  ".rar",  { &ParseZip, false } },
-};
-
-std::optional<Book> ParseZip(QString& parserName,
-	const QString&                    folder,
-	const Zip&                        zip,
-	const QString&                    fileName,
-	const QDateTime&                  zipDateTime,
-	const bool                        isDeleted,
-	const QString& /*originBaseName*/,
-	const QString& /*originSuffix*/
-)
-{
-	const QFileInfo fileInfo(fileName);
-	const auto      stream = zip.Read(fileName);
-	const auto      subZip = TRY(QString("open %1").arg(fileName), [&] {
-		return std::make_unique<Zip>(stream->GetStream());
-	});
-	if (!subZip)
-		return {};
-	const auto subZipFiles = subZip->GetFileNameList();
-	for (const auto& [ext, parserPair] : FILE_PARSERS | std::views::filter([](const auto& item) {
-			 return item.second.second;
-		 }))
-	{
-		for (const auto& subZipFile : subZipFiles | std::views::filter([](const auto& item) {
-				 return !item.startsWith("__MACOSX");
-			 }))
-		{
-			if (subZipFile.endsWith(ext, Qt::CaseInsensitive))
-			{
-				if (auto book = parserPair.first(parserName, folder, *subZip, subZipFile, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix()))
-					return book;
-			}
-		}
-	}
-
-	const auto it = std::ranges::find_if(subZipFiles, [](const QString& item) {
-		return item.endsWith(".fbd", Qt::CaseInsensitive);
-	});
-	if (it == subZipFiles.end())
-		return std::nullopt;
-
-	const ScopedCall parserNameGuard([&] {
-		parserName = "fbd";
-	});
-	return ParseFb2(parserName, folder, *subZip, *it, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
-}
-
-Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, const bool isDeleted)
-{
-	const auto hash = GetFileHash(zip, fileName).hash;
-
-	if (auto book = inpDataProvider.GetBook(hash))
-		return book;
-
-	PLOGV << "parse " << fileName << ", hash: " << hash;
-
-	const auto parser = [&] {
-		const auto it = std::ranges::find_if(FILE_PARSERS, [&](const auto& item) {
-			return fileName.endsWith(item.first, Qt::CaseInsensitive);
-		});
-		return it != std::end(FILE_PARSERS) ? it->second.first : &ParseFbd;
-	}();
-
-	QString parserName;
-	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}))
-	{
-		PLOGI << parserName << " parser finished";
-		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook)));
-	}
-
-	PLOGW << "unknown book";
-	auto book = std::make_unique<Book>(Book::CreateUnknown(fileName, zip.GetFileSize(fileName), zip.GetFileTime(fileName).date()));
-	return inpDataProvider.AddBook(std::move(book));
-}
-
 void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvider& inpDataProvider)
 {
 	const auto unIndexed = []() -> QJsonObject {
@@ -499,6 +257,13 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 
 		return doc.object();
 	}();
+void WriteToDatabase(DB::IDatabase& db, QString folder, Book& book)
+{
+	const auto tr = db.CreateTransaction();
+	book.folder   = std::move(folder);
+	WriteParsedBookToDatabase(*tr, book);
+	tr->Commit();
+}
 
 	const auto seriesUniquePredicate = [](const auto& item) {
 		return item.title;
@@ -542,9 +307,13 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				else
 				{
 					book = GetBookCustom(bookFile, inpDataProvider, zip, unIndexed);
+					if (book && settings.database)
+						WriteToDatabase(*settings.database, folder, *book);
 					if (!book)
 					{
 						book = ParseBook(bookFile, inpDataProvider, folder, zip, zipFileInfo.birthTime(), settings.isDeleted);
+						if (book && settings.database)
+							WriteToDatabase(*settings.database, folder, *book);
 						if (!book)
 						{
 							PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
@@ -1222,7 +991,7 @@ int main(int argc, char* argv[])
 		settings.collectionInfoTemplateFile = parser.value(COLLECTION_INFO_TEMPLATE).toStdWString();
 
 		if (parser.isSet(DATABASE))
-			settings.database = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READONLY", parser.value(DATABASE)));
+			settings.database = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
 
 		settings.sourceLib = parser.value(LIBRARY);
 		if (settings.sourceLib.isEmpty())

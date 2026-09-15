@@ -157,7 +157,7 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
 
-void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement)
+void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement, InpDataProvider& inpDataProvider)
 {
 	const QFileInfo fileInfo(path);
 	const auto      folder = fileInfo.fileName();
@@ -165,6 +165,18 @@ void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& r
 	const auto tmpTable = db.CreateTemporaryTable({ "Folder VARCHAR (64)", "File VARCHAR (256)", "FolderOrigin VARCHAR (64)", "FileOrigin VARCHAR (256)" });
 
 	const auto tr = db.CreateTransaction();
+
+	const Zip  zip(path);
+	for (const auto& fileName : zip.GetFileNameList())
+	{
+		if (inpDataProvider.GetBook({ folder, fileName }))
+			continue;
+
+		auto book = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
+		book->folder = folder;
+		WriteParsedBookToDatabase(*tr, *book);
+	}
+
 	tr->CreateCommand(std::format("update File set OriginId = null from (select FolderId from Folder where Name = '{}') as Id where File.FolderId = Id.FolderId", folder))->Execute();
 	{
 		const auto command = tr->CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable->GetName()));
@@ -194,12 +206,12 @@ where File.FileId = Id.FileId
 	tr->Commit();
 }
 
-void MergeArchives(const QDir& outputDir, DB::IDatabase& db, const Archives& archives, const Replacement& replacement)
+void MergeArchives(const QDir& outputDir, DB::IDatabase& db, const Archives& archives, const Replacement& replacement, InpDataProvider& inpDataProvider)
 {
 	for (const auto& archive : archives)
 	{
 		ProcessArchive(outputDir, archive, replacement);
-		UpdateDatabase(db, archive.filePath, replacement);
+		UpdateDatabase(db, archive.filePath, replacement, inpDataProvider);
 	}
 }
 
@@ -296,7 +308,7 @@ void run(const Settings& settings)
 
 	PLOGI << "Duplicates found: " << replacement.size();
 
-	MergeArchives(settings.outputDir, *settings.database, archives, replacement);
+	MergeArchives(settings.outputDir, *settings.database, archives, replacement, *inpDataProvider);
 }
 
 } // namespace
