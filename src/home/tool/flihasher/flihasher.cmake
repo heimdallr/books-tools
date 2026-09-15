@@ -5,6 +5,7 @@ AddTarget(flihasher	app_console
 	LINK_LIBRARIES
 		Qt${QT_MAJOR_VERSION}::Core
 	LINK_TARGETS
+		dbfactory
 		lib
 		logging
 		util

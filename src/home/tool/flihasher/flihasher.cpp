@@ -12,6 +12,10 @@
 
 #include "fnd/StrUtil.h"
 
+#include "database/interface/IDatabase.h"
+#include "database/interface/ITransaction.h"
+
+#include "database/factory/Factory.h"
 #include "lib/dump/Factory.h"
 #include "lib/util.h"
 #include "logging/LogAppender.h"
@@ -39,86 +43,62 @@ namespace
 
 constexpr auto APP_ID = "flihasher";
 
-constexpr auto OUTPUT                       = "output";
 constexpr auto FOLDER                       = "folder";
+constexpr auto PATH                         = "path";
 constexpr auto LIBRARY                      = "library";
 constexpr auto THREADS                      = "threads";
 constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
+constexpr auto DATABASE                     = "database";
 
 struct Options
 {
-	QDir         dstDir;
-	QString      sourceLib;
-	QStringList  args;
-	unsigned int maxThreadCount { std::thread::hardware_concurrency() };
+	QString                        sourceLib;
+	QStringList                    args;
+	unsigned int                   maxThreadCount { std::thread::hardware_concurrency() };
+	std::unique_ptr<DB::IDatabase> database;
 };
 
-void SerializeHashSections(const QStringList& sections, XmlWriter& writer)
+void SerializeHashSections(const long long fileId, const QStringList& sections, DB::ITransaction& tr)
 {
-	qsizetype depth = -1;
+	const auto command = tr.CreateCommand("insert into Section(FileId, ParentSectionId, Hash, WordCount, SymbolCount, SimHash) values(?, ?, ?, ?, ?, ?)");
+
+	std::vector<long long> stack { -1 };
+	qsizetype              depth = -1;
 	for (const auto& str : sections)
 	{
 		const auto split = str.split('\t');
-		auto       it    = split.begin();
-		assert(it != split.end());
+		assert(split.size() == 5);
 
 		bool ok       = false;
-		auto newDepth = (it++)->toInt(&ok);
+		auto newDepth = split[0].toInt(&ok);
 		assert(ok);
 
-		const auto write = [&] {
-			writer.WriteStartElement(u"section");
-			if (it != split.end())
-			{
-				writer.WriteAttribute(u"id", *it++);
-				if (it != split.end())
-				{
-					writer.WriteAttribute(u"count", *it++);
-					if (it != split.end())
-					{
-						writer.WriteAttribute(u"size", *it++);
-						if (it != split.end())
-							writer.WriteAttribute(u"simHash", *it++);
-					}
-				}
-			}
-		};
+		for (int i = newDepth; i <= depth; ++i)
+			stack.pop_back();
 
-		if (depth == newDepth)
-		{
-			writer.WriteEndElement();
-			write();
-			continue;
-		}
+		depth = newDepth;
 
-		if (depth < newDepth)
-		{
-			write();
-			depth = newDepth;
-			continue;
-		}
-
-		writer.WriteEndElement();
-		for (; newDepth < depth; --depth)
-			writer.WriteEndElement();
-
-		write();
+		command->Bind(0, fileId);
+		if (stack.back() == -1)
+			command->Bind(1);
+		else
+			command->Bind(1, stack.back());
+		command->Bind(2, split[1]);
+		command->Bind(3, split[2]);
+		command->Bind(4, split[3]);
+		command->Bind(5, split[4]);
+		command->Execute();
+		const auto query = tr.CreateQuery("select last_insert_rowid()");
+		stack.push_back(query->Execute() ? query->Get<long long>(0) : (assert(false), -1LL));
 	}
-
-	for (; depth >= 0; --depth)
-		writer.WriteEndElement();
 }
 
 void ProcessArchive(const Options& options, const QString& filePath, Progress& progress)
 {
 	PLOGI << "process " << filePath;
-	assert(options.dstDir.exists());
+
 	BookHashItemProvider bookHashItemProvider(filePath);
 	QFileInfo            fileInfo(filePath);
-
-	QFile output(options.dstDir.filePath(fileInfo.completeBaseName() + ".xml"));
-	if (!output.open(QIODevice::WriteOnly))
-		throw std::ios_base::failure(std::format("Cannot create {}", options.dstDir.filePath(fileInfo.completeBaseName() + ".xml")));
 
 	const auto fileList = bookHashItemProvider.GetFiles();
 
@@ -141,57 +121,84 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	PLOGI << "wait for threads finished";
 	threadPool.wait();
 
-	XmlWriter  writer(output);
-	const auto booksGuard = writer.Guard(u"books");
-	booksGuard->WriteAttribute(u"source", options.sourceLib);
+	if (bookHashItems.empty())
+	{
+		PLOGW << "no data received";
+		return;
+	}
 
-	PLOGV << "writing results";
+	if (!options.database)
+		return;
+
+	PLOGD << "write database";
+
+	const auto tr = options.database->CreateTransaction();
+
+	const auto insertQuery = [&](const std::string_view queryText, const std::vector<QString>& parameters, const bool needInsertedId = false) {
+		const auto command = tr->CreateCommand(queryText);
+		for (auto&& [parameter, index] : std::views::zip(parameters, std::views::iota(0)))
+			command->Bind(index, parameter);
+		command->Execute();
+
+		if (needInsertedId)
+		{
+			const auto query = tr->CreateQuery("select last_insert_rowid()");
+			return query->Execute() ? query->Get<long long>(0) : -1LL;
+		}
+
+		return -1LL;
+	};
+
+	const auto insertImage = [&](const long long fileId, const QString& name, const ImageHashItem& item, const bool linked) {
+		insertQuery(
+			"insert into Image(FileId, Name, EncodedSize, DecodedSize, Width, Height, PHash, Md5, Linked, HasAlpha) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			{
+				QString::number(fileId),
+				name,
+				QString::number(item.encodedSize),
+				QString::number(item.decodedSize),
+				QString::number(item.size.width()),
+				QString::number(item.size.height()),
+				QString("%1").arg(item.pHash, 16, 16, QChar { '0' }),
+				item.hash,
+				linked ? "1" : "0",
+				item.hasAlpha ? "1" : "0",
+			}
+		);
+	};
+
+	const auto folderId = insertQuery("insert into Folder(SourceLibraryId, Name) select SourceLibraryId, ? from SourceLibrary where SourceLibrary.Name = ?", { fileInfo.fileName(), options.sourceLib }, true);
+
 	for (const auto& file : bookHashItems)
 	{
-		const auto bookGuard = writer.Guard(u"book");
-		bookGuard->WriteAttribute(u"hash", file.parseResult.id)
-			.WriteAttribute(u"id", file.parseResult.hashText)
-			.WriteAttribute(u"folder", file.folder)
-			.WriteAttribute(u"file", file.file)
-			.WriteAttribute(u"count", QString::number(file.parseResult.count))
-			.WriteAttribute(u"size", QString::number(file.parseResult.size))
-			.WriteAttribute(u"simHash", QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }))
-			.WriteAttribute(u"title", file.parseResult.title);
+		assert(file.folder == fileInfo.fileName());
 
-		const auto writeImage = [&](const QString& nodeName, const ImageHashItem& item, const bool unlinked) {
-			const auto guard = bookGuard->Guard(nodeName);
-			if (!item.file.isEmpty())
-				guard->WriteAttribute(u"id", item.file);
-			if (item.pHash)
-				guard->WriteAttribute(u"pHash", QString::number(item.pHash, 16));
-			if (unlinked)
-				guard->WriteAttribute(u"linked", u"false");
-			guard->WriteCharacters(item.hash);
-		};
+		const auto fileId = insertQuery(
+			"insert into File(FolderId, Name, Md5, Hash, WordCount, SymbolCount, SimHash, Title, Annotation) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			{ QString::number(folderId),
+		      file.file,
+		      file.parseResult.id,
+		      file.parseResult.hashText,
+		      QString::number(file.parseResult.count),
+		      QString::number(file.parseResult.size),
+		      QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }),
+		      file.parseResult.title,
+		      file.parseResult.annotation },
+			true
+		);
+
+		SerializeHashSections(fileId, file.parseResult.hashSections, *tr);
 
 		if (!file.cover.hash.isEmpty())
-			writeImage(Global::COVER, file.cover, false);
+			insertImage(fileId, Global::COVER, file.cover, true);
 		for (const auto& item : file.images)
-			writeImage(Global::IMAGE, item, !file.parseResult.linkedImages.contains(item.file));
+			insertImage(fileId, item.file, item, file.parseResult.linkedImages.contains(item.file));
 
-		SerializeHashSections(file.parseResult.hashSections, writer);
-
-		if (!file.parseResult.hashValues.empty())
-		{
-			const auto histogram = bookGuard->Guard(u"histogram");
-			for (const auto& [count, word] : file.parseResult.hashValues)
-			{
-				auto histogramItem = histogram->Guard(u"item");
-				histogramItem->WriteAttribute(u"count", QString::number(count)).WriteAttribute(u"word", word);
-			}
-		}
-
-		if (!file.parseResult.annotation.isEmpty())
-		{
-			const auto guard = bookGuard->Guard(u"annotation");
-			guard->WriteCharacters(file.parseResult.annotation);
-		}
+		for (const auto& [count, word] : file.parseResult.hashValues)
+			insertQuery("insert into Histogram(FileId, Word, WordCount) values(?, ?, ?)", { QString::number(fileId), word, QString::number(count) });
 	}
+
+	tr->Commit();
 }
 
 QStringList GetArchives(const QStringList& wildCards)
@@ -208,9 +215,6 @@ int run(const Options& options)
 {
 	try
 	{
-		if (!options.dstDir.exists())
-			options.dstDir.mkpath(".");
-
 		const auto availableLibraries = Dump::GetAvailableLibraries();
 		if (!availableLibraries.contains(options.sourceLib, Qt::CaseInsensitive))
 			throw std::invalid_argument(std::format("{} must be {}", LIBRARY, availableLibraries.join(" | ")));
@@ -262,7 +266,7 @@ int main(int argc, char* argv[])
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives wildcards");
 	parser.addOptions(
 		{
-			{ { QString(OUTPUT[0]), OUTPUT }, "Output database path (required)", FOLDER },
+			{ { QString(DATABASE[0]), DATABASE }, "Output database path (required)", PATH },
 			{ LIBRARY, "Source library", QString("(%1) [%2]").arg(availableLibraries.join(" | "), availableLibraries.front()) },
 			{ { QString(THREADS[0]), THREADS }, "Maximum number of CPU threads", QString("Thread count [%1]").arg(options.maxThreadCount) },
     }
@@ -276,10 +280,8 @@ int main(int argc, char* argv[])
 	Log::LogAppender                           logConsoleAppender(&consoleAppender);
 	PLOGI << QString("%1 started").arg(APP_ID);
 
-	if (!parser.isSet(OUTPUT) || parser.positionalArguments().isEmpty())
+	if (!parser.isSet(DATABASE) || parser.positionalArguments().isEmpty())
 		parser.showHelp(1);
-
-	options.dstDir = parser.value(OUTPUT);
 
 	options.sourceLib = parser.value(LIBRARY).toLower();
 	if (options.sourceLib.isEmpty())
@@ -287,6 +289,12 @@ int main(int argc, char* argv[])
 
 	if (parser.isSet(THREADS))
 		options.maxThreadCount = parser.value(THREADS).toUInt();
+
+	if (parser.isSet(DATABASE))
+	{
+		const auto dbPath = parser.value(DATABASE);
+		options.database  = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag={}", dbPath, QFile::exists(dbPath) ? "READWRITE" : "CREATE"));
+	}
 
 	options.args = parser.positionalArguments();
 

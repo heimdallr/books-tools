@@ -5,6 +5,9 @@
 
 #include <plog/Appenders/ConsoleAppender.h>
 
+#include "database/interface/IDatabase.h"
+
+#include "database/factory/Factory.h"
 #include "logging/LogAppender.h"
 #include "logging/init.h"
 #include "util/LogConsoleFormatter.h"
@@ -24,10 +27,16 @@ constexpr auto APP_ID = "flicmp";
 
 void go(const int argc, char* argv[])
 {
-	const auto items = std::views::iota(1, argc) | std::views::transform([&](const int n) {
-						   auto item = QString(argv[n]).split(';', Qt::SkipEmptyParts);
-						   assert(item.size() == 2);
-						   auto bookHashItem = GetHash(item.front(), item.back());
+	const auto db = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READONLY", argv[1]));
+	if (!db)
+		throw std::invalid_argument(std::format("cannot open database{}", argv[1]));
+
+	const auto items = std::views::iota(2, argc) | std::views::filter([](const int n) {
+						   return (n & 1) == 0;
+					   })
+	                 | std::views::transform([&](const int n) {
+						   assert(n < argc - 1);
+						   auto bookHashItem = GetHash(*db, argv[n], argv[n + 1]);
 						   bookHashItem.body.clear();
 						   return bookHashItem;
 					   })

@@ -1,5 +1,7 @@
 #include "UniqueFile.h"
 
+#include <Constant.h>
+
 #include <ranges>
 #include <unordered_set>
 
@@ -8,6 +10,8 @@
 #include <QFile>
 
 #include "fnd/ScopedCall.h"
+
+#include "database/interface/IDatabase.h"
 
 #include "dump/Factory.h"
 #include "dump/IDump.h"
@@ -72,13 +76,24 @@ private: // UniqueFileStorage::ImageComparer
 		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
 		using ImageHash   = std::pair<uint64_t, QString>;
 
+		const auto filterLinked = [this](const std::set<ImageItem>& items, const ImageItem& cover) {
+			return items | std::views::filter([&](const auto& item) {
+					   return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
+				   })
+			     | std::views::transform([](const auto& item) {
+					   return std::reference_wrapper(item);
+				   }) | std::ranges::to<std::vector>();
+		};
+
+		const auto lhsImages = filterLinked(lhs.images, rhs.cover), rhsImages = filterLinked(rhs.images, lhs.cover);
+
 		ImageHashes lpHashes, rpHashes;
 
-		auto lIt = lhs.images.cbegin(), rIt = rhs.images.cbegin();
-		while (lIt != lhs.images.cend() && rIt != rhs.images.cend())
+		auto lIt = lhsImages.cbegin(), rIt = rhsImages.cbegin();
+		while (lIt != lhsImages.cend() && rIt != rhsImages.cend())
 		{
-			const auto& lRef = *lIt;
-			const auto& rRef = *rIt;
+			const auto& lRef = lIt->get();
+			const auto& rRef = rIt->get();
 			if (lRef.hash < rRef.hash)
 			{
 				lpHashes.emplace(lRef.pHash, lRef.fileName);
@@ -98,10 +113,10 @@ private: // UniqueFileStorage::ImageComparer
 		}
 
 		const auto transform = [](const auto& item) {
-			return std::make_pair(item.pHash, item.fileName);
+			return std::make_pair(item.get().pHash, item.get().fileName);
 		};
-		std::transform(lIt, lhs.images.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
-		std::transform(rIt, rhs.images.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
+		std::transform(lIt, lhsImages.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
+		std::transform(rIt, rhsImages.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
 
 		auto lIds = lpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
 		auto rIds = rpHashes | std::views::values | std::ranges::to<std::unordered_set<QString>>();
@@ -133,7 +148,7 @@ private: // UniqueFileStorage::ImageComparer
 		if (result == ImagesCompareResult::Equal && lhs.cover.hash.isEmpty() != rhs.cover.hash.isEmpty())
 			result = rhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : (assert(lhs.cover.hash.isEmpty()), ImagesCompareResult::Inner);
 
-		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.hash == rhs.hash)
+		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.md5 == rhs.md5)
 			return result;
 
 		if (Util::Intersect(lhs.title, rhs.title))
@@ -145,61 +160,6 @@ private: // UniqueFileStorage::ImageComparer
 
 private:
 	const int m_threshold;
-};
-
-struct HashParserObserver final : Util::HashParser::IObserver
-{
-	struct Item
-	{
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME;
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-		Util::HashParser::HashImageItem  cover;
-		Util::HashParser::HashImageItems images;
-		size_t                           size { 0 };
-		uint64_t                         simHash { 0 };
-		Util::TextHistogram              hist;
-	};
-
-	using Items = std::vector<Item>;
-	using Data  = std::vector<std::pair<QString, Items>>;
-	Data data;
-
-private:
-	void OnParseStarted(const QStringView sourceLib) override
-	{
-		data.emplace_back(std::make_pair(sourceLib, Items {}));
-	}
-	bool OnBookParsed(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) QString NAME,
-		HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-			Util::HashParser::HashImageItem cover,
-		Util::HashParser::HashImageItems    images,
-		Util::HashParser::Section::Ptr      section,
-		size_t                              size,
-		uint64_t                            simHash,
-		Util::TextHistogram                 hist
-	) override
-	{
-		if (!originFolder.isEmpty())
-			return true;
-
-		const auto it = section->children.find(id);
-
-		assert(!data.empty());
-		data.back().second.emplace_back(
-#define HASH_PARSER_CALLBACK_ITEM(NAME) std::move(NAME),
-			HASH_PARSER_CALLBACK_ITEMS_X_MACRO
-#undef HASH_PARSER_CALLBACK_ITEM
-				std::move(cover),
-			std::move(images),
-			size,
-			simHash,
-			std::move(hist)
-		);
-		return true;
-	}
 };
 
 std::unique_ptr<UniqueFileStorage::ImageComparer> GetImageCompared(const int hammingThreshold)
@@ -293,17 +253,19 @@ void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 	    it != m_cache.end())
 	{
 		if (it->inpData.empty())
+		{
 			it->inpData = CreateInpData(*it->dump, m_series);
 
+			std::ranges::transform(it->inpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toString().toLower()](const auto& item) {
+				return std::make_pair(QString("%1_%2").arg(sourceLib, item->libId), item.get());
+			});
+
+			std::ranges::transform(it->inpData | std::views::values, std::inserter(m_hashToBook, m_hashToBook.end()), [](const auto& item) {
+				return std::make_pair(item->hash, item.get());
+			});
+		}
+
 		m_currentInpData = &it->inpData;
-
-		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toString().toLower()](const auto& item) {
-			return std::make_pair(QString("%1_%2").arg(sourceLib, item->libId), item.get());
-		});
-
-		std::ranges::transform(*m_currentInpData | std::views::values, std::inserter(m_hashToBook, m_hashToBook.end()), [](const auto& item) {
-			return std::make_pair(item->hash, item.get());
-		});
 
 		return;
 	}
@@ -369,122 +331,50 @@ Book* InpDataProvider::SetFile(const UniqueFile::Uid& uid, QString id, const siz
 	return nullptr;
 }
 
-UniqueFileStorage::UniqueFileStorage(QString dstDir, const int hammingThreshold, std::shared_ptr<InpDataProvider> inpDataProvider)
-	: m_hashDir { std::move(dstDir) }
-	, m_imageComparer { GetImageCompared(hammingThreshold) }
+UniqueFileStorage::UniqueFileStorage(DB::IDatabase& db, const std::unordered_set<QString>& skipFolders, const int hammingThreshold, std::shared_ptr<InpDataProvider> inpDataProvider)
+	: m_imageComparer { GetImageCompared(hammingThreshold) }
 	, m_inpDataProvider { std::move(inpDataProvider) }
 	, m_duplicateObserver { std::make_unique<DuplicateObserverStub>() }
 	, m_conflictResolver { std::make_unique<UniqueFileConflictResolver>() }
 	, m_si { createSi() }
 {
-	if (m_hashDir.isEmpty())
-		return;
+	const auto folders = [&] {
+		std::vector<std::tuple<long long, QString, QString>> result;
 
-	const QDir srcDir(m_hashDir);
-	const auto xmlList = srcDir.entryList({ "*.xml" }, QDir::Filter::Files);
+		const auto query = db.CreateQuery("select f.FolderId, f.Name, s.Name from Folder f join SourceLibrary s on s.SourceLibraryId = f.SourceLibraryId");
+		for (query->Execute(); !query->Eof(); query->Next())
+			if (!skipFolders.contains(query->Get<const char*>(1)))
+				result.emplace_back(query->Get<long long>(0), query->Get<const char*>(1), query->Get<const char*>(2));
 
-	Util::ThreadPool<HashParserObserver> threadPool({ .maxQueueSize = static_cast<size_t>(std::thread::hardware_concurrency()) * 2, .contextGetter = [](auto) {
-														 return HashParserObserver {};
-													 } });
+		return result;
+	}();
+	Util::Progress progress(folders.size(), "collect ready books");
+	for (const auto& [folderId, folderName, sourceLib] : folders)
 	{
-		Util::Progress progress(static_cast<size_t>(xmlList.size()), "parsing");
-		for (const auto& xml : xmlList)
+		auto uniqueFiles = SelectUniqueFiles(db, folderId, folderName);
+		if (uniqueFiles.empty())
+			continue;
+
+		m_inpDataProvider->SetSourceLib(sourceLib);
+
+		for (auto&& uniqueFile : uniqueFiles | std::views::values)
 		{
-			QFile file(srcDir.filePath(xml));
-			if (!file.open(QIODevice::ReadOnly))
-				continue;
+			m_sizeToSimHash.emplace(uniqueFile.size, uniqueFile.simHash);
+			m_oldSimHash.emplace(uniqueFile.simHash, uniqueFile.hash);
 
-			threadPool.enqueue([&, xml, bytes = file.readAll()](HashParserObserver& observer, const auto&) mutable {
-				QBuffer buffer(&bytes);
-				buffer.open(QIODevice::ReadOnly);
-				Util::HashParser::Parse(buffer, observer);
-				progress.Increment(1, QFileInfo(xml).fileName().toStdString());
-			});
+			const auto index = m_files.size();
+			m_old[uniqueFile.hash].emplace_back(index);
+			m_files.emplace_back(std::move(uniqueFile));
 		}
-	}
 
-	auto observers = threadPool.wait();
-	erase_if(observers, [](const auto& item) {
-		return item.data.empty();
-	});
-
-	{
-		Util::Progress progress(observers.size(), "collect ready books");
-
-		for (auto&& observer : observers)
-		{
-			for (auto&& observerDataItem : observer.data)
-			{
-				m_inpDataProvider->SetSourceLib(observerDataItem.first);
-				for (auto&& observerItem : observerDataItem.second)
-				{
-					auto imageItems = observerItem.images | std::views::as_rvalue | std::views::filter([](auto&& item) {
-										  return item.linked;
-									  })
-					                | std::views::transform([](auto&& item) {
-										  return ImageItem { .fileName = std::move(item.id), .hash = std::move(item.hash), .pHash = item.pHash.toULongLong(nullptr, 16) };
-									  })
-					                | std::ranges::to<decltype(UniqueFile::images)>();
-
-					const UniqueFile::Uid uid { observerItem.folder, observerItem.file };
-
-					if (const auto* book = m_inpDataProvider->SetFile(uid, observerItem.id, observerItem.size))
-						observerItem.title.append(" ").append(book->title);
-					Util::SimplifyTitle(Util::PrepareTitle(observerItem.title));
-					auto split = observerItem.title.split(' ', Qt::SkipEmptyParts);
-
-					UniqueFile uniqueFile {
-						.uid      = { .folder = std::move(observerItem.folder), .file = std::move(observerItem.file) },
-						.hash     = std::move(observerItem.hash),
-						.title    = { std::make_move_iterator(split.begin()), std::make_move_iterator(split.end()) },
-						.hashText = observerItem.id,
-						.cover    = { .hash = std::move(observerItem.cover.hash), .pHash = observerItem.cover.pHash.toULongLong(nullptr, 16) },
-						.images   = std::move(imageItems),
-						.size     = observerItem.size,
-						.simHash  = observerItem.simHash,
-						.hist     = observerItem.hist | std::views::as_rvalue | std::views::values | std::ranges::to<std::vector>(),
-					};
-
-					m_sizeToSimHash.emplace(uniqueFile.size, uniqueFile.simHash);
-					m_oldSimHash.emplace(uniqueFile.simHash, observerItem.id);
-
-					const auto index = m_files.size();
-					m_files.emplace_back(std::move(uniqueFile));
-					m_old[std::move(observerItem.id)].emplace_back(index);
-				}
-				observerDataItem.second.clear();
-			}
-			observer.data.clear();
-			progress.Increment(1, std::to_string(m_files.size()));
-		}
+		progress.Increment(1, folderName.toStdString());
+#ifndef NDEBUG
+		if (m_files.size() > 1000)
+			break;
+#endif
 	}
 
 	PLOGI << "ready books found: " << m_files.size();
-}
-
-std::pair<ImageItem, std::set<ImageItem>> UniqueFileStorage::GetImages(UniqueFile& file)
-{
-	std::lock_guard lock(m_guard);
-	return std::make_pair(file.cover, file.images);
-}
-
-void UniqueFileStorage::SetImages(const QString& hash, const QString& fileName, ImageItem cover, std::set<ImageItem> images)
-{
-	std::lock_guard lock(m_guard);
-	const auto      it = m_new.find(hash);
-	if (it == m_new.end())
-		return;
-
-	for (const auto& index : it->second | std::views::keys)
-	{
-		auto& file = m_files[index];
-		if (file.uid.file == fileName)
-		{
-			file.cover  = std::move(cover);
-			file.images = std::move(images);
-			return;
-		}
-	}
 }
 
 void LogIt(const UniqueFile& duplicate, const UniqueFile& file)
@@ -622,8 +512,6 @@ UniqueFile* UniqueFileStorage::Add(QString hash, UniqueFile fileSrc)
 {
 	fileSrc.title.erase(m_si);
 
-	std::lock_guard lock(m_guard);
-
 	const auto indexFile = m_files.size();
 	auto&      file      = m_files.emplace_back(std::move(fileSrc));
 	ScopedCall sizeToSimHashGuard([&] {
@@ -701,3 +589,74 @@ void UniqueFileStorage::SetConflictResolver(std::shared_ptr<IUniqueFileConflictR
 {
 	m_conflictResolver = std::move(conflictResolver);
 }
+
+namespace HomeCompa::FliLib
+{
+
+std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, const long long folderId, const QString& folderName)
+{
+	std::unordered_map<long long, UniqueFile> uniqueFiles;
+
+	{
+		const auto query = db.CreateQuery("select FileId, Name, Md5, Title, Hash, SymbolCount, SimHash from File where FolderId = ?");
+		query->Bind(0, folderId);
+		for (query->Execute(); !query->Eof(); query->Next())
+		{
+			auto& uniqueFile = uniqueFiles
+			                       .try_emplace(
+									   query->Get<long long>(0),
+									   UniqueFile {
+										   .uid     = { folderName, query->Get<const char*>(1) },
+										   .md5     = query->Get<const char*>(2),
+										   .title   = Util::UniqTitle(QString(query->Get<const char*>(3))) | std::ranges::to<std::set>(),
+										   .hash    = query->Get<const char*>(4),
+										   .size    = query->Get<size_t>(5),
+										   .simHash = query->Get<QString>(6).toULongLong(nullptr, 16),
+            }
+								   )
+			                       .first->second;
+
+			uniqueFile.hist.reserve(10);
+		}
+	}
+
+	const auto process = [&](const std::string_view queryText, const auto& f) {
+		const auto query = db.CreateQuery(queryText);
+		query->Bind(0, folderId);
+		long long currentFileId = -1;
+		auto      it            = uniqueFiles.end();
+		for (query->Execute(); !query->Eof(); query->Next())
+		{
+			const auto id = query->Get<long long>(0);
+			if (currentFileId != id)
+			{
+				currentFileId = id;
+				it            = uniqueFiles.find(id);
+				assert(it != uniqueFiles.end());
+			}
+			f(*query, it->second);
+		}
+	};
+
+	process("select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
+		ImageItem imageItem {
+			.fileName = query.Get<const char*>(1),
+			.hash     = query.Get<const char*>(2),
+			.pHash    = query.Get<QString>(3).toULongLong(nullptr, 16),
+			.linked   = query.Get<int>(4) != 0,
+		};
+
+		if (imageItem.fileName == Global::COVER)
+			file.cover = std::move(imageItem);
+		else
+			file.images.emplace(std::move(imageItem));
+	});
+
+	process("select i.FileId, i.Word from Histogram i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.HistogramId", [](const DB::IQuery& query, UniqueFile& file) {
+		file.hist.emplace_back(query.Get<const char*>(1));
+	});
+
+	return uniqueFiles;
+}
+
+} // namespace HomeCompa::FliLib

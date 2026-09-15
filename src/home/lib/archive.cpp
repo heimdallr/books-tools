@@ -22,50 +22,16 @@ Archives GetArchives(const QStringList& wildCards)
 {
 	std::multimap<int, Archive> sorted;
 	std::unordered_set<QString> uniqueFiles;
-	const QRegularExpression    rx("^.*?fb2.*?([0-9]+).*?$");
+	const QRegularExpression    rx("^.*?([0-9]+).*?$");
 
-	for (const auto& argument : wildCards)
-	{
-		auto splitted = argument.split(';');
-
-		const auto wildCard   = std::move(splitted.front());
-		const QDir hashFolder = [&]() -> QDir {
-			if (splitted.size() < 2)
-				return {};
-
-			QDir result(splitted.back());
-			if (!result.exists())
-				throw std::invalid_argument(std::format("hash folder {} not found", splitted.back()));
-
-			return result;
-		}();
-
-		const auto getHashPath = [&](const QString& name) {
-			return splitted.size() < 2 ? QString {} : hashFolder.filePath(name + ".xml");
-		};
-
-		std::ranges::transform(
-			Util::ResolveWildcard(wildCard) | std::views::transform([&](const QString& item) {
-				return QFileInfo(item);
-			}) | std::views::filter([&](const QFileInfo& item) {
-				auto       fileName = item.fileName().toLower();
-				const auto result   = !uniqueFiles.contains(fileName);
-				if (result)
-					uniqueFiles.emplace(fileName);
-				return result;
-			}) | std::views::transform([&](const QFileInfo& item) {
-				auto hashPath = getHashPath(item.completeBaseName());
-				if (!(hashPath.isEmpty() || QFile::exists(hashPath)))
-					throw std::invalid_argument(std::format("{} not found", hashPath));
-				return Archive { item.absoluteFilePath(), std::move(hashPath) };
+	for (const auto& wildCard : wildCards)
+		std::ranges::move(
+			Util::ResolveWildcard(wildCard) | std::views::as_rvalue | std::views::transform([&](QString&& item) {
+				const auto match = rx.match(QFileInfo(item).fileName());
+				return std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, Archive { .filePath = std::move(item), .sourceLib = {} });
 			}),
-			std::inserter(sorted, sorted.end()),
-			[&](Archive archive) {
-				const auto match = rx.match(QFileInfo(archive.filePath).fileName());
-				return std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, std::move(archive));
-			}
+			std::inserter(sorted, sorted.end())
 		);
-	}
 
 	auto result = std::move(sorted) | std::views::values | std::views::reverse | std::ranges::to<Archives>();
 	if (result.empty())
