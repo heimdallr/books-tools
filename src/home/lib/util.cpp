@@ -436,8 +436,8 @@ Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const
 
 void WriteParsedBookToDatabase(DB::ITransaction& tr, const Book& book)
 {
-	const auto command = tr.CreateCommand(R"(insert or replace into FileCustom (FileId, Author, Title, Genre, Updated, Lang, Series, Annotation, Keywords, PublishYear)
-select f.FileId, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	const auto command = tr.CreateCommand(R"(insert or replace into FileCustom (FileId, Author, Title, Genre, Updated, Lang, Series, Keywords, PublishYear)
+select f.FileId, ?, ?, ?, ?, ?, ?, ?, ?
 from File f
 join Folder d on d.FolderId = f.FolderId and d.Name = ?
 where f.Name = ?
@@ -458,11 +458,10 @@ where f.Name = ?
 	bind(3, book.date);
 	bind(4, book.lang);
 	bind(5, series);
-	bind(6, book.annotation);
-	bind(7, book.keywords);
-	bind(8, book.year);
-	command->Bind(9, book.folder);
-	command->Bind(10, book.GetFileName());
+	bind(6, book.keywords);
+	bind(7, book.year);
+	command->Bind(8, book.folder);
+	command->Bind(9, book.GetFileName());
 	command->Execute();
 }
 

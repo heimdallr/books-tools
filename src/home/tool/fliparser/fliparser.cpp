@@ -209,7 +209,7 @@ private:
 
 Book* GetBookCustom(const QString& folder, const QString& fileName, InpDataProvider& inpDataProvider, DB::IDatabase& db)
 {
-	const auto query = db.CreateQuery(R"(select c.Author, c.Genre, c.Title, c.Series, f.SymbolCount, c.Updated, c.Lang, c.Keywords, c.PublishYear, c.Annotation
+	const auto query = db.CreateQuery(R"(select c.Author, c.Genre, c.Title, c.Series, f.SymbolCount, c.Updated, c.Lang, c.Keywords, c.PublishYear, f.Annotation
 from FileCustom c
 join File f on f.FileId = c.FileId and f.Name = ?
 join Folder d on d.FolderId = f.FolderId and d.Name = ?)");
