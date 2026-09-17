@@ -157,41 +157,33 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
 
-void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement, InpDataProvider& inpDataProvider)
+auto GetTemporaryTable(DB::IDatabase& db)
 {
-	const QFileInfo fileInfo(path);
-	const auto      folder = fileInfo.fileName();
+	return db.CreateTemporaryTable({ "Folder VARCHAR (64)", "File VARCHAR (256)", "FolderOrigin VARCHAR (64)", "FileOrigin VARCHAR (256)" });
+}
 
-	const auto tmpTable = db.CreateTemporaryTable({ "Folder VARCHAR (64)", "File VARCHAR (256)", "FolderOrigin VARCHAR (64)", "FileOrigin VARCHAR (256)" });
-
-	const auto tr = db.CreateTransaction();
-
-	const Zip  zip(path);
-	for (const auto& fileName : zip.GetFileNameList())
+template <typename PairContainer, typename ItemToPair>
+void FillTemporaryTable(DB::ITransaction& tr, const std::string_view tmpTable, const PairContainer& container, const ItemToPair& itemToPair)
+{
+	const auto command = tr.CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable));
+	for (const auto& [duplicate, origin] : container | std::views::transform([&](const auto& item) {
+			 const auto& [first, second] = item;
+			 return std::make_pair(itemToPair(first), itemToPair(second));
+		 }))
 	{
-		if (inpDataProvider.GetBook({ folder, fileName }))
-			continue;
-
-		auto book = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
-		book->folder = folder;
-		WriteParsedBookToDatabase(*tr, *book);
+		command->Bind(0, duplicate.first);
+		command->Bind(1, duplicate.second);
+		command->Bind(2, origin.first);
+		command->Bind(3, origin.second);
+		command->Execute();
 	}
+}
 
-	tr->CreateCommand(std::format("update File set OriginId = null from (select FolderId from Folder where Name = '{}') as Id where File.FolderId = Id.FolderId", folder))->Execute();
-	{
-		const auto command = tr->CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable->GetName()));
-		for (const auto& [duplicate, origin] : replacement)
-		{
-			command->Bind(0, duplicate.first);
-			command->Bind(1, duplicate.second);
-			command->Bind(2, origin.first);
-			command->Bind(3, origin.second);
-			command->Execute();
-		}
-	}
-	tr->CreateCommand(std::format(
-						  R"(
-update File set OriginId = Id.FileIdOrigin from (
+void UpdateOriginId(DB::ITransaction& tr, const std::string_view tmpTable, const std::string_view updatedField)
+{
+	tr.CreateCommand(std::format(
+						 R"(
+update File set {} = Id.FileIdOrigin from (
 select f.FileId as FileId, f1.FileId as FileIdOrigin
 from {} t
 join Folder d on d.Name = t.Folder
@@ -201,8 +193,60 @@ join File f1 on f1.FolderId = d1.FolderId and f1.Name = t.FileOrigin
 ) as Id 
 where File.FileId = Id.FileId
 )",
-						  tmpTable->GetName()))
+						 updatedField,
+						 tmpTable))
 		->Execute();
+}
+
+void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement, InpDataProvider& inpDataProvider)
+{
+	PLOGI << "mark found duplicates in database";
+
+	const QFileInfo fileInfo(path);
+	const auto      folder = fileInfo.fileName();
+
+	const auto tmpTable = GetTemporaryTable(db);
+	const auto tr       = db.CreateTransaction();
+
+	std::vector<std::pair<UniqueFile::Uid, UniqueFile::Uid>> replaced;
+
+	const Zip zip(path);
+	for (const auto& fileName : zip.GetFileNameList())
+	{
+		if (const auto it = replacement.find({ folder, fileName }); it != replacement.end())
+			replaced.emplace_back(UniqueFile::Uid { folder, fileName }, UniqueFile::Uid { it->second.first, it->second.second });
+
+		if (inpDataProvider.GetBook({ folder, fileName }))
+			continue;
+
+		auto book    = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
+		book->folder = folder;
+		WriteParsedBookToDatabase(*tr, *book);
+	}
+
+	FillTemporaryTable(*tr, tmpTable->GetName(), replaced, [](const auto& item) {
+		return std::make_pair(item.folder, item.file);
+	});
+	UpdateOriginId(*tr, tmpTable->GetName(), "OriginId");
+
+	tr->Commit();
+}
+
+void WriteOldDuplicate(DB::IDatabase& db, const UniqueFileStorage::OldDuplicates& oldDuplicates)
+{
+	if (oldDuplicates.empty())
+		return;
+
+	PLOGI << "mark found old duplicates in database";
+
+	const auto tmpTable = GetTemporaryTable(db);
+	const auto tr       = db.CreateTransaction();
+
+	FillTemporaryTable(*tr, tmpTable->GetName(), oldDuplicates, [](const UniqueFile& item) {
+		return std::make_pair(item.uid.folder, item.uid.file);
+	});
+	UpdateOriginId(*tr, tmpTable->GetName(), "NextOriginId");
+
 	tr->Commit();
 }
 
@@ -290,8 +334,7 @@ void run(const Settings& settings)
 	const auto                  archives       = GetArchives(settings.arguments);
 	[[maybe_unused]] const auto totalFileCount = Total(archives);
 
-	auto inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
-
+	auto              inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
 	UniqueFileStorage uniqueFileStorage(*settings.database,
 		archives | std::views::transform([](const auto& item) {
 			return QFileInfo(item.filePath).fileName();
@@ -305,8 +348,9 @@ void run(const Settings& settings)
 	Replacement replacement;
 	uniqueFileStorage.SetDuplicateObserver(std::make_unique<DuplicateObserver>(replacement));
 	GetReplacement(totalFileCount, *settings.database, archives, uniqueFileStorage, *inpDataProvider);
+	WriteOldDuplicate(*settings.database, uniqueFileStorage.GetOldDuplicates());
 
-	PLOGI << "Duplicates found: " << replacement.size();
+	PLOGI << "duplicates found: " << replacement.size();
 
 	MergeArchives(settings.outputDir, *settings.database, archives, replacement, *inpDataProvider);
 }

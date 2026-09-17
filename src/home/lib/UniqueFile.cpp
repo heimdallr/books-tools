@@ -432,6 +432,7 @@ bool UniqueFileStorage::CheckForOld(const size_t indexDuplicate, const size_t in
 
 	if (imagesCompareResult == ImagesCompareResult::Inner)
 	{
+		m_oldDuplicates.try_emplace(indexFile, indexDuplicate);
 		PLOGW << QString("old duplicate detected by %1/%2: %3/%4, %5").arg(duplicate.uid.folder, duplicate.uid.file, file.uid.folder, file.uid.file, duplicate.GetTitle());
 		return false;
 	}
@@ -582,6 +583,17 @@ void UniqueFileStorage::SetDuplicateObserver(std::unique_ptr<IDuplicateObserver>
 void UniqueFileStorage::SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver)
 {
 	m_conflictResolver = std::move(conflictResolver);
+}
+
+UniqueFileStorage::OldDuplicates UniqueFileStorage::GetOldDuplicates() const
+{
+	OldDuplicates result;
+	result.reserve(m_oldDuplicates.size());
+	std::ranges::transform(m_oldDuplicates, std::back_inserter(result), [this](const auto& item) {
+		auto r = std::make_pair(std::reference_wrapper(m_files[item.first]), std::reference_wrapper(m_files[item.second]));
+		return r;
+	});
+	return result;
 }
 
 namespace HomeCompa::FliLib {

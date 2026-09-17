@@ -114,6 +114,8 @@ class LIB_EXPORT UniqueFileStorage
 	};
 
 public:
+	using OldDuplicates = std::vector<std::pair<std::reference_wrapper<const UniqueFile>, std::reference_wrapper<const UniqueFile>>>;
+
 	class IDuplicateObserver // NOLINT(cppcoreguidelines-special-member-functions)
 	{
 	public:
@@ -148,16 +150,18 @@ public:
 	};
 
 public:
-	explicit UniqueFileStorage(DB::IDatabase& db,
-		const std::unordered_set<QString>&    skipFolders      = {},
-		int                                   hammingThreshold = 10,
-		std::shared_ptr<InpDataProvider>      inpDataProvider  = std::make_shared<InpDataProvider>());
+	UniqueFileStorage(DB::IDatabase&       db,
+		const std::unordered_set<QString>& skipFolders      = {},
+		int                                hammingThreshold = 10,
+		std::shared_ptr<InpDataProvider>   inpDataProvider  = std::make_shared<InpDataProvider>());
 
 public:
 	UniqueFile*                       Add(QString hash, UniqueFile file);
 	std::pair<ImageItems, ImageItems> GetNewImages();
 	void                              SetDuplicateObserver(std::unique_ptr<IDuplicateObserver> duplicateObserver);
 	void                              SetConflictResolver(std::shared_ptr<IUniqueFileConflictResolver> conflictResolver);
+
+	OldDuplicates GetOldDuplicates() const;
 
 private:
 	bool                       CheckForOld(size_t indexDuplicate, size_t indexFile, bool histCheck);
@@ -175,6 +179,7 @@ private:
 
 	std::unordered_map<QString, std::vector<size_t>>                                 m_old;
 	std::unordered_map<QString, std::vector<std::pair<size_t, std::vector<size_t>>>> m_new;
+	std::unordered_map<size_t, size_t>                                               m_oldDuplicates;
 
 	using SimHashToHash = std::unordered_multimap<uint64_t, QString>;
 	SimHashToHash m_oldSimHash;
