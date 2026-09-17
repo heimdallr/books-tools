@@ -603,7 +603,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 	std::unordered_map<long long, UniqueFile> uniqueFiles;
 
 	{
-		const auto query = db.CreateQuery("select FileId, Name, Md5, Title, Hash, SymbolCount, SimHash from File where FolderId = ?");
+		const auto query = db.CreateQuery("select FileId, Name, Md5, Title, Hash, SymbolCount, SimHash from File where FolderId = ? and OriginId is null");
 		query->Bind(0, folderId);
 		for (query->Execute(); !query->Eof(); query->Next())
 		{
@@ -641,7 +641,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		}
 	};
 
-	process("select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
+	process("select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
 		ImageItem imageItem {
 			.fileName = query.Get<const char*>(1),
 			.hash     = query.Get<const char*>(2),
@@ -655,7 +655,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 			file.images.emplace(std::move(imageItem));
 	});
 
-	process("select i.FileId, i.Word from Histogram i join File f on f.FileId = i.FileId and f.FolderId = ? order by i.FileId, i.HistogramId", [](const DB::IQuery& query, UniqueFile& file) {
+	process("select i.FileId, i.Word from Histogram i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.HistogramId", [](const DB::IQuery& query, UniqueFile& file) {
 		file.hist.emplace_back(query.Get<const char*>(1));
 	});
 
