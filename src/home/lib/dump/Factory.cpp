@@ -142,18 +142,22 @@ void FillTables(DB::IDatabase& db, const std::filesystem::path& path)
 std::unique_ptr<IDump> CreateImpl(const std::filesystem::path& sqlDir, const QString& sourceLib)
 {
 	if (!sourceLib.isNull())
-		if (const auto it = std::ranges::find_if(LIBRARIES,
+		if (const auto it = std::ranges::find_if(
+				LIBRARIES,
 				[&](const auto& item) {
 					return sourceLib.compare(item.first, Qt::CaseInsensitive) == 0;
-				});
-			it != std::end(LIBRARIES))
+				}
+			);
+		    it != std::end(LIBRARIES))
 			return it->second();
 
-	if (const auto it = std::ranges::find_if(LIBRARIES,
+	if (const auto it = std::ranges::find_if(
+			LIBRARIES,
 			[&](const auto& item) {
 				return QDir::fromNativeSeparators(Platform::PathToString(sqlDir)).contains(QString("/%1/").arg(item.first), Qt::CaseInsensitive);
-			});
-		it != std::end(LIBRARIES))
+			}
+		);
+	    it != std::end(LIBRARIES))
 		return it->second();
 
 	return LIBRARIES[0].second();
@@ -186,16 +190,18 @@ void CreateTablesImpl(const IDump& dump, DB::IDatabase& db)
 
 void FillTablesImpl(const std::filesystem::path& sqlDir, const IDump& dump, DB::IDatabase& db)
 {
-	std::ranges::for_each(std::filesystem::directory_iterator { sqlDir } | std::views::filter([](const auto& entry) {
-		return !entry.is_directory();
-	}) | std::views::transform([](const auto& entry) {
-		return entry.path();
-	}) | std::views::filter([](const auto& path) {
-		return path.extension() == ".sql";
-	}),
+	std::ranges::for_each(
+		std::filesystem::directory_iterator { sqlDir } | std::views::filter([](const auto& entry) {
+			return !entry.is_directory();
+		}) | std::views::transform([](const auto& entry) {
+			return entry.path();
+		}) | std::views::filter([](const auto& path) {
+			return path.extension() == ".sql";
+		}),
 		[&](auto path) {
 			FillTables(db, path.make_preferred());
-		});
+		}
+	);
 	{
 		const auto tr = db.CreateTransaction();
 		dump.CreateIndices([&](const std::string_view index) {
@@ -259,12 +265,14 @@ bool ReplaceImpl(const long long id, std::vector<QString>& value, const ReplaceS
 	return true;
 }
 
-void ReplaceImpl(DB::IDatabase&              db,
+void ReplaceImpl(
+	DB::IDatabase&                           db,
 	const IDump::DictionaryTableDescription& tableSrc,
 	const IDump::DictionaryTableDescription& tableDst,
 	DB::IDatabase&                           dbReplacement,
 	const QString&                           dumpName,
-	const auto&                              additional)
+	const auto&                              additional
+)
 {
 	const auto values      = GetReplacedValues(db, tableDst);
 	const auto replacement = GetReplaceSrcValues(dbReplacement, tableSrc, dumpName);
@@ -279,8 +287,9 @@ void ReplaceImpl(DB::IDatabase&              db,
 	for (const auto& [id, oldValues] : values)
 	{
 		auto newValues = oldValues | std::views::transform([](const auto& item) {
-			return item.simplified();
-		}) | std::ranges::to<std::vector<QString>>();
+							 return item.simplified();
+						 })
+		               | std::ranges::to<std::vector<QString>>();
 
 		ReplaceImpl(id, newValues, replacement) || additional(newValues);
 
@@ -349,10 +358,12 @@ void UpdateImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tabl
 		PLOGV << "write " << table.table;
 		const auto sz      = table.names.size();
 		const auto command = tr->CreateCommand(std::format("update {} set {} where {} = ?", table.table, names, table.id));
-		for (auto&& [valueItem, n] : std::views::zip(values | std::views::filter([&](const auto& item) {
-				 return std::get<1>(item);
-			 }),
-				 std::views::iota(1)))
+		for (auto&& [valueItem, n] : std::views::zip(
+				 values | std::views::filter([&](const auto& item) {
+					 return std::get<1>(item);
+				 }),
+				 std::views::iota(1)
+			 ))
 		{
 			auto& [id, _, value] = valueItem;
 			if (allEmpty(value))
@@ -387,13 +398,18 @@ void Append(DB::IDatabase& db, const IDump::LinkTableDescription& tableDescripti
 {
 	const auto query   = dbSource.CreateQuery(std::format("select {} from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", fieldsSource.join(','), tableSource, dumpName));
 	const auto tr      = db.CreateTransaction();
-	const auto command = tr->CreateCommand(std::format("insert or ignore into {}({}) values({})",
-		tableDescription.table,
-		tableDescription.fields.join(','),
-		(tableDescription.fields | std::views::transform([](const auto&) {
-			return QString { "?" };
-		}) | std::ranges::to<QStringList>())
-			.join(',')));
+	const auto command = tr->CreateCommand(
+		std::format(
+			"insert or ignore into {}({}) values({})",
+			tableDescription.table,
+			tableDescription.fields.join(','),
+			(tableDescription.fields | std::views::transform([](const auto&) {
+				 return QString { "?" };
+			 })
+	         | std::ranges::to<QStringList>())
+				.join(',')
+		)
+	);
 
 	for (query->Execute(); !query->Eof(); query->Next())
 	{

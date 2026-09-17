@@ -134,8 +134,10 @@ QByteArray FixInputFile(const QByteArray& inputFileBody)
 {
 	auto str = QString::fromUtf8(inputFileBody);
 
-	str.replace(QRegularExpression(R"(<([0-9a-zA-Z]+([0-9a-zA-Z]*[-\._+])*[0-9a-zA-Z]+@[0-9a-zA-Z]+([-\.][0-9a-zA-Z]+)*([0-9a-zA-Z]*[\.])[a-zA-Z]{2,6})>)", QRegularExpression::CaseInsensitiveOption),
-		R"("\1")");
+	str.replace(
+		QRegularExpression(R"(<([0-9a-zA-Z]+([0-9a-zA-Z]*[-\._+])*[0-9a-zA-Z]+@[0-9a-zA-Z]+([-\.][0-9a-zA-Z]+)*([0-9a-zA-Z]*[\.])[a-zA-Z]{2,6})>)", QRegularExpression::CaseInsensitiveOption),
+		R"("\1")"
+	);
 	str.replace(QRegularExpression(R"(<section id=n(\d)>)", QRegularExpression::CaseInsensitiveOption), R"(<section id="n\1">)");
 
 	{
@@ -393,11 +395,13 @@ private: // Util::SaxParser
 		{
 			m_isBinary = true;
 			m_picId    = attributes.GetAttribute(ID).toString().trimmed();
-			if (const auto it = std::ranges::find_if(m_picId,
+			if (const auto it = std::ranges::find_if(
+					m_picId,
 					[](const auto ch) {
 						return ch != '#';
-					});
-				it != m_picId.end())
+					}
+				);
+			    it != m_picId.end())
 				m_picId = m_picId.last(std::distance(it, m_picId.end())).trimmed();
 			return true;
 		}
@@ -410,11 +414,13 @@ private: // Util::SaxParser
 				auto attributeValue = attributes.GetValue(i);
 				if (attributeName.endsWith(u":href"))
 				{
-					if (const auto it = std::ranges::find_if(attributeValue,
+					if (const auto it = std::ranges::find_if(
+							attributeValue,
 							[](const auto ch) {
 								return ch != '#';
-							});
-						it != attributeValue.end())
+							}
+						);
+					    it != attributeValue.end())
 						m_coverPage = attributeValue.last(std::distance(it, attributeValue.end())).toString().trimmed();
 					break;
 				}
@@ -461,10 +467,10 @@ private:
 
 const std::pair<QString, QString> REPLACE_CHAR[] {
 	{  "&lt;",  "<" },
-	{  "&gt;",  ">" },
-	{  "amp;",  "&" },
-	{ "apos;",  "'" },
-	{ "quot;", "\"" },
+    {  "&gt;",  ">" },
+    {  "amp;",  "&" },
+    { "apos;",  "'" },
+    { "quot;", "\"" },
 };
 
 class Fb2TextParser final : public Util::SaxParser
@@ -624,11 +630,13 @@ private:
 		if (!value.startsWith('#'))
 			return;
 
-		if (const auto it = std::ranges::find_if(value,
+		if (const auto it = std::ranges::find_if(
+				value,
 				[](const auto ch) {
 					return ch != '#';
-				});
-			it != value.end() && it != value.begin())
+				}
+			);
+		    it != value.end() && it != value.begin())
 			value = value.last(std::distance(it, value.end()));
 
 		const auto it = m_replaceId.find(value);

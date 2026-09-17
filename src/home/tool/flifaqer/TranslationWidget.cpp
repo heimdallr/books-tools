@@ -93,11 +93,13 @@ private: // QAbstractItemModel
 		switch (role)
 		{
 			case Role::Row:
-				if (const auto it = std::ranges::find_if(m_data,
+				if (const auto it = std::ranges::find_if(
+						m_data,
 						[str = QString("%%1").arg(value.toInt())](const QString& item) {
 							return item.contains(str);
-						});
-					it != m_data.end())
+						}
+					);
+				    it != m_data.end())
 				{
 					m_row = static_cast<int>(std::distance(m_data.begin(), it));
 					return true;
@@ -117,7 +119,8 @@ private: // QAbstractItemModel
 					},
 					[this] {
 						endResetModel();
-					});
+					}
+				);
 				m_data = std::move(data);
 				return true;
 			}
@@ -321,11 +324,13 @@ constexpr std::pair<TranslationWidget::Mode, std::pair<TranslationWidgetCreator,
 class TranslationWidget::Impl
 {
 public:
-	explicit Impl(TranslationWidget&               self,
+	explicit Impl(
+		TranslationWidget&                         self,
 		std::shared_ptr<ISettings>                 settings,
 		std::shared_ptr<QAbstractItemModel>        model,
 		std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
-		std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit)
+		std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit
+	)
 		: m_self { self }
 		, m_settings { std::move(settings) }
 		, m_model { std::move(model) }
@@ -387,11 +392,13 @@ private:
 	Ui::TranslationWidget m_ui;
 };
 
-TranslationWidget::TranslationWidget(std::shared_ptr<ISettings> settings,
-	std::shared_ptr<QAbstractItemModel>                         model,
-	std::shared_ptr<Util::ScrollBarController>                  scrollBarControllerAnswer,
-	std::shared_ptr<Util::ScrollBarController>                  scrollBarControllerEdit,
-	QWidget*                                                    parent)
+TranslationWidget::TranslationWidget(
+	std::shared_ptr<ISettings>                 settings,
+	std::shared_ptr<QAbstractItemModel>        model,
+	std::shared_ptr<Util::ScrollBarController> scrollBarControllerAnswer,
+	std::shared_ptr<Util::ScrollBarController> scrollBarControllerEdit,
+	QWidget*                                   parent
+)
 	: QWidget(parent)
 	, m_impl(*this, std::move(settings), std::move(model), std::move(scrollBarControllerAnswer), std::move(scrollBarControllerEdit))
 {

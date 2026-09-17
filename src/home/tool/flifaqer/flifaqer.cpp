@@ -61,8 +61,8 @@ int main(int argc, char* argv[])
 			const auto settings = container->resolve<ISettings>();
 			if (argc > 1)
 				settings->Set(Constant::INPUT_FILES, std::views::iota(1, argc) | std::views::transform([&](const int n) {
-					return QDir::fromNativeSeparators(argv[n]);
-				}) | std::ranges::to<QStringList>());
+														 return QDir::fromNativeSeparators(argv[n]);
+													 }) | std::ranges::to<QStringList>());
 
 			const auto availableStyles = QStyleFactory::keys();
 			auto       currentTheme    = settings->Get(Constant::THEME).toString();

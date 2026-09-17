@@ -52,13 +52,15 @@ Settings parseCommandLine(const QCoreApplication& app)
 	parser.setApplicationDescription(QString("%1 parses internet book libraries dump").arg(APP_ID));
 	parser.addHelpOption();
 	parser.addVersionOption();
-	parser.addOptions({
-		{ { "s", SQL }, "Folder with sql files (required)", FOLDER },
-		{ { "o", OUTPUT }, "Output database path (required)", PATH },
-		{ { "r", REPLACE }, "Replacement file path", PATH },
-		{ LIBRARY, "Library", "(Flibusta | LibRusEc) [Flibusta]" },
-		{ SKIP_AUTHORS_INFO, "Skip authors info" },
-	});
+	parser.addOptions(
+		{
+			{ { "s", SQL }, "Folder with sql files (required)", FOLDER },
+			{ { "o", OUTPUT }, "Output database path (required)", PATH },
+			{ { "r", REPLACE }, "Replacement file path", PATH },
+			{ LIBRARY, "Library", "(Flibusta | LibRusEc) [Flibusta]" },
+			{ SKIP_AUTHORS_INFO, "Skip authors info" },
+	}
+	);
 	const auto logOption = Log::LoggingInitializer::AddLogFileOption(parser, settings.logPath);
 	parser.process(app);
 

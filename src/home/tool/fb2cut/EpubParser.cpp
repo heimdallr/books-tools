@@ -20,10 +20,12 @@ QByteArray GetImageIndex(const IParser::ImageMapper& idToNum)
 {
 	QJsonArray array;
 	for (const auto& [id, num] : idToNum)
-		array.append(QJsonObject {
-			{  Epub::IMAGE_INDEX_ID,  id },
-			{ Epub::IMAGE_INDEX_NUM, num },
-		});
+		array.append(
+			QJsonObject {
+				{  Epub::IMAGE_INDEX_ID,  id },
+				{ Epub::IMAGE_INDEX_NUM, num },
+		}
+		);
 	return QJsonDocument(array).toJson(QJsonDocument::Compact);
 }
 

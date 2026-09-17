@@ -77,10 +77,12 @@ private: // UniqueFileStorage::ImageComparer
 
 		const auto filterLinked = [this](const std::set<ImageItem>& items, const ImageItem& cover) {
 			return items | std::views::filter([&](const auto& item) {
-				return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
-			}) | std::views::transform([](const auto& item) {
-				return std::reference_wrapper(item);
-			}) | std::ranges::to<std::vector>();
+					   return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
+				   })
+			     | std::views::transform([](const auto& item) {
+					   return std::reference_wrapper(item);
+				   })
+			     | std::ranges::to<std::vector>();
 		};
 
 		const auto lhsImages = filterLinked(lhs.images, rhs.cover), rhsImages = filterLinked(rhs.images, lhs.cover);
@@ -210,8 +212,8 @@ Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 		return it->second.get();
 
 	if (!std::ranges::empty(m_cache | std::views::filter([this](const auto& item) {
-			return &item.inpData != m_currentInpData && !item.inpData.empty();
-		})))
+								return &item.inpData != m_currentInpData && !item.inpData.empty();
+							})))
 		return nullptr;
 
 	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
@@ -234,19 +236,15 @@ Book* InpDataProvider::GetBook(const QString& sourceLib, const QString& libId) c
 	return it != m_sourceLibIdToBook.end() ? it->second : nullptr;
 }
 
-Book* InpDataProvider::GetBook(const QString& hash) const
-{
-	const auto it = m_hashToBook.find(hash);
-	return it != m_hashToBook.end() ? it->second : nullptr;
-}
-
 void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 {
-	if (const auto it = std::ranges::find_if(m_cache,
+	if (const auto it = std::ranges::find_if(
+			m_cache,
 			[&](const auto& item) {
 				return item.sourceLib.compare(sourceLib, Qt::CaseInsensitive) == 0;
-			});
-		it != m_cache.end())
+			}
+		);
+	    it != m_cache.end())
 	{
 		if (it->inpData.empty())
 		{
@@ -254,10 +252,6 @@ void InpDataProvider::SetSourceLib(const QStringView sourceLib)
 
 			std::ranges::transform(it->inpData | std::views::values, std::inserter(m_sourceLibIdToBook, m_sourceLibIdToBook.end()), [sourceLib = sourceLib.toString().toLower()](const auto& item) {
 				return std::make_pair(QString("%1_%2").arg(sourceLib, item->libId), item.get());
-			});
-
-			std::ranges::transform(it->inpData | std::views::values, std::inserter(m_hashToBook, m_hashToBook.end()), [](const auto& item) {
-				return std::make_pair(item->hash, item.get());
 			});
 		}
 
@@ -381,13 +375,15 @@ void LogIt(const UniqueFile& duplicate, const UniqueFile& file)
 bool HistCheck(const std::vector<QString>& lhs, const std::vector<QString>& rhs)
 {
 	const auto rhsOrder = std::views::zip(rhs, std::views::iota(0)) | std::views::transform([](const auto& item) {
-		const auto& [word, index] = item;
-		return std::make_pair(word, index);
-	}) | std::ranges::to<std::unordered_map>();
+							  const auto& [word, index] = item;
+							  return std::make_pair(word, index);
+						  })
+	                    | std::ranges::to<std::unordered_map>();
 
 	const auto lhsFiltered = std::views::zip(lhs, std::views::iota(0)) | std::views::filter([&](const auto& item) {
-		return rhsOrder.contains(std::get<0>(item));
-	}) | std::views::values | std::ranges::to<std::vector>();
+								 return rhsOrder.contains(std::get<0>(item));
+							 })
+	                       | std::views::values | std::ranges::to<std::vector>();
 
 	const auto need = lhs.size() - 1;
 	if (lhsFiltered.size() < need)
@@ -608,7 +604,8 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		for (query->Execute(); !query->Eof(); query->Next())
 		{
 			auto& uniqueFile = uniqueFiles
-			                       .try_emplace(query->Get<long long>(0),
+			                       .try_emplace(
+									   query->Get<long long>(0),
 									   UniqueFile {
 										   .uid     = { folderName, query->Get<const char*>(1) },
 										   .md5     = query->Get<const char*>(2),
@@ -616,7 +613,8 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 										   .hash    = query->Get<const char*>(4),
 										   .size    = query->Get<size_t>(5),
 										   .simHash = query->Get<QString>(6).toULongLong(nullptr, 16),
-			})
+			}
+								   )
 			                       .first->second;
 
 			uniqueFile.hist.reserve(10);
@@ -641,23 +639,29 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		}
 	};
 
-	process("select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.ImageId", [](const DB::IQuery& query, UniqueFile& file) {
-		ImageItem imageItem {
-			.fileName = query.Get<const char*>(1),
-			.hash     = query.Get<const char*>(2),
-			.pHash    = query.Get<QString>(3).toULongLong(nullptr, 16),
-			.linked   = query.Get<int>(4) != 0,
-		};
+	process(
+		"select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.ImageId",
+		[](const DB::IQuery& query, UniqueFile& file) {
+			ImageItem imageItem {
+				.fileName = query.Get<const char*>(1),
+				.hash     = query.Get<const char*>(2),
+				.pHash    = query.Get<QString>(3).toULongLong(nullptr, 16),
+				.linked   = query.Get<int>(4) != 0,
+			};
 
-		if (imageItem.fileName == Global::COVER)
-			file.cover = std::move(imageItem);
-		else
-			file.images.emplace(std::move(imageItem));
-	});
+			if (imageItem.fileName == Global::COVER)
+				file.cover = std::move(imageItem);
+			else
+				file.images.emplace(std::move(imageItem));
+		}
+	);
 
-	process("select i.FileId, i.Word from Histogram i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.HistogramId", [](const DB::IQuery& query, UniqueFile& file) {
-		file.hist.emplace_back(query.Get<const char*>(1));
-	});
+	process(
+		"select i.FileId, i.Word from Histogram i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.HistogramId",
+		[](const DB::IQuery& query, UniqueFile& file) {
+			file.hist.emplace_back(query.Get<const char*>(1));
+		}
+	);
 
 	return uniqueFiles;
 }

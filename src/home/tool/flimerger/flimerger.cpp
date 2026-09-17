@@ -137,12 +137,14 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	}
 
 	auto toRemove = Zip(dstFilePath).GetFileNameList() | std::views::filter([&](const QString& fileName) {
-		const auto key    = std::make_pair(fileInfo.fileName(), fileName);
-		const auto result = replacement.contains(key);
-		return result;
-	}) | std::views::transform([&, n = 0](const QString& fileName) mutable {
-		return Util::Remove::Book { ++n, fileInfo.fileName(), fileName };
-	}) | std::ranges::to<Util::Remove::Books>();
+						const auto key    = std::make_pair(fileInfo.fileName(), fileName);
+						const auto result = replacement.contains(key);
+						return result;
+					})
+	              | std::views::transform([&, n = 0](const QString& fileName) mutable {
+						return Util::Remove::Book { ++n, fileInfo.fileName(), fileName };
+					})
+	              | std::ranges::to<Util::Remove::Books>();
 
 	if (toRemove.empty())
 		return;
@@ -167,9 +169,9 @@ void FillTemporaryTable(DB::ITransaction& tr, const std::string_view tmpTable, c
 {
 	const auto command = tr.CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable));
 	for (const auto& [duplicate, origin] : container | std::views::transform([&](const auto& item) {
-			 const auto& [first, second] = item;
-			 return std::make_pair(itemToPair(first), itemToPair(second));
-		 }))
+											   const auto& [first, second] = item;
+											   return std::make_pair(itemToPair(first), itemToPair(second));
+										   }))
 	{
 		command->Bind(0, duplicate.first);
 		command->Bind(1, duplicate.second);
@@ -181,8 +183,9 @@ void FillTemporaryTable(DB::ITransaction& tr, const std::string_view tmpTable, c
 
 void UpdateOriginId(DB::ITransaction& tr, const std::string_view tmpTable, const std::string_view updatedField)
 {
-	tr.CreateCommand(std::format(
-						 R"(
+	tr.CreateCommand(
+		  std::format(
+			  R"(
 update File set {} = Id.FileIdOrigin from (
 select f.FileId as FileId, f1.FileId as FileIdOrigin
 from {} t
@@ -193,8 +196,10 @@ join File f1 on f1.FolderId = d1.FolderId and f1.Name = t.FileOrigin
 ) as Id 
 where File.FileId = Id.FileId
 )",
-						 updatedField,
-						 tmpTable))
+			  updatedField,
+			  tmpTable
+		  )
+	)
 		->Execute();
 }
 
@@ -304,12 +309,14 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addHelpOption();
 	parser.addVersionOption();
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives (required)");
-	parser.addOptions({
-		{                       { "o", FOLDER },   "Output folder (required)",                                                        FOLDER },
-		{                                  DUMP,    "Dump database wildcards",                           "Semicolon separated wildcard list" },
-		{ { QString { DATABASE[0] }, DATABASE },  "Books statistics database",                                                          PATH },
-		{                     HAMMING_THRESHOLD, "Hamming distance threshold", QString("number [0, 64] [%1]").arg(settings.hammingThreshold) },
-	});
+	parser.addOptions(
+		{
+			{                       { "o", FOLDER },   "Output folder (required)",                                                        FOLDER },
+			{                                  DUMP,    "Dump database wildcards",                           "Semicolon separated wildcard list" },
+			{ { QString { DATABASE[0] }, DATABASE },  "Books statistics database",                                                          PATH },
+			{                     HAMMING_THRESHOLD, "Hamming distance threshold", QString("number [0, 64] [%1]").arg(settings.hammingThreshold) },
+	}
+	);
 
 	const auto defaultLogPath = QString("%1/%2.%3.log").arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation), COMPANY_ID, APP_ID);
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
@@ -335,12 +342,14 @@ void run(const Settings& settings)
 	[[maybe_unused]] const auto totalFileCount = Total(archives);
 
 	auto              inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
-	UniqueFileStorage uniqueFileStorage(*settings.database,
+	UniqueFileStorage uniqueFileStorage(
+		*settings.database,
 		archives | std::views::transform([](const auto& item) {
 			return QFileInfo(item.filePath).fileName();
 		}) | std::ranges::to<std::unordered_set>(),
 		settings.hammingThreshold,
-		inpDataProvider);
+		inpDataProvider
+	);
 
 	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(*inpDataProvider);
 	uniqueFileStorage.SetConflictResolver(conflictResolver);
