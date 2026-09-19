@@ -890,9 +890,13 @@ where d.Name = ?
 	for (auto&& archive : archives)
 	{
 		const QFileInfo fileInfo(archive.filePath);
-		const auto      archiveFileName = fileInfo.fileName();
-		query->Bind(0, fileInfo.completeBaseName() + ".7z");
+		const auto      archiveFileName   = fileInfo.fileName();
+		const auto      dbArchiveFileName = fileInfo.completeBaseName() + ".7z";
+		query->Bind(0, dbArchiveFileName);
 		query->Execute();
+		const ScopedCall queryResetGuard([&] {
+			query->Reset();
+		});
 		if (query->Eof())
 		{
 			archive.sourceLib = settings.sourceLib;
@@ -914,7 +918,6 @@ where d.Name = ?
 
 			inpDataProvider.SetFile({ archiveFileName, std::move(fileName) }, query->Get<const char*>(2), query->Get<long long>(3));
 		}
-		query->Reset();
 
 		progress.Increment(1, archiveFileName.toStdString());
 	}
@@ -1024,9 +1027,9 @@ int main(int argc, char* argv[])
 		if (parser.isSet(DATABASE))
 			settings.database = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
 
-		settings.sourceLib = parser.value(LIBRARY);
+		settings.sourceLib = parser.value(LIBRARY).toLower();
 		if (settings.sourceLib.isEmpty())
-			settings.sourceLib = availableLibraries.front();
+			settings.sourceLib = availableLibraries.front().toLower();
 		if (!availableLibraries.contains(settings.sourceLib, Qt::CaseInsensitive))
 			throw std::invalid_argument(std::format("{} must be {}", LIBRARY, availableLibraries.join(" | ")));
 
