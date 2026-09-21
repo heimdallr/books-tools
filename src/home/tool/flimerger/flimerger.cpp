@@ -1,5 +1,4 @@
 ﻿#include <ranges>
-#include <set>
 #include <unordered_set>
 
 #include <QCommandLineParser>
@@ -11,8 +10,6 @@
 #include "fnd/StrUtil.h"
 
 #include "database/interface/IDatabase.h"
-#include "database/interface/ITemporaryTable.h"
-#include "database/interface/ITransaction.h"
 
 #include "database/factory/Factory.h"
 #include "impl/FileItem.h"
@@ -25,7 +22,6 @@
 #include "logging/init.h"
 #include "util/BookUtil.h"
 #include "util/LogConsoleFormatter.h"
-#include "util/StrUtil.h"
 #include "util/progress.h"
 
 #include "Constant.h"
@@ -43,84 +39,20 @@ constexpr auto APP_ID = "flimerger";
 constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
 constexpr auto FOLDER                       = "folder";
 constexpr auto PATH                         = "path";
-constexpr auto DUMP                         = "dump";
-constexpr auto HAMMING_THRESHOLD            = "hamming";
 constexpr auto DATABASE                     = "database";
-
-using BookItem    = std::pair<QString, QString>;
-using Replacement = std::unordered_map<BookItem, BookItem, Util::PairHash<QString, QString>>;
 
 struct Settings
 {
 	QDir                           outputDir;
 	QStringList                    arguments;
 	QString                        logFileName;
-	QString                        dumpWildCards;
-	int                            hammingThreshold { 10 };
 	std::unique_ptr<DB::IDatabase> database;
 };
 
-class UniqueFileConflictResolver final : public UniqueFileStorage::IUniqueFileConflictResolver
+void ProcessArchive(const QDir& outputDir, const QString& archive, const std::unordered_set<QString>& replaced)
 {
-public:
-	explicit UniqueFileConflictResolver(InpDataProvider& inpDataProvider)
-		: m_inpDataProvider { inpDataProvider }
-	{
-	}
-
-private: // UniqueFileStorage::IUniqueFileConflictResolver
-	[[nodiscard]] bool Resolve(const UniqueFile& file, const UniqueFile& duplicate) const override
-	{
-		static constexpr std::pair<const char*, int> weights[] {
-			{ "flibusta", 1000 },
-			{ "librusec",  100 }
-		};
-		const auto toComparable = [this](const UniqueFile& item) {
-			const auto* book  = m_inpDataProvider.GetBook(item.uid);
-			const auto  isFb2 = QFileInfo(item.uid.file).suffix().toLower() == "fb2";
-			return book ? std::make_tuple(
-							  true,
-							  !book->deleted,
-							  isFb2,
-							  item.sectionCount,
-							  book->size.toULongLong(),
-							  FindSecond(weights, book->sourceLib.toStdString().data(), 0, PszComparerCaseInsensitive {}),
-							  book->date,
-							  book->libId
-						  )
-			            : std::make_tuple(false, false, isFb2, 0ULL, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
-		};
-
-		return toComparable(file) > toComparable(duplicate);
-	}
-
-private:
-	InpDataProvider& m_inpDataProvider;
-};
-
-class DuplicateObserver final : public UniqueFileStorage::IDuplicateObserver
-{
-public:
-	explicit DuplicateObserver(Replacement& replacement)
-		: m_replacement { replacement }
-	{
-	}
-
-private: // UniqueFileStorage::IDuplicateObserver
-	void OnDuplicateFound(const UniqueFile::Uid& file, const UniqueFile::Uid& duplicate) override
-	{
-		m_replacement.try_emplace(std::make_pair(duplicate.folder, duplicate.file), std::make_pair(file.folder, file.file));
-	}
-
-private:
-	Replacement& m_replacement;
-};
-
-void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replacement& replacement)
-{
-	const QFileInfo fileInfo(archive.filePath);
-
-	const auto dstFilePath = outputDir.filePath(fileInfo.fileName());
+	const QFileInfo fileInfo(archive);
+	const auto      dstFilePath = outputDir.filePath(fileInfo.fileName());
 	QFile::remove(dstFilePath);
 	if (!QFile::copy(fileInfo.filePath(), dstFilePath))
 		throw std::invalid_argument(std::format("Cannot copy {} to {}", fileInfo.filePath(), dstFilePath));
@@ -146,9 +78,7 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	}
 
 	auto toRemove = Zip(dstFilePath).GetFileNameList() | std::views::filter([&](const QString& fileName) {
-						const auto key    = std::make_pair(fileInfo.fileName(), fileName);
-						const auto result = replacement.contains(key);
-						return result;
+						return replaced.contains(fileName);
 					})
 	              | std::views::transform([&, n = 0](const QString& fileName) mutable {
 						return Util::Remove::Book { ++n, fileInfo.fileName(), fileName };
@@ -168,145 +98,17 @@ void ProcessArchive(const QDir& outputDir, const Archive& archive, const Replace
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
 }
 
-auto GetTemporaryTable(DB::IDatabase& db)
+std::unordered_set<QString> GetReplacement(DB::IDatabase& db, const QString& archive)
 {
-	return db.CreateTemporaryTable({ "Folder VARCHAR (64)", "File VARCHAR (256)", "FolderOrigin VARCHAR (64)", "FileOrigin VARCHAR (256)" });
-}
+	std::unordered_set<QString> replaced;
 
-template <typename PairContainer, typename ItemToPair>
-void FillTemporaryTable(DB::ITransaction& tr, const std::string_view tmpTable, const PairContainer& container, const ItemToPair& itemToPair)
-{
-	const auto command = tr.CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable));
-	for (const auto& [duplicate, origin] : container | std::views::transform([&](const auto& item) {
-											   const auto& [first, second] = item;
-											   return std::make_pair(itemToPair(first), itemToPair(second));
-										   }))
-	{
-		command->Bind(0, duplicate.first);
-		command->Bind(1, duplicate.second);
-		command->Bind(2, origin.first);
-		command->Bind(3, origin.second);
-		command->Execute();
-	}
-}
+	const QFileInfo fileInfo(archive);
+	const auto      query = db.CreateQuery("select f.Name from File f join Folder d on d.FolderId = f.FolderId and d.Name = ? where f.OriginId is not null");
+	query->Bind(0, fileInfo.fileName());
+	for (query->Execute(); !query->Eof(); query->Next())
+		replaced.emplace(query->Get<const char*>(0));
 
-void UpdateOriginId(DB::ITransaction& tr, const std::string_view tmpTable, const std::string_view updatedField)
-{
-	tr.CreateCommand(
-		  std::format(
-			  R"(
-update File set {} = Id.FileIdOrigin from (
-select f.FileId as FileId, f1.FileId as FileIdOrigin
-from {} t
-join Folder d on d.Name = t.Folder
-join File f on f.FolderId = d.FolderId and f.Name = t.File
-join Folder d1 on d1.Name = t.FolderOrigin
-join File f1 on f1.FolderId = d1.FolderId and f1.Name = t.FileOrigin
-) as Id 
-where File.FileId = Id.FileId
-)",
-			  updatedField,
-			  tmpTable
-		  )
-	)
-		->Execute();
-}
-
-void UpdateDatabase(DB::IDatabase& db, const QString& path, const Replacement& replacement, InpDataProvider& inpDataProvider)
-{
-	PLOGI << "mark found duplicates in database";
-
-	const QFileInfo fileInfo(path);
-	const auto      folder = fileInfo.fileName();
-
-	const auto tmpTable = GetTemporaryTable(db);
-	const auto tr       = db.CreateTransaction();
-
-	std::vector<std::pair<UniqueFile::Uid, UniqueFile::Uid>> replaced;
-
-	const Zip zip(path);
-	for (const auto& fileName : zip.GetFileNameList())
-	{
-		if (const auto it = replacement.find({ folder, fileName }); it != replacement.end())
-			replaced.emplace_back(UniqueFile::Uid { folder, fileName }, UniqueFile::Uid { it->second.first, it->second.second });
-
-		if (inpDataProvider.GetBook({ folder, fileName }))
-			continue;
-
-		auto book    = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
-		book->folder = folder;
-		WriteParsedBookToDatabase(*tr, *book);
-	}
-
-	FillTemporaryTable(*tr, tmpTable->GetName(), replaced, [](const auto& item) {
-		return std::make_pair(item.folder, item.file);
-	});
-	UpdateOriginId(*tr, tmpTable->GetName(), "OriginId");
-
-	tr->Commit();
-}
-
-void WriteOldDuplicate(DB::IDatabase& db, const UniqueFileStorage::OldDuplicates& oldDuplicates)
-{
-	if (oldDuplicates.empty())
-		return;
-
-	PLOGI << "mark found old duplicates in database";
-
-	const auto tmpTable = GetTemporaryTable(db);
-	const auto tr       = db.CreateTransaction();
-
-	FillTemporaryTable(*tr, tmpTable->GetName(), oldDuplicates, [](const UniqueFile& item) {
-		return std::make_pair(item.uid.folder, item.uid.file);
-	});
-	UpdateOriginId(*tr, tmpTable->GetName(), "NextOriginId");
-
-	tr->Commit();
-}
-
-void MergeArchives(const QDir& outputDir, DB::IDatabase& db, const Archives& archives, const Replacement& replacement, InpDataProvider& inpDataProvider)
-{
-	for (const auto& archive : archives)
-	{
-		ProcessArchive(outputDir, archive, replacement);
-		UpdateDatabase(db, archive.filePath, replacement, inpDataProvider);
-	}
-}
-
-void GetReplacement(DB::IDatabase& db, const QString& path, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider, Util::Progress& progress)
-{
-	const QFileInfo fileInfo(path);
-	const auto      folder = fileInfo.fileName();
-
-	const auto [folderId, sourceLib] = [&] {
-		const auto query = db.CreateQuery("select f.FolderId, s.Name from Folder f join SourceLibrary s on s.SourceLibraryId = f.SourceLibraryId where f.name = ?");
-		query->Bind(0, folder);
-		query->Execute();
-		if (query->Eof())
-			throw std::invalid_argument(std::format("{} not found in database", folder));
-		return std::make_pair(query->Get<long long>(0), query->Get<QString>(1));
-	}();
-
-	inpDataProvider.SetSourceLib(sourceLib);
-
-	for (auto&& uniqueFile : SelectUniqueFiles(db, folderId, folder) | std::views::values)
-	{
-		if (const auto* book = inpDataProvider.SetFile(uniqueFile.uid, uniqueFile.hash, uniqueFile.size))
-			std::ranges::move(Util::UniqTitle(book->title), std::inserter(uniqueFile.title, uniqueFile.title.end()));
-
-		const auto file = uniqueFile.uid.file;
-		auto       hash = uniqueFile.hash;
-		uniqueFileStorage.Add(std::move(hash), std::move(uniqueFile));
-		progress.Increment(1, file.toStdString());
-	}
-}
-
-void GetReplacement(const size_t totalFileCount, DB::IDatabase& db, const Archives& archives, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider)
-{
-	Util::Progress progress(totalFileCount, "parsing");
-
-	for (const auto& archive : archives)
-		GetReplacement(db, archive.filePath, uniqueFileStorage, inpDataProvider, progress);
+	return replaced;
 }
 
 Settings ProcessCommandLine(const QCoreApplication& app)
@@ -320,10 +122,8 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives (required)");
 	parser.addOptions(
 		{
-			{                       { "o", FOLDER },   "Output folder (required)",                                                        FOLDER },
-			{                                  DUMP,    "Dump database wildcards",                           "Semicolon separated wildcard list" },
-			{ { QString { DATABASE[0] }, DATABASE },  "Books statistics database",                                                          PATH },
-			{                     HAMMING_THRESHOLD, "Hamming distance threshold", QString("number [0, 64] [%1]").arg(settings.hammingThreshold) },
+			{                       { "o", FOLDER },  "Output folder (required)", FOLDER },
+			{ { QString { DATABASE[0] }, DATABASE }, "Books statistics database",   PATH },
 	}
 	);
 
@@ -334,43 +134,24 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	if (parser.positionalArguments().isEmpty() || !parser.isSet(FOLDER) || !parser.isSet(DATABASE))
 		parser.showHelp();
 
-	settings.logFileName   = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
-	settings.arguments     = parser.positionalArguments();
-	settings.outputDir     = QDir { parser.value(FOLDER) };
-	settings.database      = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
-	settings.dumpWildCards = parser.value(DUMP);
-	if (parser.isSet(HAMMING_THRESHOLD))
-		settings.hammingThreshold = parser.value(HAMMING_THRESHOLD).toInt();
+	settings.logFileName = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
+	settings.arguments   = parser.positionalArguments();
+	settings.outputDir   = QDir { parser.value(FOLDER) };
+	settings.database    = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
 
 	return settings;
 }
 
 void run(const Settings& settings)
 {
-	const auto                  archives       = GetArchives(settings.arguments);
-	[[maybe_unused]] const auto totalFileCount = Total(archives);
-
-	auto              inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
-	UniqueFileStorage uniqueFileStorage(
-		*settings.database,
-		archives | std::views::transform([](const auto& item) {
-			return QFileInfo(item.filePath).fileName();
-		}) | std::ranges::to<std::unordered_set>(),
-		settings.hammingThreshold,
-		inpDataProvider
-	);
-
-	const auto conflictResolver = std::make_shared<UniqueFileConflictResolver>(*inpDataProvider);
-	uniqueFileStorage.SetConflictResolver(conflictResolver);
-
-	Replacement replacement;
-	uniqueFileStorage.SetDuplicateObserver(std::make_unique<DuplicateObserver>(replacement));
-	GetReplacement(totalFileCount, *settings.database, archives, uniqueFileStorage, *inpDataProvider);
-	WriteOldDuplicate(*settings.database, uniqueFileStorage.GetOldDuplicates());
-
-	PLOGI << "duplicates found: " << replacement.size();
-
-	MergeArchives(settings.outputDir, *settings.database, archives, replacement, *inpDataProvider);
+	const auto     archives = GetArchives(settings.arguments);
+	Util::Progress progress(archives.size(), "merging");
+	for (const auto& archive : archives)
+	{
+		const auto replaced = GetReplacement(*settings.database, archive.filePath);
+		ProcessArchive(settings.outputDir, archive.filePath, replaced);
+		progress.Increment(1, archive.filePath.toStdString());
+	}
 }
 
 } // namespace
