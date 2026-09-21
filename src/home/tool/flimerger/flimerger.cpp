@@ -10,6 +10,7 @@
 #include "fnd/StrUtil.h"
 
 #include "database/interface/IDatabase.h"
+#include "database/interface/ITransaction.h"
 
 #include "database/factory/Factory.h"
 #include "impl/FileItem.h"
@@ -40,16 +41,61 @@ constexpr auto ARCHIVE_WILDCARD_OPTION_NAME = "archives";
 constexpr auto FOLDER                       = "folder";
 constexpr auto PATH                         = "path";
 constexpr auto DATABASE                     = "database";
+constexpr auto DUMP                         = "dump";
 
 struct Settings
 {
 	QDir                           outputDir;
 	QStringList                    arguments;
 	QString                        logFileName;
+	QString                        dumpWildCards;
 	std::unique_ptr<DB::IDatabase> database;
 };
 
-void ProcessArchive(const QDir& outputDir, const QString& archive, const std::unordered_set<QString>& replaced)
+size_t WriteParsedBooks(DB::IDatabase& db, const QString& folder, InpDataProvider& inpDataProvider, const Zip& zip)
+{
+	size_t count = 0;
+
+	const auto fileList      = zip.GetFileNameList();
+	const auto alreadyParsed = [&] {
+		std::unordered_set<QString> result;
+		const auto                  query = db.CreateQuery("SELECT f.Name FROM FileCustom c JOIN File f ON f.FileId = c.FileId JOIN Folder d ON d.FolderId = f.FolderId AND d.Name = ?");
+		query->Bind(0, folder);
+		for (query->Execute(); !query->Eof(); query->Next())
+			result.emplace(query->Get<const char*>(0));
+		return result;
+	}();
+	const auto tr = db.CreateTransaction();
+	for (const auto& fileName : fileList | std::views::filter([&](const QString& item) {
+									return !alreadyParsed.contains(item) && !inpDataProvider.SetFile({ .folder = folder, .file = item }, {}, 0);
+								}))
+	{
+		auto book = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
+		WriteParsedBookToDatabase(*tr, *book);
+		++count;
+	}
+	tr->Commit();
+
+	return count;
+}
+
+struct ProcessResult
+{
+	size_t total { 0 };
+	size_t removed { 0 };
+	size_t parsed { 0 };
+
+	ProcessResult& operator+=(const ProcessResult& rhs) noexcept
+	{
+		total   += rhs.total;
+		removed += rhs.removed;
+		parsed  += rhs.parsed;
+
+		return *this;
+	}
+};
+
+ProcessResult ProcessArchive(const QDir& outputDir, DB::IDatabase& db, const QString& archive, const std::unordered_set<QString>& replaced, InpDataProvider& inpDataProvider)
 {
 	const QFileInfo fileInfo(archive);
 	const auto      dstFilePath = outputDir.filePath(fileInfo.fileName());
@@ -77,7 +123,17 @@ void ProcessArchive(const QDir& outputDir, const QString& archive, const std::un
 			throw std::invalid_argument(std::format("Cannot copy {} to {}", imageArchiveFileSrc, imageArchiveFileDst));
 	}
 
-	auto toRemove = Zip(dstFilePath).GetFileNameList() | std::views::filter([&](const QString& fileName) {
+	ProcessResult result;
+
+	auto fileList = [&] {
+		const Zip zip(dstFilePath);
+		result.parsed = WriteParsedBooks(db, fileInfo.fileName(), inpDataProvider, zip);
+		return zip.GetFileNameList();
+	}();
+
+	result.total = fileList.size();
+
+	auto toRemove = fileList | std::views::filter([&](const QString& fileName) {
 						return replaced.contains(fileName);
 					})
 	              | std::views::transform([&, n = 0](const QString& fileName) mutable {
@@ -86,7 +142,9 @@ void ProcessArchive(const QDir& outputDir, const QString& archive, const std::un
 	              | std::ranges::to<Util::Remove::Books>();
 
 	if (toRemove.empty())
-		return;
+		return result;
+
+	result.removed = toRemove.size();
 
 	auto allFiles = CollectBookFiles(toRemove, [] {
 		return nullptr;
@@ -96,6 +154,8 @@ void ProcessArchive(const QDir& outputDir, const QString& archive, const std::un
 	});
 	std::ranges::move(std::move(images), std::inserter(allFiles, allFiles.end()));
 	Util::Remove::RemoveFiles(allFiles, outputDir.absolutePath());
+
+	return result;
 }
 
 std::unordered_set<QString> GetReplacement(DB::IDatabase& db, const QString& archive)
@@ -122,8 +182,9 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addPositionalArgument(ARCHIVE_WILDCARD_OPTION_NAME, "Input archives (required)");
 	parser.addOptions(
 		{
-			{                       { "o", FOLDER },  "Output folder (required)", FOLDER },
-			{ { QString { DATABASE[0] }, DATABASE }, "Books statistics database",   PATH },
+			{                       { "o", FOLDER },  "Output folder (required)",                              FOLDER },
+			{                                  DUMP,   "Dump database wildcards", "Semicolon separated wildcard list" },
+			{ { QString { DATABASE[0] }, DATABASE }, "Books statistics database",                                PATH },
 	}
 	);
 
@@ -134,24 +195,41 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	if (parser.positionalArguments().isEmpty() || !parser.isSet(FOLDER) || !parser.isSet(DATABASE))
 		parser.showHelp();
 
-	settings.logFileName = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
-	settings.arguments   = parser.positionalArguments();
-	settings.outputDir   = QDir { parser.value(FOLDER) };
-	settings.database    = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
+	settings.logFileName   = parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath;
+	settings.arguments     = parser.positionalArguments();
+	settings.outputDir     = QDir { parser.value(FOLDER) };
+	settings.dumpWildCards = parser.value(DUMP);
+	settings.database      = Create(DB::Factory::Impl::Sqlite, std::format("path={};flag=READWRITE", parser.value(DATABASE)));
 
 	return settings;
 }
 
 void run(const Settings& settings)
 {
-	const auto     archives = GetArchives(settings.arguments);
+	const auto archives        = GetArchives(settings.arguments);
+	const auto inpDataProvider = std::make_shared<InpDataProvider>(settings.dumpWildCards);
+
+	ProcessResult count;
+
 	Util::Progress progress(archives.size(), "merging");
 	for (const auto& archive : archives)
 	{
-		const auto replaced = GetReplacement(*settings.database, archive.filePath);
-		ProcessArchive(settings.outputDir, archive.filePath, replaced);
-		progress.Increment(1, archive.filePath.toStdString());
+		const auto folder    = QFileInfo(archive.filePath).fileName();
+		const auto sourceLib = [&] {
+			const auto query = settings.database->CreateQuery("select l.Name from SourceLibrary l join Folder d on d.SourceLibraryId = l.SourceLibraryId and d.Name = ?");
+			query->Bind(0, folder);
+			query->Execute();
+			assert(!query->Eof());
+			return query->Get<QString>(0);
+		}();
+		inpDataProvider->SetSourceLib(sourceLib);
+		const auto replaced  = GetReplacement(*settings.database, archive.filePath);
+		const auto result    = ProcessArchive(settings.outputDir, *settings.database, archive.filePath, replaced, *inpDataProvider);
+		count               += result;
+		progress.Increment(1, QString("%1: %2").arg(folder, result.total).toStdString());
 	}
+
+	PLOGI << "total books removed: " << count.removed << ", parsed: " << count.parsed;
 }
 
 } // namespace
