@@ -304,6 +304,8 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 		QString fileName = QDir::fromNativeSeparators(query.Get<const char*>(5));
 		auto    type     = query.Get<QString>(9).toLower();
 
+		const QFileInfo fileInfo(fileName);
+
 		if (fileName.isEmpty())
 		{
 			fileName = libId;
@@ -312,7 +314,6 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 		}
 		else
 		{
-			const QFileInfo fileInfo(fileName);
 			type = fileInfo.suffix().toLower();
 			if (const auto dir = fileInfo.dir(); dir.dirName() == '.')
 				fileName = fileInfo.completeBaseName();
@@ -320,37 +321,45 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 				fileName = dir.filePath(fileInfo.completeBaseName());
 		}
 
-		auto index = fileName + "." + type;
-
-		auto it = inpData.find(index);
+		auto it = inpData.find(libId);
 		if (it == inpData.end())
 		{
 			const auto* deleted = query.Get<const char*>(8);
+			auto        book    = std::make_shared<Book>(Book {
+				.author    = query.Get<const char*>(0),
+				.genre     = query.Get<const char*>(1),
+				.title     = query.Get<const char*>(2),
+				.file      = fileName,
+				.size      = query.Get<const char*>(6),
+				.libId     = std::move(libId),
+				.deleted   = deleted && *deleted != '0',
+				.ext       = std::move(type),
+				.date      = QString::fromUtf8(query.Get<const char*>(10), 10),
+				.lang      = GetLanguage(QString(query.Get<QString>(11)).toLower()).toString(),
+				.rate      = query.Get<double>(12),
+				.rateCount = query.Get<int>(13),
+				.keywords  = query.Get<const char*>(14),
+				.year      = query.Get<const char*>(15),
+				.sourceLib = dump.GetName(),
+				.hash      = query.Get<const char*>(16),
+			});
+			book->title.replace(QChar { 0x2028 }, ' ');
+			it = inpData.emplace(book->libId, book);
 
-			it = inpData
-			         .try_emplace(
-						 std::move(index),
-						 std::make_unique<Book>(Book {
-							 .author    = query.Get<const char*>(0),
-							 .genre     = query.Get<const char*>(1),
-							 .title     = query.Get<const char*>(2),
-							 .file      = std::move(fileName),
-							 .size      = query.Get<const char*>(6),
-							 .libId     = std::move(libId),
-							 .deleted   = deleted && *deleted != '0',
-							 .ext       = std::move(type),
-							 .date      = QString::fromUtf8(query.Get<const char*>(10), 10),
-							 .lang      = GetLanguage(QString(query.Get<QString>(11)).toLower()).toString(),
-							 .rate      = query.Get<double>(12),
-							 .rateCount = query.Get<int>(13),
-							 .keywords  = query.Get<const char*>(14),
-							 .year      = query.Get<const char*>(15),
-							 .sourceLib = dump.GetName(),
-							 .hash      = query.Get<const char*>(16),
-						 })
-					 )
-			         .first;
-			it->second->title.replace(QChar { 0x2028 }, ' ');
+			while (true)
+			{
+				auto index = fileName.toLower().toLower().normalized(QString::NormalizationForm_D);
+				index.removeIf([](const QChar ch) {
+					return !IsOneOf(ch.category(), QChar::Category::Letter_Lowercase, QChar::Category::Number_DecimalDigit);
+				});
+
+				inpData.emplace(std::move(index), book);
+				const auto dotIndex = fileName.lastIndexOf('.');
+				if (dotIndex < 0)
+					break;
+
+				fileName.resize(dotIndex);
+			}
 		}
 
 		QString seriesTitleSrc = query.Get<const char*>(3);
@@ -414,6 +423,7 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 
 Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, const bool isDeleted)
 {
+	PLOGI << "parsing " << folder + "/" + fileName;
 	const auto parser = [&] {
 		const auto it = std::ranges::find_if(FILE_PARSERS, [&](const auto& item) {
 			return fileName.endsWith(item.first, Qt::CaseInsensitive);
@@ -425,11 +435,13 @@ Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const
 	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}))
 	{
 		PLOGI << parserName << " parser finished";
+		parsedBook->folder = folder;
 		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook)));
 	}
 
 	PLOGW << "unknown book";
-	auto book = std::make_unique<Book>(Book::CreateUnknown(fileName, zip.GetFileSize(fileName), zip.GetFileTime(fileName).date()));
+	auto book    = std::make_unique<Book>(Book::CreateUnknown(fileName, zip.GetFileSize(fileName), zip.GetFileTime(fileName).date()));
+	book->folder = folder;
 	return inpDataProvider.AddBook(std::move(book));
 }
 

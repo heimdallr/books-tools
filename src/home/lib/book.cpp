@@ -63,7 +63,7 @@ QString Book::GetFileName() const
 
 QString Book::GetUid() const
 {
-	return QString("%1#%2").arg(folder, GetFileName());
+	return QString("%1#%2").arg(folder, file);
 }
 
 namespace HomeCompa::FliLib {

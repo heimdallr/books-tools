@@ -78,8 +78,17 @@ private: // UniqueFileStorage::IUniqueFileConflictResolver
 		const auto toComparable = [this](const UniqueFile& item) {
 			const auto* book  = m_inpDataProvider.GetBook(item.uid);
 			const auto  isFb2 = QFileInfo(item.uid.file).suffix().toLower() == "fb2";
-			return book ? std::make_tuple(true, !book->deleted, isFb2, FindSecond(weights, book->sourceLib.toStdString().data(), 0, PszComparerCaseInsensitive {}), book->date, book->libId)
-			            : std::make_tuple(false, false, isFb2, 0, QString { "0000-00-00" }, item.uid.file);
+			return book ? std::make_tuple(
+							  true,
+							  !book->deleted,
+							  isFb2,
+							  item.sectionCount,
+							  book->size.toULongLong(),
+							  FindSecond(weights, book->sourceLib.toStdString().data(), 0, PszComparerCaseInsensitive {}),
+							  book->date,
+							  book->libId
+						  )
+			            : std::make_tuple(false, false, isFb2, 0ULL, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
 		};
 
 		return toComparable(file) > toComparable(duplicate);

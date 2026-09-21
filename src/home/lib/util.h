@@ -30,7 +30,7 @@ class InpDataProvider;
 class IDump;
 struct Book;
 
-using InpData = std::unordered_map<QString, std::shared_ptr<Book>, Util::CaseInsensitiveHash<QString>>;
+using InpData = std::unordered_multimap<QString, std::shared_ptr<Book>, Util::CaseInsensitiveHash<QString>>;
 
 struct FileInfo
 {

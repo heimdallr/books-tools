@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFile>
 
+#include "fnd/IsOneOf.h"
 #include "fnd/ScopedCall.h"
 
 #include "database/interface/IDatabase.h"
@@ -50,14 +51,14 @@ using ImagesCompareResult = UniqueFileStorage::ImageComparer::ImagesCompareResul
 class ImageComparerSub final : public UniqueFileStorage::ImageComparer
 {
 private: // UniqueFileStorage::ImageComparer
-	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
+	[[nodiscard]] std::pair<ImagesCompareResult, bool> Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
 	{
 		if (!Util::Intersect(lhs.title, rhs.title))
-			return ImagesCompareResult::Varied;
+			return { ImagesCompareResult::Varied, false };
 
 		const auto lhsImageCount = lhs.images.size() + !lhs.cover.hash.isEmpty();
 		const auto rhsImageCount = rhs.images.size() + !rhs.cover.hash.isEmpty();
-		return lhsImageCount < rhsImageCount ? ImagesCompareResult::Inner : lhsImageCount > rhsImageCount ? ImagesCompareResult::Outer : ImagesCompareResult::Equal;
+		return { lhsImageCount < rhsImageCount ? ImagesCompareResult::Inner : lhsImageCount > rhsImageCount ? ImagesCompareResult::Outer : ImagesCompareResult::Equal, true };
 	}
 };
 
@@ -70,7 +71,7 @@ public:
 	}
 
 private: // UniqueFileStorage::ImageComparer
-	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
+	[[nodiscard]] std::pair<ImagesCompareResult, bool> Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
 	{
 		using PHash       = std::pair<uint64_t, uint64_t>;
 		using ImageHashes = std::unordered_multimap<PHash, QString, Util::PairHash<uint64_t, uint64_t>>;
@@ -78,6 +79,9 @@ private: // UniqueFileStorage::ImageComparer
 		const auto getDistance = [](const PHash& lh, const PHash& rh) {
 			return std::min({ std::popcount(lh.first ^ rh.first), std::popcount(lh.first ^ rh.second), std::popcount(lh.second ^ rh.first), std::popcount(lh.second ^ rh.second) });
 		};
+
+		bool sameFound = false;
+
 		const auto filterLinked = [&](const std::set<ImageItem>& items, const ImageItem& cover) {
 			return items | std::views::filter([&](const auto& item) {
 					   if (!item.linked)
@@ -85,6 +89,8 @@ private: // UniqueFileStorage::ImageComparer
 
 					   if (getDistance({ item.pHash, item.pHash2 }, { cover.pHash, cover.pHash2 }) > m_threshold)
 						   return true;
+
+					   sameFound = true;
 					   return false;
 				   })
 			     | std::views::transform([](const auto& item) {
@@ -118,6 +124,7 @@ private: // UniqueFileStorage::ImageComparer
 
 			++lIt;
 			++rIt;
+			sameFound = true;
 		}
 
 		const auto transform = [](const auto& item) {
@@ -144,6 +151,7 @@ private: // UniqueFileStorage::ImageComparer
 
 				lIds.erase(l);
 				rIds.erase(r);
+				sameFound = true;
 			}
 		}
 
@@ -151,26 +159,26 @@ private: // UniqueFileStorage::ImageComparer
 		if (!rIds.empty())
 			result = result == ImagesCompareResult::Outer ? ImagesCompareResult::Varied : ImagesCompareResult::Inner;
 		if (result == ImagesCompareResult::Varied)
-			return result;
+			return { result, sameFound };
 
 		if (result == ImagesCompareResult::Equal && lhs.cover.hash.isEmpty() != rhs.cover.hash.isEmpty())
 			result = rhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : (assert(lhs.cover.hash.isEmpty()), ImagesCompareResult::Inner);
 
 		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.md5 == rhs.md5)
-			return result;
+			return { result, sameFound };
 
 		if (Util::Intersect(lhs.title, rhs.title))
-			return result;
+			return { result, sameFound };
 
 		PLOGW << QString("same hash, different titles: %1/%2 %3 vs %4/%5 %6").arg(lhs.uid.folder, lhs.uid.file, lhs.GetTitle(), rhs.uid.folder, rhs.uid.file, rhs.GetTitle());
-		return ImagesCompareResult::Varied;
+		return { ImagesCompareResult::Varied, sameFound };
 	}
 
 private:
 	const int m_threshold;
 };
 
-std::unique_ptr<UniqueFileStorage::ImageComparer> GetImageCompared(const int hammingThreshold)
+std::unique_ptr<UniqueFileStorage::ImageComparer> GetImageComparer(const int hammingThreshold)
 {
 	return hammingThreshold >= 64 ? std::unique_ptr<UniqueFileStorage::ImageComparer> { std::make_unique<ImageComparerSub>() } : std::make_unique<ImageComparerHamming>(hammingThreshold);
 }
@@ -214,25 +222,44 @@ InpDataProvider::InpDataProvider(const QString& dumpWildCards)
 
 InpDataProvider::~InpDataProvider() = default;
 
+QString NormalizeFileName(QString file)
+{
+	const QFileInfo fileInfo(file);
+	if (const auto dir = fileInfo.dir(); dir.dirName() == '.')
+		file = fileInfo.completeBaseName().toLower().normalized(QString::NormalizationForm_D);
+	else
+		file = dir.filePath(fileInfo.completeBaseName()).toLower().normalized(QString::NormalizationForm_D);
+
+	file.removeIf([](const QChar ch) {
+		return !IsOneOf(ch.category(), QChar::Category::Letter_Lowercase, QChar::Category::Number_DecimalDigit);
+	});
+	return file;
+}
+
 Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 {
-	if (const auto it = m_data.find(QString("%1#%2").arg(uid.folder, uid.file)); it != m_data.end())
+	const auto file   = NormalizeFileName(uid.file);
+	auto [begin, end] = m_data.equal_range(QString("%1#%2").arg(uid.folder, file));
+
+	if (const auto it = std::find_if(
+			begin,
+			end,
+			[&](const auto& item) {
+				return item.second->GetFileName() == uid.file;
+			}
+		);
+	    it != end)
 		return it->second.get();
 
-	if (!std::ranges::empty(m_cache | std::views::filter([this](const auto& item) {
-								return &item.inpData != m_currentInpData && !item.inpData.empty();
-							})))
+	if (begin != end)
+		return begin->second.get();
+
+	const QFileInfo fileInfo(uid.file);
+	if (fileInfo.suffix() == fileInfo.completeSuffix())
 		return nullptr;
 
-	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
-		return it->second.get();
-
-	auto file = uid.file;
-	for (auto baseFile = QFileInfo(file).completeBaseName(); baseFile != file; file = baseFile)
-		if (const auto it = m_currentInpData->find(baseFile); it != m_currentInpData->end())
-			return it->second.get();
-
-	return nullptr;
+	QStringView fileView { uid.file.begin(), std::prev(uid.file.end(), fileInfo.suffix().length() + 1) };
+	return GetBook({ .folder = uid.folder, .file = fileView.toString() });
 }
 
 Book* InpDataProvider::GetBook(const QString& sourceLib, const QString& libId) const
@@ -292,7 +319,7 @@ Book* InpDataProvider::AddBook(Book* book)
 Book* InpDataProvider::AddBook(std::unique_ptr<Book> book)
 {
 	auto  key    = book->GetUid();
-	auto& result = m_data.try_emplace(std::move(key), std::move(book)).first->second;
+	auto& result = m_data.emplace(std::move(key), std::move(book))->second;
 	return m_books.emplace_back(result.get());
 }
 
@@ -303,34 +330,33 @@ const std::vector<Book*>& InpDataProvider::Books() const noexcept
 
 Book* InpDataProvider::SetFile(const UniqueFile::Uid& uid, QString id, const size_t size)
 {
-	const auto add = [&](std::shared_ptr<Book> bookSrc) {
-		auto& book   = m_data.try_emplace(QString("%1#%2").arg(uid.folder, uid.file), std::move(bookSrc)).first->second;
-		book->id     = std::move(id);
-		book->folder = uid.folder;
-		if (size != 0)
-			book->size = QString::number(size);
-		return book.get();
-	};
+	const auto file = NormalizeFileName(uid.file);
 
 	assert(m_currentInpData);
-	if (const auto it = m_currentInpData->find(uid.file); it != m_currentInpData->end())
+	const auto it = m_currentInpData->find(file);
+	if (it == m_currentInpData->end())
 	{
-		assert(it->second);
-		return add(it->second);
+		const QFileInfo fileInfo(uid.file);
+		if (fileInfo.suffix() == fileInfo.completeSuffix())
+			return nullptr;
+
+		QStringView fileView { uid.file.begin(), std::prev(uid.file.end(), fileInfo.suffix().length() + 1) };
+		return SetFile({ .folder = uid.folder, .file = fileView.toString() }, id, size);
 	}
 
-	const QFileInfo fileInfo(uid.file);
-	if (const auto it = m_currentInpData->find(fileInfo.baseName() + "." + fileInfo.suffix()); it != m_currentInpData->end())
-	{
-		assert(it->second);
-		return add(it->second);
-	}
+	assert(it->second);
+	auto& book   = m_data.emplace(QString("%1#%2").arg(uid.folder, file), it->second)->second;
+	book->id     = std::move(id);
+	book->folder = uid.folder;
+	if (size != 0)
+		book->size = QString::number(size);
 
-	return nullptr;
+	return book.get();
 }
 
 UniqueFileStorage::UniqueFileStorage(DB::IDatabase& db, const std::unordered_set<QString>& skipFolders, const int hammingThreshold, std::shared_ptr<InpDataProvider> inpDataProvider)
-	: m_imageComparer { GetImageCompared(hammingThreshold) }
+	: m_hammingThreshold { hammingThreshold }
+	, m_imageComparer { GetImageComparer(m_hammingThreshold) }
 	, m_inpDataProvider { std::move(inpDataProvider) }
 	, m_duplicateObserver { std::make_unique<DuplicateObserverStub>() }
 	, m_conflictResolver { std::make_unique<UniqueFileConflictResolver>() }
@@ -422,15 +448,42 @@ bool HistCheck(const std::vector<QString>& lhs, const std::vector<QString>& rhs)
 	return false;
 }
 
+bool HasSameSeriesSeqNumber(const UniqueFile::Uid& lhs, const UniqueFile::Uid& rhs, const InpDataProvider& inpDataProvider)
+{
+	const auto* lBook = inpDataProvider.GetBook(lhs);
+	if (!lBook)
+		return false;
+
+	const auto* rBook = inpDataProvider.GetBook(rhs);
+	if (!rBook)
+		return false;
+
+	const auto lSeries = lBook->series | std::views::filter([](const Series& item) {
+							 return !(item.title.isEmpty() && item.serNo.isEmpty());
+						 })
+	                   | std::views::transform([](const Series& item) {
+							 return std::make_pair(item.title, item.serNo);
+						 })
+	                   | std::ranges::to<std::unordered_map>();
+	if (lSeries.empty())
+		return false;
+
+	return std::ranges::any_of(rBook->series, [&](const Series& item) {
+		if (const auto it = lSeries.find(item.title); it != lSeries.end())
+			return it->second == item.serNo;
+		return false;
+	});
+}
+
 bool UniqueFileStorage::CheckForOld(const size_t indexDuplicate, const size_t indexFile, const bool histCheck)
 {
 	auto&       duplicate = m_files[indexDuplicate];
 	const auto& file      = m_files[indexFile];
 
-	if (histCheck && !HistCheck(duplicate.hist, file.hist))
+	if (histCheck && !HasSameSeriesSeqNumber(file.uid, duplicate.uid, *m_inpDataProvider) && !HistCheck(duplicate.hist, file.hist))
 		return false;
 
-	const auto imagesCompareResult = m_imageComparer->Compare(file, duplicate);
+	const auto imagesCompareResult = m_imageComparer->Compare(file, duplicate).first;
 	if (imagesCompareResult == ImagesCompareResult::Varied)
 		return false;
 
@@ -476,10 +529,10 @@ std::optional<UniqueFile*> UniqueFileStorage::CheckForNew(const QString& hash, c
 	{
 		auto& file = m_files[indexCurrent];
 
-		if (histCheck && !HistCheck(duplicate.hist, file.hist))
+		if (histCheck && !HasSameSeriesSeqNumber(file.uid, duplicate.uid, *m_inpDataProvider) && !HistCheck(duplicate.hist, file.hist))
 			continue;
 
-		const auto imagesCompareResult = m_imageComparer->Compare(file, duplicate);
+		const auto imagesCompareResult = m_imageComparer->Compare(file, duplicate).first;
 		if (imagesCompareResult == ImagesCompareResult::Varied)
 			continue;
 
@@ -626,6 +679,16 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 			                       .first->second;
 
 			uniqueFile.hist.reserve(10);
+		}
+	}
+	{
+		const auto query = db.CreateQuery("select f.FileId, count(42) from File f join Section s on s.FileId = f.FileId  where f.FolderId = ? and f.OriginId is null group by f.FileId");
+		query->Bind(0, folderId);
+		for (query->Execute(); !query->Eof(); query->Next())
+		{
+			const auto it = uniqueFiles.find(query->Get<long long>(0));
+			assert(it != uniqueFiles.end());
+			it->second.sectionCount = query->Get<size_t>(1);
 		}
 	}
 

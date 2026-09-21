@@ -36,8 +36,9 @@ struct LIB_EXPORT UniqueFile
 	QString              hash;
 	ImageItem            cover;
 	std::set<ImageItem>  images;
-	size_t               size;
-	uint64_t             simHash;
+	size_t               size { 0 };
+	size_t               sectionCount { 0 };
+	uint64_t             simHash { 0 };
 	std::vector<QString> hist;
 
 	QString GetTitle() const;
@@ -131,7 +132,7 @@ public:
 	public:
 		virtual ~ImageComparer() = default;
 
-		[[nodiscard]] virtual ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const = 0;
+		[[nodiscard]] virtual std::pair<ImagesCompareResult, bool> Compare(const UniqueFile& lhs, const UniqueFile& rhs) const = 0;
 	};
 
 public:
@@ -156,6 +157,7 @@ private:
 	std::optional<UniqueFile*> CheckForNew(const QString& hash, size_t indexDuplicate, bool histCheck);
 
 private:
+	const int                                    m_hammingThreshold;
 	const std::unique_ptr<const ImageComparer>   m_imageComparer;
 	std::shared_ptr<InpDataProvider>             m_inpDataProvider;
 	std::unique_ptr<IDuplicateObserver>          m_duplicateObserver;
