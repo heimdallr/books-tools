@@ -21,13 +21,14 @@ Archives GetArchives(const QStringList& wildCards)
 {
 	std::multimap<int, Archive> sorted;
 	std::unordered_set<QString> uniqueFiles;
-	const QRegularExpression    rx("^.*?([0-9]+).*?$");
+	const QRegularExpression    rx(R"(^.*?-([\d]+)-.*?$)");
 
 	for (const auto& wildCard : wildCards)
 		std::ranges::move(
 			Util::ResolveWildcard(wildCard) | std::views::as_rvalue | std::views::transform([&](QString&& item) {
-				const auto match = rx.match(QFileInfo(item).fileName());
-				return std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, Archive { .filePath = std::move(item), .sourceLib = {} });
+				const auto match  = rx.match(QFileInfo(item).fileName());
+				auto       result = std::make_pair(match.hasMatch() ? match.captured(1).toInt() : 0, Archive { .filePath = std::move(item), .sourceLib = {} });
+				return result;
 			}),
 			std::inserter(sorted, sorted.end())
 		);
