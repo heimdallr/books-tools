@@ -154,7 +154,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 
 	const auto insertImage = [&](const long long fileId, const QString& name, const ImageHashItem& item, const bool linked) {
 		insertQuery(
-			"insert into Image(FileId, Name, EncodedSize, DecodedSize, Width, Height, PHash, Md5, Linked, HasAlpha) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"insert into Image(FileId, Name, EncodedSize, DecodedSize, Width, Height, PHash, PHash2, Md5, Linked, HasAlpha) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			{
 				QString::number(fileId),
 				name,
@@ -163,6 +163,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 				QString::number(item.size.width()),
 				QString::number(item.size.height()),
 				QString("%1").arg(item.pHash, 16, 16, QChar { '0' }),
+				QString("%1").arg(item.pHash2, 16, 16, QChar { '0' }),
 				item.hash,
 				linked ? "1" : "0",
 				item.hasAlpha ? "1" : "0",

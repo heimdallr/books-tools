@@ -72,12 +72,20 @@ public:
 private: // UniqueFileStorage::ImageComparer
 	[[nodiscard]] ImagesCompareResult Compare(const UniqueFile& lhs, const UniqueFile& rhs) const override
 	{
-		using ImageHashes = std::unordered_multimap<uint64_t, QString>;
-		using ImageHash   = std::pair<uint64_t, QString>;
+		using PHash       = std::pair<uint64_t, uint64_t>;
+		using ImageHashes = std::unordered_multimap<PHash, QString, Util::PairHash<uint64_t, uint64_t>>;
 
-		const auto filterLinked = [this](const std::set<ImageItem>& items, const ImageItem& cover) {
+		const auto getDistance = [](const PHash& lh, const PHash& rh) {
+			return std::min({ std::popcount(lh.first ^ rh.first), std::popcount(lh.first ^ rh.second), std::popcount(lh.second ^ rh.first), std::popcount(lh.second ^ rh.second) });
+		};
+		const auto filterLinked = [&](const std::set<ImageItem>& items, const ImageItem& cover) {
 			return items | std::views::filter([&](const auto& item) {
-					   return item.linked && std::popcount(item.pHash ^ cover.pHash) > m_threshold;
+					   if (!item.linked)
+						   return false;
+
+					   if (getDistance({ item.pHash, item.pHash2 }, { cover.pHash, cover.pHash2 }) > m_threshold)
+						   return true;
+					   return false;
 				   })
 			     | std::views::transform([](const auto& item) {
 					   return std::reference_wrapper(item);
@@ -96,14 +104,14 @@ private: // UniqueFileStorage::ImageComparer
 			const auto& rRef = rIt->get();
 			if (lRef.hash < rRef.hash)
 			{
-				lpHashes.emplace(lRef.pHash, lRef.fileName);
+				lpHashes.emplace(std::make_pair(lRef.pHash, lRef.pHash2), lRef.fileName);
 				++lIt;
 				continue;
 			}
 
 			if (lRef.hash > rRef.hash)
 			{
-				rpHashes.emplace(rRef.pHash, rRef.fileName);
+				rpHashes.emplace(std::make_pair(rRef.pHash, rRef.pHash2), rRef.fileName);
 				++rIt;
 				continue;
 			}
@@ -113,7 +121,7 @@ private: // UniqueFileStorage::ImageComparer
 		}
 
 		const auto transform = [](const auto& item) {
-			return std::make_pair(item.get().pHash, item.get().fileName);
+			return std::make_pair(std::make_pair(item.get().pHash, item.get().pHash2), item.get().fileName);
 		};
 		std::transform(lIt, lhsImages.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
 		std::transform(rIt, rhsImages.cend(), std::inserter(rpHashes, rpHashes.end()), transform);
@@ -123,19 +131,19 @@ private: // UniqueFileStorage::ImageComparer
 
 		if (!(lpHashes.empty() || rpHashes.empty()))
 		{
-			std::multimap<std::pair<int, int>, std::pair<ImageHash, ImageHash>> distances;
+			std::multimap<std::pair<int, int>, std::pair<QString, QString>> distances;
 			for (const auto& l : lpHashes)
 				for (const auto& r : rpHashes)
-					distances.emplace(std::make_pair(std::popcount(l.first ^ r.first), std::abs(l.second.toInt() - r.second.toInt())), std::make_pair(l, r));
+					distances.emplace(std::make_pair(getDistance(l.first, r.first), std::abs(l.second.toInt() - r.second.toInt())), std::make_pair(l.second, r.second));
 			distances.erase(distances.upper_bound(std::make_pair(m_threshold, 0)), distances.end());
 
 			for (const auto& [l, r] : distances | std::views::values)
 			{
-				if (!lIds.contains(l.second) || !rIds.contains(r.second))
+				if (!lIds.contains(l) || !rIds.contains(r))
 					continue;
 
-				lIds.erase(l.second);
-				rIds.erase(r.second);
+				lIds.erase(l);
+				rIds.erase(r);
 			}
 		}
 
@@ -640,13 +648,14 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 	};
 
 	process(
-		"select i.FileId, i.Name, i.Md5, i.PHash, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.ImageId",
+		"select i.FileId, i.Name, i.Md5, i.PHash, i.PHash2, i.linked from Image i join File f on f.FileId = i.FileId and f.FolderId = ? and f.OriginId is null order by i.FileId, i.ImageId",
 		[](const DB::IQuery& query, UniqueFile& file) {
 			ImageItem imageItem {
 				.fileName = query.Get<const char*>(1),
 				.hash     = query.Get<const char*>(2),
 				.pHash    = query.Get<QString>(3).toULongLong(nullptr, 16),
-				.linked   = query.Get<int>(4) != 0,
+				.pHash2   = query.Get<QString>(4).toULongLong(nullptr, 16),
+				.linked   = query.Get<int>(5) != 0,
 			};
 
 			if (imageItem.fileName == Global::COVER)
