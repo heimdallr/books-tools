@@ -226,7 +226,7 @@ void run(const Settings& settings)
 		const auto replaced  = GetReplacement(*settings.database, archive.filePath);
 		const auto result    = ProcessArchive(settings.outputDir, *settings.database, archive.filePath, replaced, *inpDataProvider);
 		count               += result;
-		progress.Increment(1, QString("%1: %2").arg(folder, result.total).toStdString());
+		progress.Increment(1, QString("%1: %2").arg(folder).arg(result.total).toStdString());
 	}
 
 	PLOGI << "total books removed: " << count.removed << ", parsed: " << count.parsed;
