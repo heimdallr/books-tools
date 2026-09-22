@@ -163,7 +163,7 @@ std::unordered_set<QString> GetReplacement(DB::IDatabase& db, const QString& arc
 	std::unordered_set<QString> replaced;
 
 	const QFileInfo fileInfo(archive);
-	const auto      query = db.CreateQuery("select f.Name from File f join Folder d on d.FolderId = f.FolderId and d.Name = ? where f.OriginId is not null");
+	const auto      query = db.CreateQuery("select f.Name from File f join Folder d on d.FolderId = f.FolderId and d.Name = ? where +f.OriginId is not null");
 	query->Bind(0, fileInfo.fileName());
 	for (query->Execute(); !query->Eof(); query->Next())
 		replaced.emplace(query->Get<const char*>(0));
