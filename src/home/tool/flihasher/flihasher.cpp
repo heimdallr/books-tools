@@ -1,5 +1,4 @@
 ﻿#include <condition_variable>
-#include <queue>
 #include <thread>
 
 #include <QCommandLineParser>
@@ -42,7 +41,6 @@ namespace {
 
 constexpr auto APP_ID = "flihasher";
 
-constexpr auto FOLDER                       = "folder";
 constexpr auto PATH                         = "path";
 constexpr auto LIBRARY                      = "library";
 constexpr auto THREADS                      = "threads";
