@@ -447,6 +447,34 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 				return ch == ':';
 			});
 			item.replace(',', ';');
+
+		}
+		if (author.size() == 3 && author[1] == "--")
+		{
+			if (author.front() == u"Автор неизвестен")
+			{
+				author.back() = QString(u"Автор Неизвестен -- %1").arg(author.back());
+				author.front().clear();
+				author[1].clear();
+			}
+			else if (author.back() == u"Автор неизвестен")
+			{
+				author.back() = QString(u"Автор Неизвестен -- %1").arg(author.front());
+				author.front().clear();
+				author[1].clear();
+			}
+			else if (author.front() == u"Коллектив авторов")
+			{
+				author.back() = QString(u"Коллектив авторов -- %1").arg(author.back());
+				author.front().clear();
+				author[1].clear();
+			}
+			else if (author.back() == u"Коллектив авторов")
+			{
+				author.back() = QString(u"Коллектив авторов -- %1").arg(author.front());
+				author.front().clear();
+				author[1].clear();
+			}
 		}
 		return false;
 	};
