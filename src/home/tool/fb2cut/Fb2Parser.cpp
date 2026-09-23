@@ -11,6 +11,7 @@
 
 #include "fnd/FindPair.h"
 #include "fnd/IsOneOf.h"
+#include "fnd/StrUtil.h"
 
 #include "icu/icu.h"
 #include "lib/book.h"
@@ -447,7 +448,7 @@ private: // Util::SaxParser
 			return true;
 
 		if (!m_isBinary || !IsOneOf(path, BINARY, BODY_BINARY))
-			throw std::runtime_error("bad binary");
+			throw std::runtime_error(std::format("bad binary: {}", m_picId));
 
 		const auto isCover = m_picId == m_coverPage;
 		m_binaryCallback(std::move(m_picId), isCover, QByteArray::fromBase64(value.toUtf8()));
