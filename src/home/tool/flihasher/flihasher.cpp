@@ -93,9 +93,8 @@ void SerializeHashSections(const long long fileId, const QStringList& sections, 
 void ProcessArchive(const Options& options, const QString& filePath, Progress& progress)
 {
 	PLOGI << "process " << filePath;
-
-	BookHashItemProvider bookHashItemProvider(filePath);
-	QFileInfo            fileInfo(filePath);
+	const QFileInfo      fileInfo(filePath);
+	BookHashItemProvider bookHashItemProvider(fileInfo.path(), fileInfo.fileName());
 
 	const auto fileList = bookHashItemProvider.GetFiles();
 
