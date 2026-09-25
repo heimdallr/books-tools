@@ -164,7 +164,7 @@ private: // UniqueFileStorage::ImageComparer
 		if (result == ImagesCompareResult::Equal && lhs.cover.hash.isEmpty() != rhs.cover.hash.isEmpty())
 			result = rhs.cover.hash.isEmpty() ? ImagesCompareResult::Outer : (assert(lhs.cover.hash.isEmpty()), ImagesCompareResult::Inner);
 
-		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.md5 == rhs.md5)
+		if (!(lhs.images.empty() || rhs.images.empty()) || lhs.md5 == rhs.md5 || (!lhs.isbn.isEmpty() && lhs.isbn == rhs.isbn))
 			return { result, sameFound };
 
 		if (Util::Intersect(lhs.title, rhs.title))
