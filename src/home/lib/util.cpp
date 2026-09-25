@@ -376,7 +376,11 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 			         ? ch.toLower()
 			         : QChar { ' ' };
 		});
-		seriesTitleKey   = seriesTitleKey.split(' ', Qt::SkipEmptyParts).join(' ');
+		seriesTitleKey = seriesTitleKey.split(' ', Qt::SkipEmptyParts).join(' ');
+
+		if (!seriesTitleSrc.isEmpty())
+			seriesTitleSrc[0] = seriesTitleSrc[0].toUpper();
+
 		auto seriesTitle = series.try_emplace(std::move(seriesTitleKey), std::move(seriesTitleSrc)).first->second;
 
 		it->second->series.emplace_back(std::move(seriesTitle), Util::Fb2InpxParser::GetSeqNumber(query.Get<const char*>(4)), query.Get<int>(17), query.Get<double>(18));
