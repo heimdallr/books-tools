@@ -174,8 +174,20 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 	{
 		assert(file.folder == fileInfo.fileName());
 
+		auto isbn = file.parseResult.isbn;
+		isbn.removeIf([](const QChar ch) {
+			return ch.category() != QChar::Category::Number_DecimalDigit;
+		});
+		if (isbn.length() > 13)
+			isbn.resize(13);
+		else if (isbn.length() == 10)
+			isbn.prepend(u"978");
+
+		if (!isbn.startsWith(u"978") && !isbn.startsWith(u"979"))
+			isbn.clear();
+
 		const auto fileId = insertQuery(
-			"insert into File(FolderId, Name, Md5, Hash, WordCount, SymbolCount, SimHash, Title, Annotation) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"insert into File(FolderId, Name, Md5, Hash, WordCount, SymbolCount, SimHash, Isbn, Title, Annotation) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			{ QString::number(folderId),
 			  file.file,
 			  file.parseResult.id,
@@ -183,6 +195,7 @@ void ProcessArchive(const Options& options, const QString& filePath, Progress& p
 			  QString::number(file.parseResult.count),
 			  QString::number(file.parseResult.size),
 			  QString("%1").arg(file.parseResult.simHash, 16, 16, QChar { '0' }),
+			  std::move(isbn),
 			  file.parseResult.title,
 			  file.parseResult.annotation },
 			true
