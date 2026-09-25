@@ -660,7 +660,7 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 	std::unordered_map<long long, UniqueFile> uniqueFiles;
 
 	{
-		const auto query = db.CreateQuery("select FileId, Name, Md5, Title, Hash, SymbolCount, SimHash from File where FolderId = ? and +OriginId is null");
+		const auto query = db.CreateQuery("select FileId, Name, Md5, Isbn, Title, Hash, SymbolCount, SimHash from File where FolderId = ? and +OriginId is null");
 		query->Bind(0, folderId);
 		for (query->Execute(); !query->Eof(); query->Next())
 		{
@@ -670,10 +670,11 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 									   UniqueFile {
 										   .uid     = { folderName, query->Get<const char*>(1) },
 										   .md5     = query->Get<const char*>(2),
-										   .title   = Util::UniqTitle(QString(query->Get<const char*>(3))) | std::ranges::to<std::set>(),
-										   .hash    = query->Get<const char*>(4),
-										   .size    = query->Get<size_t>(5),
-										   .simHash = query->Get<QString>(6).toULongLong(nullptr, 16),
+										   .isbn    = query->Get<const char*>(3),
+										   .title   = Util::UniqTitle(QString(query->Get<const char*>(4))) | std::ranges::to<std::set>(),
+										   .hash    = query->Get<const char*>(5),
+										   .size    = query->Get<size_t>(6),
+										   .simHash = query->Get<QString>(7).toULongLong(nullptr, 16),
 			}
 								   )
 			                       .first->second;

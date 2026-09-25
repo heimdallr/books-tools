@@ -32,6 +32,7 @@ struct LIB_EXPORT UniqueFile
 
 	Uid                  uid;
 	QString              md5;
+	QString              isbn;
 	std::set<QString>    title;
 	QString              hash;
 	ImageItem            cover;
