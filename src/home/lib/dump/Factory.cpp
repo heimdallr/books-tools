@@ -447,7 +447,6 @@ void ReplaceImpl(const std::filesystem::path& replacementPath, const IDump& dump
 				return ch == ':';
 			});
 			item.replace(',', ';');
-
 		}
 		if (author.size() == 3 && author[1] == "--")
 		{
