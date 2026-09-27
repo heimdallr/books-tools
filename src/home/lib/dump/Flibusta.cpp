@@ -466,7 +466,7 @@ left join libfilename f on f.BookId = b.BookID
 		if (!!(additionalType & AdditionalType::AuthorInfo))
 			CreateAuthorAnnotations(sqlDir, dstDir);
 
-		if (!!(additionalType & AdditionalType::Annotation))
+		if (!!(additionalType & AdditionalType::Annotation) && functor)
 			CreateBookAnnotations(functor);
 	}
 
