@@ -394,7 +394,12 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 	std::unordered_map<long long, QString> annotations;
 	n = 0;
 	dump.CreateAdditional({}, {}, IDump::AdditionalType::Annotation, [&](const DB::IQuery& query) {
-		annotations.try_emplace(query.Get<long long>(0), query.Get<const char*>(1));
+		QString text = query.Get<const char*>(1);
+		text.removeIf([](const QChar ch) {
+			return ch.category() == QChar::Category::Other_Control;
+		});
+		if (!text.isEmpty())
+			annotations.try_emplace(query.Get<long long>(0), std::move(text));
 		++n;
 		PLOGV_IF(n % 50000 == 0) << n << " records selected";
 	});
