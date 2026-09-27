@@ -572,13 +572,18 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 	Util::Progress progress(months.size(), "select reviews");
 	for (const auto& [year, month] : months)
 	{
+		PLOGI << std::format("select reviews for {:04}-{:02}", year, month);
 		Data data;
 
 		inpDataProvider.Enumerate([&](const QString& sourceLib, const IDump& dump) {
 			dump.Review(year, month, [&](const QString& libId, QString name, QString time, QString text) {
-				auto* book = inpDataProvider.GetBook(sourceLib, libId);
+				auto*                       book = inpDataProvider.GetBook(sourceLib, libId);
+				std::unordered_set<QString> uniqueBooks;
 				while (book)
 				{
+					if (!uniqueBooks.emplace(book->GetUid()).second)
+						throw std::runtime_error(std::format("cyclic replacement: {}/{}", book->folder, book->GetFileName()));
+
 					if (const auto rIt = replacement.find({ book->folder, book->GetFileName() }); rIt != replacement.end())
 					{
 						if (const auto& [replacementFolder, replacementFile] = rIt->second; !((book = inpDataProvider.GetBook({ replacementFolder, replacementFile }))))
@@ -946,10 +951,14 @@ void MergeBookData(const InpDataProvider& inpDataProvider, const Replacement& re
 		{
 			if (const auto* file = inpDataProvider.GetBook({ item->uid.first, item->uid.second }))
 			{
+				if (&origin == file)
+					continue;
+
 				origin.rate      += file->rate;
 				origin.rateCount += file->rateCount;
 
-				std::ranges::copy(file->series, std::back_inserter(origin.series));
+				if (!file->series.empty() && !file->series.front().title.isEmpty())
+					std::ranges::copy(file->series, std::back_inserter(origin.series));
 
 				origin.deleted = origin.deleted && file->deleted;
 				if (origin.annotation.isEmpty())
