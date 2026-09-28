@@ -1019,10 +1019,11 @@ int main(int argc, char* argv[])
 	const auto logOption      = Log::LoggingInitializer::AddLogFileOption(parser, defaultLogPath);
 	parser.process(app);
 
-	Log::LoggingInitializer                          logging(parser.isSet(logOption) ? parser.value(logOption) : defaultLogPath);
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	Util::GenreFixerInitializer                      genreFixerInitializer;
+	const Log::LoggingInitializer logging(parser.value(logOption));
+	const auto       consoleAppender(parser.value(logOption) != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
+	Log::LogAppender logConsoleAppender(consoleAppender.get());
+
+	Util::GenreFixerInitializer genreFixerInitializer;
 	try
 	{
 		PLOGI << QString("%1 started").arg(APP_ID);

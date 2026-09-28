@@ -222,7 +222,7 @@ void GetReplacement(DB::IDatabase& db, const QString& path, UniqueFileStorage& u
 
 void GetReplacement(DB::IDatabase& db, const QStringList& archives, UniqueFileStorage& uniqueFileStorage, InpDataProvider& inpDataProvider)
 {
-	const auto     totalCount = [&] {
+	const auto totalCount = [&] {
 		const auto tmpTable = db.CreateTemporaryTable({ "Folder VARCHAR (64)" });
 		const auto tr       = db.CreateTransaction();
 		{
@@ -312,9 +312,9 @@ int main(int argc, char* argv[])
 
 	auto settings = ProcessCommandLine(app);
 
-	Log::LoggingInitializer                          logging(settings.logFileName);
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	const Log::LoggingInitializer logging(settings.logFileName);
+	const auto       consoleAppender(settings.logFileName != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
+	Log::LogAppender logConsoleAppender(consoleAppender.get());
 	PLOGI << QString("%1 started").arg(APP_ID);
 
 	try

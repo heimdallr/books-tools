@@ -1123,19 +1123,8 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	return settings;
 }
 
-bool run(int argc, char* argv[])
+bool run(Settings& settings)
 {
-	const QCoreApplication app(argc, argv); //-V821
-	QCoreApplication::setApplicationName(APP_ID);
-	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
-	Util::XMLPlatformInitializer xmlPlatformInitializer;
-
-	auto                                             settings = ProcessCommandLine(app);
-	Log::LoggingInitializer                          logging(settings.logFileName);
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
-	PLOGI << QString("%1 started").arg(APP_ID);
-
 	{
 		std::ostringstream stream;
 		stream << "Process started with " << settings;
@@ -1159,11 +1148,23 @@ bool run(int argc, char* argv[])
 
 } // namespace
 
-int main(const int argc, char* argv[])
+int main(int argc, char* argv[])
 {
+	const QCoreApplication app(argc, argv); //-V821
+	QCoreApplication::setApplicationName(APP_ID);
+	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
+	Util::XMLPlatformInitializer xmlPlatformInitializer;
+
+	auto settings = ProcessCommandLine(app);
+
+	const Log::LoggingInitializer logging(settings.logFileName);
+	const auto       consoleAppender(settings.logFileName != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
+	Log::LogAppender logConsoleAppender(consoleAppender.get());
+	PLOGI << QString("%1 started").arg(APP_ID);
+
 	try
 	{
-		if (run(argc, argv))
+		if (run(settings))
 			PLOGW << QString("%1 finished with errors").arg(APP_ID);
 		else
 			PLOGI << QString("%1 successfully finished").arg(APP_ID);

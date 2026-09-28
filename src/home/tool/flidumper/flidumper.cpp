@@ -89,10 +89,10 @@ int main(int argc, char* argv[])
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
 
-	const auto                                       settings = parseCommandLine(app);
-	Log::LoggingInitializer                          logging(settings.logPath);
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+	const auto                    settings = parseCommandLine(app);
+	const Log::LoggingInitializer logging(settings.logPath);
+	const auto       consoleAppender(settings.logPath != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
+	Log::LogAppender logConsoleAppender(consoleAppender.get());
 	PLOGI << QString("%1 started").arg(APP_ID);
 
 	try

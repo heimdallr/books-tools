@@ -374,10 +374,12 @@ bool run(int argc, char* argv[])
 	const QGuiApplication app(argc, argv); //-V821
 	QCoreApplication::setApplicationName(APP_ID);
 	QCoreApplication::setApplicationVersion(PRODUCT_VERSION);
-	const auto                                       settings = ProcessCommandLine(app);
-	Log::LoggingInitializer                          logging(settings.logFileName);
-	plog::ConsoleAppender<Util::LogConsoleFormatter> consoleAppender;
-	Log::LogAppender                                 logConsoleAppender(&consoleAppender);
+
+	const auto                    settings = ProcessCommandLine(app);
+	const Log::LoggingInitializer logging(settings.logFileName);
+	const auto       consoleAppender(settings.logFileName != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
+	Log::LogAppender logConsoleAppender(consoleAppender.get());
+
 	PLOGI << QString("%1 started").arg(APP_ID);
 	return ProcessArchives(settings);
 }
