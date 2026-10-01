@@ -24,8 +24,7 @@ namespace HomeCompa::FliLib::Dump {
 
 #define LIBRARY_ITEMS_X_MACRO \
 	LIBRARY_ITEM(Flibusta)    \
-	LIBRARY_ITEM(LibRusEc)    \
-	LIBRARY_ITEM(Traum)
+	LIBRARY_ITEM(LibRusEc)
 
 #define LIBRARY_ITEM(NAME) std::unique_ptr<IDump> Create##NAME##Database();
 LIBRARY_ITEMS_X_MACRO
