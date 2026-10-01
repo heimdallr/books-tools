@@ -321,16 +321,16 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 					if (!book)
 					{
 						PLOGW << zipFileInfo.filePath() << "/" << bookFile << " need to parse ";
-						if ((book = ParseBook(bookFile, inpDataProvider, folder, zip, zipFileInfo.birthTime(), settings.isDeleted)))
+						const auto [parsedBook, ok] = ParseBook(bookFile, inpDataProvider, folder, zip, zipFileInfo.birthTime(), settings.isDeleted);
+						if (!((book = parsedBook)))
 						{
-							if (settings.database)
-								WriteToDatabase(*settings.database, folder, *book);
-						}
-						else
-						{
-							PLOGW << zipFileInfo.filePath() << "/" << bookFile << " not found";
+							assert(false && "bad logic");
+							PLOGW << zipFileInfo.filePath() << "/" << bookFile << " something went wrong";
 							continue;
 						}
+
+						if (ok && settings.database)
+							WriteToDatabase(*settings.database, folder, *book);
 					}
 				}
 			}

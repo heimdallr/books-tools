@@ -41,7 +41,7 @@ struct FileInfo
 LIB_EXPORT void     Write(const QString& fileName, const QByteArray& data);
 LIB_EXPORT QString& ReplaceTags(QString& str);
 LIB_EXPORT InpData  CreateInpData(const IDump& db, std::unordered_map<QString, QString>& series);
-LIB_EXPORT Book*    ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, bool isDeleted = false);
-LIB_EXPORT void     WriteParsedBookToDatabase(DB::ITransaction& tr, const Book& book);
+LIB_EXPORT std::pair<Book*, bool> ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, bool isDeleted = false);
+LIB_EXPORT void                   WriteParsedBookToDatabase(DB::ITransaction& tr, const Book& book);
 
 }

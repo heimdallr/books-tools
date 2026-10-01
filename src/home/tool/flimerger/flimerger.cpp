@@ -70,8 +70,8 @@ size_t WriteParsedBooks(DB::IDatabase& db, const QString& folder, InpDataProvide
 									return !alreadyParsed.contains(item) && !inpDataProvider.SetFile({ .folder = folder, .file = item }, {}, 0);
 								}))
 	{
-		auto book = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName));
-		WriteParsedBookToDatabase(*tr, *book);
+		if (const auto [book, ok] = ParseBook(fileName, inpDataProvider, folder, zip, zip.GetFileTime(fileName)); ok)
+			WriteParsedBookToDatabase(*tr, *book);
 		++count;
 	}
 	tr->Commit();

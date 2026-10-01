@@ -63,8 +63,11 @@ std::optional<Book> ParseFb2(
 	const QString&   originSuffix   = {}
 )
 {
-	parserName            = "fb2";
-	auto parseResult      = Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, isDeleted);
+	parserName       = "fb2";
+	auto parseResult = Util::Fb2InpxParser::Parse(folder, zip, fileName, zipDateTime, isDeleted);
+	if (parseResult.line.isEmpty())
+		return std::nullopt;
+
 	auto parsedBook       = Book::FromString(parseResult.line);
 	parsedBook.annotation = std::move(parseResult.annotation);
 	SetOriginalNames(parsedBook, originBaseName, originSuffix);
@@ -430,7 +433,7 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 	return inpData;
 }
 
-Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, const bool isDeleted)
+std::pair<Book*, bool> ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const QString& folder, const Zip& zip, const QDateTime& zipDateTime, const bool isDeleted)
 {
 	PLOGI << "parsing " << folder + "/" + fileName;
 	const auto parser = [&] {
@@ -441,17 +444,17 @@ Book* ParseBook(const QString& fileName, InpDataProvider& inpDataProvider, const
 	}();
 
 	QString parserName;
-	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}))
+	if (auto parsedBook = parser(parserName, folder, zip, fileName, zipDateTime, isDeleted, {}, {}); parsedBook && !parsedBook->file.isEmpty())
 	{
 		PLOGI << parserName << " parser finished";
 		parsedBook->folder = folder;
-		return inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook)));
+		return std::make_pair(inpDataProvider.AddBook(std::make_unique<Book>(std::move(*parsedBook))), true);
 	}
 
-	PLOGW << "unknown book";
+	PLOGW << QString("%1/%2: %3 parser failed").arg(folder, fileName, parserName);
 	auto book    = std::make_unique<Book>(Book::CreateUnknown(fileName, zip.GetFileSize(fileName), zip.GetFileTime(fileName).date()));
 	book->folder = folder;
-	return inpDataProvider.AddBook(std::move(book));
+	return std::make_pair(inpDataProvider.AddBook(std::move(book)), false);
 }
 
 void WriteParsedBookToDatabase(DB::ITransaction& tr, const Book& book)
