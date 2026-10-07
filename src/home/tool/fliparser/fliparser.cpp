@@ -104,7 +104,7 @@ public:
 	virtual void Add(const QString& folder, const QString& file, const QString& annotation) = 0;
 };
 
-class AnnotationCollector final : virtual public IAnnotationCollector
+class AnnotationCollector final : public IAnnotationCollector
 {
 	NON_COPY_MOVABLE(AnnotationCollector)
 

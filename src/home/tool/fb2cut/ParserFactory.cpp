@@ -150,7 +150,7 @@ FoundParser FindParserCreator(QString inputFilePath, QByteArray inputFileBody, c
 	return {};
 }
 
-class EncodingDetector final : virtual public IEncodingDetector
+class EncodingDetector final : public IEncodingDetector
 {
 	static constexpr auto                            UTF8 = "utf-8";
 	static constexpr std::pair<const char*, uint8_t> ENCODINGS[] {
