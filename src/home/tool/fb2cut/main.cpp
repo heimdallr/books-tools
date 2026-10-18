@@ -20,6 +20,7 @@
 #include <plog/Util.h>
 
 #include "fnd/FindPair.h"
+#include "fnd/IsOneOf.h"
 #include "fnd/NonCopyMovable.h"
 #include "fnd/ScopedCall.h"
 #include "fnd/algorithm.h"
@@ -229,8 +230,8 @@ private:
 			return {};
 		}();
 
-		if (!parser)
-			return false;
+		if (!parser && IsOneOf(fileInfo.suffix().toLower(), "fb2", "epub"))
+			return WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix()), false;
 
 		auto [name, body] = ParseFile(*parser, dateTime);
 
@@ -843,7 +844,7 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodi
 
 	const Zip  zip(archive);
 	auto       fileList         = zip.GetFileNameList() | std::views::reverse | std::ranges::to<QStringList>();
-	const auto fileListCount    = static_cast<size_t>(fileList.size());
+	const auto fileListCount    = fileList.size();
 	const auto currentFileCount = progress.GetCount();
 	PLOGI << QString("%1 processing, total files: %2").arg(fileInfo.fileName()).arg(fileListCount);
 
@@ -1160,7 +1161,7 @@ int main(int argc, char* argv[])
 	const Log::LoggingInitializer logging(settings.logFileName);
 	const auto       consoleAppender(settings.logFileName != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
 	Log::LogAppender logConsoleAppender(consoleAppender.get());
-	PLOGI << QString("%1 started").arg(APP_ID);
+	Util::Progress   progress(APP_ID);
 
 	try
 	{

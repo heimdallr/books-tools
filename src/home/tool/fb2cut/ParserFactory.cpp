@@ -17,6 +17,7 @@
 
 #define PARSER_ITEMS_X_MACRO \
 	PARSER_ITEM(fb2, <?xml)  \
+	PARSER_ITEM(fb2, <FictionBook)  \
 	PARSER_ITEM(epub, \x50\x4B\x03\x04)
 
 namespace HomeCompa::fb2cut {
