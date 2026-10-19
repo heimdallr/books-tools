@@ -1,4 +1,5 @@
 import os
+import platform
 
 from conan import ConanFile
 from conan.tools.cmake import CMakeToolchain, CMakeDeps
@@ -33,10 +34,21 @@ def configure_sqlite3(recipe):
     recipe.options["sqlite3"].threadsafe = 0
     recipe.options["sqlite3"].enable_fts5 = True
 
-class FLibrary(ConanFile):
+def run_local_recipe(recipe, lib, version):
+    local_recipe = os.path.join(recipe.recipe_folder, "recipe", lib, version)
+    if os.path.exists(local_recipe):
+        recipe.run(f"conan export {local_recipe} --version={version}")
+    else:
+        recipe.output.warning(f"Cannot find local {lib} recipe")
+
+class FLiTools(ConanFile):
     name = "FLibrary"
     settings = "os", "compiler", "build_type", "arch"
 
+    icu_version = "78.2"
+    if platform.system() == "Linux":
+        icu_version = "74.2"
+    
     def requirements(self):
         self.requires("boost/1.89.0")
         self.requires("plog/1.1.10")
@@ -46,10 +58,7 @@ class FLibrary(ConanFile):
         self.requires("sqlite3/3.53.4")
         self.requires("libxml2/2.15.3")
         self.requires("zlib/1.3.2")
-        if self.settings.os == "Linux":
-            self.requires("icu/74.2")
-        else:
-            self.requires("icu/78.2")
+        self.requires(f"icu/{self.icu_version}")
 
     def configure(self):
         configure_boost(self)
@@ -67,3 +76,7 @@ class FLibrary(ConanFile):
         tc = CMakeToolchain(self)
         tc.user_presets_path = False
         tc.generate()
+
+    def init(self):
+        run_local_recipe(self, "sqlite3", "3.53.4")
+        run_local_recipe(self, "icu", self.icu_version)
