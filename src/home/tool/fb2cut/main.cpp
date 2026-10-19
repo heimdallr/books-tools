@@ -73,7 +73,6 @@ constexpr auto COVERS_ONLY_OPTION_NAME         = "covers-only";
 constexpr auto FFMPEG_OPTION_NAME              = "ffmpeg";
 constexpr auto MIN_IMAGE_FILE_SIZE_OPTION_NAME = "min-image-file-size";
 constexpr auto FORMAT                          = "format";
-constexpr auto IMAGE_STATISTICS                = "image-statistics";
 
 constexpr auto QUALITY     = "quality [-1]";
 constexpr auto THREADS     = "threads [%1]";
@@ -91,29 +90,6 @@ struct DataItem
 
 using DataItems = std::queue<DataItem>;
 
-struct ImageStatisticsItem
-{
-	enum class PixelSchema
-	{
-		Unknown = -1,
-		Normal,
-		GrayScale,
-		Alpha,
-	};
-	QString     folder;
-	QString     fileName;
-	QString     imageId;
-	QString     fail;
-	bool        isCover { false };
-	qsizetype   size { 0 };
-	int         width { 0 };
-	int         height { 0 };
-	PixelSchema schema { PixelSchema::Unknown };
-	QString     hash;
-};
-
-using ImageStatistics = std::vector<ImageStatisticsItem>;
-
 class Worker
 {
 	NON_COPY_MOVABLE(Worker)
@@ -124,7 +100,7 @@ public:
 	public:
 		virtual ~IClient() = default;
 
-		virtual void OnWorkFinished(ImageStatistics imageStatistics, ImageItems covers, ImageItems images) = 0;
+		virtual void OnWorkFinished(ImageItems covers, ImageItems images) = 0;
 	};
 
 public:
@@ -197,7 +173,7 @@ private:
 			}
 		}
 
-		m_client.OnWorkFinished(std::move(m_imageStatistics), std::move(m_covers), std::move(m_images));
+		m_client.OnWorkFinished(std::move(m_covers), std::move(m_images));
 	}
 
 	bool ProcessFile(const QString& inputFilePath, const QByteArray& inputFileBody, const QDateTime& dateTime)
@@ -282,20 +258,10 @@ private:
 		IParser::ImageMapper             idToNum;
 
 		auto binaryCallback = [&](QString&& name, const bool isCover, QByteArray body) {
-			ImageStatisticsItem::PixelSchema pixelSchema = ImageStatisticsItem::PixelSchema::Unknown;
 
 			int         width  = 0;
 			int         height = 0;
 			const char* fail   = nullptr;
-
-			ScopedCall statGuard([&, name]() mutable {
-				if (m_settings.imageStatistics.isEmpty())
-					return;
-
-				m_hash.reset();
-				m_hash.addData(body);
-				m_imageStatistics.emplace_back(m_folder, completeFileName, std::move(name), fail, isCover, body.size(), width, height, pixelSchema, QString::fromUtf8(m_hash.result().toHex()));
-			});
 
 			const QFileInfo imageFileInfo(name);
 			if (const auto it = std::ranges::find_if(
@@ -329,9 +295,6 @@ private:
 			width  = image.width();
 			height = image.height();
 
-			if (image.pixelFormat().colorModel() == QPixelFormat::Grayscale)
-				pixelSchema = ImageStatisticsItem::PixelSchema::GrayScale;
-
 			if (settings.grayscale)
 				image.convertTo(QImage::Format::Format_Grayscale8);
 
@@ -340,8 +303,6 @@ private:
 
 			const auto pixelFormat = image.pixelFormat();
 			const bool hasAlpha    = pixelFormat.alphaUsage() == QPixelFormat::UsesAlpha;
-			if (pixelSchema == ImageStatisticsItem::PixelSchema::Unknown)
-				pixelSchema = hasAlpha ? ImageStatisticsItem::PixelSchema::Alpha : ImageStatisticsItem::PixelSchema::Normal;
 
 			if (image.width() > settings.maxSize.width() || image.height() > settings.maxSize.height())
 				image = image.scaled(settings.maxSize.width(), settings.maxSize.height(), Qt::KeepAspectRatio, hasAlpha ? Qt::FastTransformation : Qt::SmoothTransformation);
@@ -564,7 +525,6 @@ private:
 	Util::Progress&   m_progress;
 
 	QCryptographicHash m_hash { QCryptographicHash::Md5 };
-	ImageStatistics    m_imageStatistics;
 
 	ImageItems m_images;
 	ImageItems m_covers;
@@ -594,7 +554,6 @@ public:
 		std::mutex&              queueGuard,
 		const int                poolSize,
 		Util::Progress&          progress,
-		QTextStream*             imageStatisticsStream,
 		const Decoder&           decoder
 	)
 		: m_queueCondition { queueCondition }
@@ -603,7 +562,6 @@ public:
 		, m_saveCovers { settings.cover.save }
 		, m_saveImages { settings.image.save }
 		, m_maxThreadCount { settings.maxThreadCount }
-		, m_imageStatisticsStream { imageStatisticsStream }
 	{
 		for (int i = 0; i < poolSize; ++i)
 			m_workers.push_back(std::make_unique<Worker>(settings, folder, encodingDetector, m_queueCondition, m_queueGuard, m_queue, m_fileSystemGuard, m_hasError, m_queueSize, progress, *this, decoder));
@@ -631,7 +589,6 @@ public:
 	void Wait()
 	{
 		m_workers.clear();
-		WriteImageStatistics();
 		ArchiveImages(m_covers, m_images);
 	}
 
@@ -684,28 +641,10 @@ private:
 		images.clear();
 	}
 
-	void WriteImageStatistics()
-	{
-		ScopedCall clearGuard([this] {
-			m_imageStatistics.clear();
-		});
-
-		if (!m_imageStatisticsStream)
-			return;
-
-		for (const auto& [folder, fileName, imageId, fail, isCover, size, width, height, schema, hash] : m_imageStatistics)
-			(*m_imageStatisticsStream) << folder << '|' << fileName << '|' << imageId << '|' << fail << '|' << (isCover ? 1 : 0) << '|' << static_cast<int>(schema) << '|' << size << '|' << width << '|'
-			                           << height << '|' << hash << '\n';
-
-		m_imageStatisticsStream->flush();
-	}
-
 private: // Worker::IClient
-	void OnWorkFinished(ImageStatistics imageStatistics, ImageItems covers, ImageItems images) override
+	void OnWorkFinished(ImageItems covers, ImageItems images) override
 	{
 		std::lock_guard lock(m_workClientGuard);
-		m_imageStatistics.reserve(m_imageStatistics.size() + imageStatistics.size());
-		std::ranges::move(std::move(imageStatistics), std::back_inserter(m_imageStatistics));
 		std::ranges::move(std::move(covers), std::back_inserter(m_covers));
 		std::ranges::move(std::move(images), std::back_inserter(m_images));
 	}
@@ -725,10 +664,8 @@ private:
 	const bool m_saveImages;
 	const int  m_maxThreadCount;
 
-	ImageStatistics m_imageStatistics;
 	ImageItems      m_covers;
 	ImageItems      m_images;
-	QTextStream*    m_imageStatisticsStream;
 
 	std::vector<std::unique_ptr<Worker>> m_workers;
 };
@@ -832,7 +769,7 @@ bool ArchiveFb2(const Settings& settings)
 	return !result;
 }
 
-bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
+bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, const Decoder& decoder)
 {
 	const QFileInfo fileInfo(archive);
 	settings.dstDir = QDir(settings.dstDir.filePath(fileInfo.completeBaseName()));
@@ -853,7 +790,7 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodi
 
 		std::condition_variable queueCondition;
 		std::mutex              queueGuard;
-		FileProcessor           fileProcessor(settings, fileInfo.completeBaseName(), encodingDetector, queueCondition, queueGuard, maxThreadCount, progress, imageStatisticsStream, decoder);
+		FileProcessor           fileProcessor(settings, fileInfo.completeBaseName(), encodingDetector, queueCondition, queueGuard, maxThreadCount, progress, decoder);
 
 		while (!fileList.isEmpty())
 		{
@@ -908,11 +845,11 @@ bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodi
 	return hasError;
 }
 
-bool ProcessArchive(const QString& file, const Settings& settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, QTextStream* imageStatisticsStream, const Decoder& decoder)
+bool ProcessArchive(const QString& file, const Settings& settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, const Decoder& decoder)
 {
 	try
 	{
-		return ProcessArchiveImpl(file, settings, encodingDetector, progress, imageStatisticsStream, decoder);
+		return ProcessArchiveImpl(file, settings, encodingDetector, progress, decoder);
 	}
 	catch (const std::exception& ex)
 	{
@@ -957,17 +894,6 @@ QStringList ProcessArchives(Settings& settings)
 	});
 	PLOGI << "Total file count: " << settings.totalFileCount;
 
-	std::unique_ptr<QTextStream> imageStatisticsStream;
-	QFile                        imageStatisticsFile(settings.imageStatistics);
-	if (!settings.imageStatistics.isEmpty())
-	{
-		if (!imageStatisticsFile.open(QIODevice::Append))
-			throw std::ios_base::failure(QString("Cannot write to %1").arg(settings.imageStatistics).toStdString());
-		imageStatisticsStream = std::make_unique<QTextStream>(&imageStatisticsFile);
-		*imageStatisticsStream << "#ARCHIVE|FB2_FILE|IMAGE_ID|FAIL_INFO|IS_COVER|PIXEL_TYPE|IMAGE_FILE_SIZE|WIDTH|HEIGHT|HASH\n";
-		imageStatisticsStream->flush();
-	}
-
 	const Decoder decoder;
 	const auto    encodingDetector = IEncodingDetector::Create();
 
@@ -975,7 +901,7 @@ QStringList ProcessArchives(Settings& settings)
 
 	QStringList failed;
 	for (auto&& file : sorted | std::views::values | std::views::reverse)
-		if (ProcessArchive(file, settings, *encodingDetector, progress, imageStatisticsStream.get(), decoder))
+		if (ProcessArchive(file, settings, *encodingDetector, progress, decoder))
 			failed << std::move(file);
 
 	return failed;
@@ -1057,7 +983,6 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 
 			{ MIN_IMAGE_FILE_SIZE_OPTION_NAME, "Minimum image file size threshold for writing to error folder", QString("size [%1]").arg(settings.minImageFileSize) },
 			{ FFMPEG_OPTION_NAME, "Path to ffmpeg executable", PATH },
-			{ IMAGE_STATISTICS, "Image statistics output path", PATH },
 
 			{ { QString(GRAYSCALE_OPTION_NAME[0]), GRAYSCALE_OPTION_NAME }, "Convert all images to grayscale" },
 			{ COVER_GRAYSCALE_OPTION_NAME, "Convert covers to grayscale" },
@@ -1102,8 +1027,6 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 
 	SetValue(parser, MAX_THREAD_COUNT_OPTION_NAME, settings.maxThreadCount);
 	SetValue(parser, MIN_IMAGE_FILE_SIZE_OPTION_NAME, settings.minImageFileSize);
-
-	settings.imageStatistics = parser.value(IMAGE_STATISTICS);
 
 	settings.cover.grayscale = settings.image.grayscale = parser.isSet(GRAYSCALE_OPTION_NAME);
 	if (parser.isSet(COVER_GRAYSCALE_OPTION_NAME))

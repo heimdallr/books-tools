@@ -51,7 +51,6 @@ struct Settings
 	bool          archiveFb2 { true };
 	QDir          dstDir;
 	QString       ffmpeg;
-	QString       imageStatistics;
 	QString       archiver;
 	QString       archiverOptions;
 	int           totalFileCount { 0 };
