@@ -258,9 +258,6 @@ private:
 		IParser::ImageMapper             idToNum;
 
 		auto binaryCallback = [&](QString&& name, const bool isCover, QByteArray body) {
-
-			int         width  = 0;
-			int         height = 0;
 			const char* fail   = nullptr;
 
 			const QFileInfo imageFileInfo(name);
@@ -291,9 +288,6 @@ private:
 			auto image = ReadImage(body, settings, settings.fileNameGetter(completeFileName, name), fail, settings.save);
 			if (image.isNull())
 				return;
-
-			width  = image.width();
-			height = image.height();
 
 			if (settings.grayscale)
 				image.convertTo(QImage::Format::Format_Grayscale8);
