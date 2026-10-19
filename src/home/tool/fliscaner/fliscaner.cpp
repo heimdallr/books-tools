@@ -24,6 +24,7 @@
 #include "logging/init.h"
 #include "network/network/downloader.h"
 #include "util/LogConsoleFormatter.h"
+#include "util/ProcessWrapper.h"
 
 #include "log.h"
 #include "zip.h"
@@ -47,9 +48,10 @@ constexpr auto DEFAULT_COUNT   = 3;
 constexpr auto DEFAULT_TIMEOUT = 5000;
 int            MAX_ATTEMPTS    = 10;
 
-QString           DST_PATH;
-std::set<QString> UNIQUE_FILES;
-bool              FILTER_UNIQUE_FILES = false;
+QString              DST_PATH;
+std::vector<QString> DOWNLOADED;
+std::set<QString>    UNIQUE_FILES;
+bool                 FILTER_UNIQUE_FILES = false;
 
 class EventLooper
 {
@@ -74,6 +76,28 @@ private:
 	size_t     m_counter { 0 };
 	QEventLoop m_eventLoop;
 };
+
+void Script(const QString& file, const QString& command, QString args)
+{
+	args.replace("#FILE#", file);
+	Util::RunProcess(command, args, {}, true);
+}
+
+void Scripts(const QString& file, const QJsonArray& scripts)
+{
+	PLOGV << "scripts for " << file;
+	for (const auto script : scripts)
+	{
+		const auto obj = script.toObject();
+		const auto rx  = obj["regexp"].toString();
+		const auto fileName = QFileInfo(file).fileName();
+		const auto hasMatch = QRegularExpression(rx).match(fileName).hasMatch();
+		PLOGV << "check " << fileName << " for " << rx << (hasMatch ? ": match!" : ": no match");
+
+		if (hasMatch)
+			Script(file, obj["command"].toString(), obj["args"].toString());
+	}
+}
 
 QJsonObject ReadConfig(QFile& file)
 {
@@ -222,11 +246,13 @@ void GetFile(const QString& path, const QString& file, const QString& tmpFile, c
 
 	PLOGI << "download " << path + file << " try " << count;
 
-	new Task(path, file, eventLooper, std::move(stream), [path, file = file, tmpFile, dstFile, &eventLooper, &taskQueue, count](const bool success) mutable {
+	new Task(path, file, eventLooper, std::move(stream), [path, file = file, tmpFile, dstFile = dstFile, &eventLooper, &taskQueue, count](const bool success) mutable {
 		if (success && Validate(tmpFile, QFileInfo(dstFile).suffix().toLower()))
 		{
+			QFile::rename(tmpFile, dstFile);
 			UNIQUE_FILES.emplace(std::move(file));
-			return (void)QFile::rename(tmpFile, dstFile);
+			DOWNLOADED.emplace_back(std::move(dstFile));
+			return;
 		}
 
 		if (count <= MAX_ATTEMPTS)
@@ -429,6 +455,10 @@ int main(int argc, char* argv[])
 
 		QThread::sleep(std::chrono::milliseconds(timeout));
 	}
+
+	const auto scripts = config["scripts"].toArray();
+	for (const auto& file : DOWNLOADED)
+		Scripts(file, scripts);
 
 	if (!readyFiles.isEmpty())
 	{

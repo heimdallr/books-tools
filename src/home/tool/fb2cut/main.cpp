@@ -73,6 +73,8 @@ constexpr auto COVERS_ONLY_OPTION_NAME         = "covers-only";
 constexpr auto FFMPEG_OPTION_NAME              = "ffmpeg";
 constexpr auto MIN_IMAGE_FILE_SIZE_OPTION_NAME = "min-image-file-size";
 constexpr auto FORMAT                          = "format";
+constexpr auto OUTPUT_NAME                     = "output-name";
+constexpr auto APPEND_MODE                     = "append-mode";
 
 constexpr auto QUALITY     = "quality [-1]";
 constexpr auto THREADS     = "threads [%1]";
@@ -206,8 +208,12 @@ private:
 			return {};
 		}();
 
-		if (!parser && IsOneOf(fileInfo.suffix().toLower(), "fb2", "epub"))
-			return WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix()), false;
+		if (!parser)
+		{
+			if (IsOneOf(fileInfo.suffix().toLower(), "fb2", "epub"))
+				WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix());
+			return false;
+		}
 
 		auto [name, body] = ParseFile(*parser, dateTime);
 
@@ -555,6 +561,7 @@ public:
 		, m_dstDir { settings.dstDir }
 		, m_saveCovers { settings.cover.save }
 		, m_saveImages { settings.image.save }
+		, m_appendMode { settings.appendMode }
 		, m_maxThreadCount { settings.maxThreadCount }
 	{
 		for (int i = 0; i < poolSize; ++i)
@@ -601,7 +608,8 @@ private:
 		const auto archiveFileName = GetImagesFolder(m_dstDir, type);
 		PLOGI << "archive " << archiveFileName << ", total:" << images.size();
 
-		QFile::remove(archiveFileName);
+		if (!m_appendMode)
+			QFile::remove(archiveFileName);
 
 		std::unordered_map<QString, qsizetype> unique;
 		for (const auto& image : images)
@@ -627,8 +635,9 @@ private:
 		for (auto&& image : images)
 			zipFiles->AddFile(std::move(image.fileName), image.body, std::move(image.dateTime));
 
-		Zip zip(archiveFileName, Zip::Format::Zip);
-		zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::Ultra));
+		Zip zip(archiveFileName, Zip::Format::Zip, m_appendMode);
+		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(Zip::CompressionMethod::Copy));
+		zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(Zip::CompressionLevel::None));
 		zip.SetProperty(Zip::PropertyId::ThreadsCount, m_maxThreadCount);
 		zip.Write(*zipFiles);
 
@@ -656,10 +665,11 @@ private:
 	QDir       m_dstDir;
 	const bool m_saveCovers;
 	const bool m_saveImages;
+	const bool m_appendMode;
 	const int  m_maxThreadCount;
 
-	ImageItems      m_covers;
-	ImageItems      m_images;
+	ImageItems m_covers;
+	ImageItems m_images;
 
 	std::vector<std::unique_ptr<Worker>> m_workers;
 };
@@ -736,6 +746,12 @@ bool ArchiveFb2(const Settings& settings)
 		zipFiles->AddFile(settings.dstDir.relativeFilePath(file), stream.readAll(), QFileInfo(file).birthTime());
 	}
 
+	bool             result = false;
+	const ScopedCall removeFolderGuard([&] {
+		if (result)
+			QDir(settings.dstDir).removeRecursively();
+	});
+
 	if (zipFiles->GetCount() == 0)
 	{
 		PLOGW << "No text files found";
@@ -745,20 +761,19 @@ bool ArchiveFb2(const Settings& settings)
 	const auto dstArchiveFileName = QString("%1.%2").arg(settings.dstDir.path(), Zip::FormatToString(settings.format));
 	PLOGI << "archive " << dstArchiveFileName << ", total: " << zipFiles->GetCount();
 
-	QFile::remove(dstArchiveFileName);
+	if (!settings.appendMode)
+		QFile::remove(dstArchiveFileName);
 
 	const auto isEpub = epubCount * 10 > 9 * zipFiles->GetCount();
 
-	Zip zip(dstArchiveFileName, settings.format);
+	Zip zip(dstArchiveFileName, settings.format, settings.appendMode);
 	zip.SetProperty(Zip::PropertyId::CompressionLevel, QVariant::fromValue(isEpub ? Zip::CompressionLevel::None : Zip::CompressionLevel::Ultra));
 	zip.SetProperty(Zip::PropertyId::SolidArchive, false);
 	zip.SetProperty(Zip::PropertyId::ThreadsCount, settings.maxThreadCount);
 	if (settings.format == Zip::Format::SevenZip)
 		zip.SetProperty(Zip::PropertyId::CompressionMethod, QVariant::fromValue(isEpub ? Zip::CompressionMethod::Copy : Zip::CompressionMethod::Ppmd));
 
-	const auto result = zip.Write(*zipFiles);
-	if (result)
-		QDir(settings.dstDir).removeRecursively();
+	result = zip.Write(*zipFiles);
 
 	return !result;
 }
@@ -766,7 +781,7 @@ bool ArchiveFb2(const Settings& settings)
 bool ProcessArchiveImpl(const QString& archive, Settings settings, const IEncodingDetector& encodingDetector, Util::Progress& progress, const Decoder& decoder)
 {
 	const QFileInfo fileInfo(archive);
-	settings.dstDir = QDir(settings.dstDir.filePath(fileInfo.completeBaseName()));
+	settings.dstDir = QDir(settings.dstDir.filePath(settings.outputName.isEmpty() ? fileInfo.completeBaseName() : settings.outputName));
 	if (!settings.dstDir.exists() && !settings.dstDir.mkpath("."))
 	{
 		PLOGE << QString("Cannot create folder %1").arg(settings.dstDir.path());
@@ -963,6 +978,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	parser.addOptions(
 		{
 			{ { "o", FOLDER }, "Output folder (required)", FOLDER },
+			{ OUTPUT_NAME, "output archive name", "base file name" },
 			{ { QString(QUALITY[0]), QUALITY_OPTION_NAME }, "Compression quality [0, 100] or -1 for default compression quality", QUALITY },
 			{ { QString(THREADS[0]), MAX_THREAD_COUNT_OPTION_NAME }, "Maximum number of CPU threads", QString(THREADS).arg(settings.maxThreadCount) },
 			{ { QString(FORMAT[0]), FORMAT }, "Output fb2 archive format [7z | zip]", QString("%1 [%2]").arg(FORMAT, "7z") },
@@ -986,6 +1002,7 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 			{ NO_FB2_OPTION_NAME, "Don't save fb2" },
 			{ NO_IMAGES_OPTION_NAME, "Don't save image" },
 			{ COVERS_ONLY_OPTION_NAME, "Save covers only" },
+			{ APPEND_MODE, "Append mode" },
 	}
 	);
 
@@ -998,11 +1015,14 @@ Settings ProcessCommandLine(const QCoreApplication& app)
 	if (parser.positionalArguments().isEmpty())
 		parser.showHelp(0);
 
-	settings.dstDir = parser.value(FOLDER);
+	settings.dstDir     = parser.value(FOLDER);
+	settings.outputName = parser.value(OUTPUT_NAME);
 
 	settings.ffmpeg          = parser.value(FFMPEG_OPTION_NAME);
 	settings.archiver        = parser.value(ARCHIVER_OPTION_NAME);
 	settings.archiverOptions = parser.value(ARCHIVER_COMMANDLINE_OPTION_NAME);
+
+	settings.appendMode = parser.isSet(APPEND_MODE);
 
 	if (parser.isSet(FORMAT))
 		settings.format = Zip::FormatFromString(parser.value(FORMAT));
