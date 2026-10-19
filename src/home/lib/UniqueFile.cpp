@@ -410,9 +410,10 @@ bool HistCheck(const std::vector<QString>& lhs, const std::vector<QString>& rhs)
 {
 	const auto rhsOrder = std::views::zip(rhs, std::views::iota(0)) | std::views::transform([](const auto& item) {
 							  const auto& [word, index] = item;
-							  return std::make_pair(word, index);
+                              return std::pair<const QString, int>(word, index);
 						  })
-	                    | std::ranges::to<std::unordered_map>();
+                        | std::views::common
+                        | std::ranges::to<std::unordered_map>();
 
 	const auto lhsFiltered = std::views::zip(lhs, std::views::iota(0)) | std::views::filter([&](const auto& item) {
 								 return rhsOrder.contains(std::get<0>(item));

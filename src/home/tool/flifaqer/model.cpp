@@ -466,13 +466,16 @@ private: // QAbstractItemModel
 		);
 
 		auto* parentItem = parent.isValid() ? static_cast<Item*>(parent.internalPointer()) : m_root.get();
-		parentItem->children.insert_range(std::next(parentItem->children.begin(), row), std::views::iota(row, row + count) | std::views::transform([&](const int n) {
-																							auto item = std::make_shared<Item>(parentItem, n);
-																							for (const auto& language : m_files | std::views::keys)
-																								item->question.Set(language, Tr(NEW_ITEM));
-																							return item;
-																						}));
-		for (const auto& item : parentItem->children | std::views::drop(row + count))
+        std::ranges::copy(
+            std::views::iota(row, row + count) | std::views::transform([&](const int n) {
+                auto item = std::make_shared<Item>(parentItem, n);
+                for (const auto& language : m_files | std::views::keys)
+                    item->question.Set(language, Tr(NEW_ITEM));
+                return item;
+            }),
+            std::inserter(parentItem->children, std::next(parentItem->children.begin(), row))
+            );
+        for (const auto& item : parentItem->children | std::views::drop(row + count))
 			item->row += count;
 
 		return true;

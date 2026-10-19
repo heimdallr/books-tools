@@ -1,6 +1,6 @@
 #!/bin/bash
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=/opt/Qt/6.11.0/gcc16/lib/cmake/Qt6 -DCPACK_GENERATOR=7Z -G Ninja
+cmake .. -DCMAKE_BUILD_TYPE=Release -DQt6_DIR=/opt/Qt/6.12.0/gcc14_Release/lib/cmake/Qt6 -DCPACK_GENERATOR=7Z -G Ninja
 cmake --build . --config Release
 cpack -C Release

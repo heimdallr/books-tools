@@ -84,7 +84,7 @@ private: // UniqueFileStorage::IUniqueFileConflictResolver
 							  book->date,
 							  book->libId
 						  )
-			            : std::make_tuple(false, false, isFb2, 0ULL, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
+                        : std::make_tuple(false, false, isFb2, size_t{0}, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
 		};
 
 		return toComparable(file) > toComparable(duplicate);
