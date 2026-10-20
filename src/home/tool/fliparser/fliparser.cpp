@@ -317,7 +317,9 @@ void CreateInpx(const Settings& settings, const Archives& archives, InpDataProvi
 				}
 				else
 				{
-					book = GetBookCustom(folder, bookFile, inpDataProvider, *settings.database);
+					if (settings.database)
+						book = GetBookCustom(folder, bookFile, inpDataProvider, *settings.database);
+
 					if (!book)
 					{
 						PLOGW << zipFileInfo.filePath() << "/" << bookFile << " need to parse ";

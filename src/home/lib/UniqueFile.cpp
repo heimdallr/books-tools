@@ -254,6 +254,10 @@ Book* InpDataProvider::GetBook(const UniqueFile::Uid& uid) const
 	if (begin != end)
 		return begin->second.get();
 
+	if (m_cache.size() == 1 && m_currentInpData)
+		if (const auto it = m_currentInpData->find(file); it != m_currentInpData->end())
+			return it->second.get();
+
 	const QFileInfo fileInfo(uid.file);
 	if (fileInfo.suffix() == fileInfo.completeSuffix())
 		return nullptr;

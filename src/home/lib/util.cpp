@@ -356,7 +356,9 @@ InpData CreateInpData(const IDump& dump, std::unordered_map<QString, QString>& s
 					return !IsOneOf(ch.category(), QChar::Category::Letter_Lowercase, QChar::Category::Number_DecimalDigit);
 				});
 
-				inpData.emplace(std::move(index), book);
+				if (index != book->title)
+					inpData.emplace(std::move(index), book);
+
 				const auto dotIndex = fileName.lastIndexOf('.');
 				if (dotIndex < 0)
 					break;
