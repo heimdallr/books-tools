@@ -264,7 +264,7 @@ private:
 		IParser::ImageMapper             idToNum;
 
 		auto binaryCallback = [&](QString&& name, const bool isCover, QByteArray body) {
-			const char* fail   = nullptr;
+			const char* fail = nullptr;
 
 			const QFileInfo imageFileInfo(name);
 			if (const auto it = std::ranges::find_if(

@@ -88,8 +88,8 @@ void Scripts(const QString& file, const QJsonArray& scripts)
 	PLOGV << "scripts for " << file;
 	for (const auto script : scripts)
 	{
-		const auto obj = script.toObject();
-		const auto rx  = obj["regexp"].toString();
+		const auto obj      = script.toObject();
+		const auto rx       = obj["regexp"].toString();
 		const auto fileName = QFileInfo(file).fileName();
 		const auto hasMatch = QRegularExpression(rx).match(fileName).hasMatch();
 		PLOGV << "check " << fileName << " for " << rx << (hasMatch ? ": match!" : ": no match");

@@ -302,23 +302,23 @@ std::vector<std::tuple<int, QByteArray, QByteArray>> CreateAuthorAnnotationsData
 		});
 	};
 
-	const auto query = db.CreateQuery(R"(
+	static constexpr auto queryText = R"(
 select 
     n.nid / 10000, a.LastName || ' ' || a.FirstName || ' ' || a.MiddleName, n.Body, p.File
 from libaannotations n 
 join libavtorname a on a.AvtorId = n.AvtorId 
 left join libapics p on p.AvtorId = n.AvtorId
 order by n.nid
-)");
-	for (query->Execute(); !query->Eof(); query->Next())
+)";
+	for (const auto query = db.CreateQuery(queryText); const auto& rec : *query)
 	{
-		if (const auto id = query->Get<int>(0); id != currentId)
+		if (const auto id = rec.Get<int>(0); id != currentId)
 			write(id);
 
 		QCryptographicHash hash(QCryptographicHash::Algorithm::Md5);
-		hash.addData(QString(query->Get<const char*>(1)).split(' ', Qt::SkipEmptyParts).join(' ').toLower().simplified().toUtf8());
-		auto& files = data.try_emplace(hash.result().toHex(), std::make_pair(QString(query->Get<const char*>(2)), PictureList {})).first->second.second;
-		if (const auto* file = query->Get<const char*>(3))
+		hash.addData(QString(rec.Get<const char*>(1)).split(' ', Qt::SkipEmptyParts).join(' ').toLower().simplified().toUtf8());
+		auto& files = data.try_emplace(hash.result().toHex(), std::make_pair(QString(rec.Get<const char*>(2)), PictureList {})).first->second.second;
+		if (const auto* file = rec.Get<const char*>(3))
 			files.insert(file);
 	}
 
@@ -402,7 +402,7 @@ private: // IDatabase
 
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
-		const auto query = m_db->CreateQuery(R"(
+		static constexpr auto queryText = R"(
 with Books(  BookId,         Title,   FileSize,   LibID,    Deleted,                                FileType,   Time,   Lang,   Keywords, Year,              Hash, LibRateSum , LibRateCount) as (
     select b.BookId, trim(b.Title), b.FileSize, b.BookId, b.Deleted, coalesce(nullif(b.FileType, ''), 'fb2'), b.Time, b.Lang, b.keywords, nullif(b.Year, 0), md5 , sum(r.Rate), count(r.Rate)
         from libbook b
@@ -437,28 +437,24 @@ from Books b
 left join libseq ls on ls.BookID = b.BookID
 left join libseqname s on s.SeqID = ls.SeqID
 left join libfilename f on f.BookId = b.BookID
-)");
-
+)";
 		PLOGV << GetName() << " records selection started";
-
-		for (query->Execute(); !query->Eof(); query->Next())
-			functor(*query);
+		m_db->CreateQuery(queryText)->ForEach(functor);
 	}
 
 	std::vector<std::pair<int, int>> GetReviewMonths() const override
 	{
-		std::vector<std::pair<int, int>> result;
-		const auto                       query = m_db->CreateQuery("select distinct strftime('%Y', r.Time), strftime('%m', r.Time) from libreviews r");
-		for (query->Execute(); !query->Eof(); query->Next())
-			result.emplace_back(query->Get<int>(0), query->Get<int>(1));
-		return result;
+		const auto query = m_db->CreateQuery("select distinct strftime('%Y', r.Time), strftime('%m', r.Time) from libreviews r");
+		return *query | std::views::transform([](const auto& item) {
+			return std::make_pair(item.template Get<int>(0), item.template Get<int>(1));
+		}) | std::ranges::to<std::vector>();
 	}
 
 	void Review(const int year, const int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const override
 	{
-		const auto query = m_db->CreateQuery(std::format("select r.BookId, r.Name, r.Time, r.Text from libreviews r where r.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
-		for (query->Execute(); !query->Eof(); query->Next())
-			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
+		for (const auto  query = m_db->CreateQuery(std::format("select r.BookId, r.Name, r.Time, r.Text from libreviews r where r.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
+		     const auto& rec : *query)
+			functor(rec.Get<const char*>(0), rec.Get<const char*>(1), rec.Get<const char*>(2), rec.Get<const char*>(3));
 	}
 
 	void CreateAdditional(const std::filesystem::path& sqlDir, const std::filesystem::path& dstDir, const AdditionalType additionalType, const std::function<void(const DB::IQuery&)>& functor) const override
@@ -501,9 +497,7 @@ private:
 
 	void CreateBookAnnotations(const std::function<void(const DB::IQuery&)>& functor) const
 	{
-		const auto query = m_db->CreateQuery("select BookId, Body, max(nid) from libbannotations group by BookId");
-		for (query->Execute(); !query->Eof(); query->Next())
-			functor(*query);
+		m_db->CreateQuery("select BookId, Body, max(nid) from libbannotations group by BookId")->ForEach(functor);
 	}
 
 private:

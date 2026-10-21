@@ -217,7 +217,7 @@ private: // IDatabase
 
 	void CreateInpData(const std::function<void(const DB::IQuery&)>& functor) const override
 	{
-		const auto query = m_db->CreateQuery(R"(
+		constexpr auto queryText = R"(
 with Books(BookId,         Title,   FileSize, LibID,   Deleted,                                FileType,   Time,   Lang,   Keywords,              Year, Hash , LibRateSum , LibRateCount) as (
     select  b.bid, trim(b.Title), b.FileSize, b.bid, b.Deleted, coalesce(nullif(b.FileType, ''), 'fb2'), b.Time, b.Lang, b.keywords, nullif(b.Year, 0), b.md5, sum(r.Rate), count(r.Rate)
         from libbook b
@@ -245,12 +245,9 @@ select
 from Books b
 left join libseq ls on ls.bid = b.BookID
 left join libseqs s on s.sid = ls.sid
-)");
-
+)";
 		PLOGV << GetName() << " records selection started";
-
-		for (query->Execute(); !query->Eof(); query->Next())
-			functor(*query);
+		m_db->CreateQuery(queryText)->ForEach(functor);
 	}
 
 	//	void Review(const std::function<void(const QString&, QString, QString, QString)>& functor) const override
@@ -262,19 +259,18 @@ left join libseqs s on s.sid = ls.sid
 
 	std::vector<std::pair<int, int>> GetReviewMonths() const override
 	{
-		std::vector<std::pair<int, int>> result;
-		const auto                       query = m_db->CreateQuery("select distinct strftime('%Y', p.Time), strftime('%m', p.Time) from libpolka p");
-		for (query->Execute(); !query->Eof(); query->Next())
-			result.emplace_back(query->Get<int>(0), query->Get<int>(1));
-		return result;
+		const auto query = m_db->CreateQuery("select distinct strftime('%Y', p.Time), strftime('%m', p.Time) from libpolka p");
+		return *query | std::views::transform([](const auto& item) {
+			return std::make_pair(item.template Get<int>(0), item.template Get<int>(1));
+		}) | std::ranges::to<std::vector>();
 	}
 
 	void Review(const int year, const int month, const std::function<void(const QString&, QString, QString, QString)>& functor) const override
 	{
-		const auto query =
-			m_db->CreateQuery(std::format("select p.bid, null, p.Time, p.Text from libpolka p where p.type = 'b' and p.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
-		for (query->Execute(); !query->Eof(); query->Next())
-			functor(query->Get<const char*>(0), query->Get<const char*>(1), query->Get<const char*>(2), query->Get<const char*>(3));
+		for (const auto query =
+		         m_db->CreateQuery(std::format("select p.bid, null, p.Time, p.Text from libpolka p where p.type = 'b' and p.Time BETWEEN '{:04}-{:02}' and '{:04}-{:02}'", year, month, year, month + 1));
+		     const auto& rec : *query)
+			functor(rec.Get<const char*>(0), rec.Get<const char*>(1), rec.Get<const char*>(2), rec.Get<const char*>(3));
 	}
 
 	void CreateAdditional(

@@ -196,7 +196,7 @@ void GetReplacement(DB::IDatabase& db, const QString& path, UniqueFileStorage& u
 		query->Execute();
 		if (query->Eof())
 			throw std::invalid_argument(std::format("{} not found in database", folder));
-		return std::make_pair(query->Get<long long>(0), query->Get<QString>(1));
+		return query->Get<long long, QString>(0, 1);
 	}();
 
 	inpDataProvider.SetSourceLib(sourceLib);
@@ -310,11 +310,8 @@ int main(int argc, char* argv[])
 	try
 	{
 		if (settings.arguments.isEmpty())
-		{
-			const auto query = settings.database->CreateQuery("select Name from Folder");
-			for (query->Execute(); !query->Eof(); query->Next())
-				settings.arguments << query->Get<QString>(0);
-		}
+			for (const auto query = settings.database->CreateQuery("select Name from Folder"); const auto& rec : *query)
+				settings.arguments << rec.Get<QString>(0);
 
 		run(settings);
 		return 0;

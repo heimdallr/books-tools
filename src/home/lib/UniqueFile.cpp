@@ -366,17 +366,15 @@ UniqueFileStorage::UniqueFileStorage(DB::IDatabase& db, const std::unordered_set
 	, m_conflictResolver { std::make_unique<UniqueFileConflictResolver>() }
 	, m_si { createSi() }
 {
-	const auto folders = [&] {
-		std::vector<std::tuple<long long, QString, QString>> result;
-
+	const auto folders = [&]() -> std::vector<std::tuple<long long, QString, QString>> {
 		const auto query = db.CreateQuery("select f.FolderId, f.Name, s.Name from Folder f join SourceLibrary s on s.SourceLibraryId = f.SourceLibraryId");
-		for (query->Execute(); !query->Eof(); query->Next())
-			if (!skipFolders.contains(query->Get<const char*>(1)))
-				result.emplace_back(query->Get<long long>(0), query->Get<const char*>(1), query->Get<const char*>(2));
-
-		return result;
+		return *query | std::views::filter([&](const auto& item) {
+			return !skipFolders.contains(item.template Get<const char*>(1));
+		}) | std::views::transform([](const auto& item) {
+			return item.template Get<long long, QString, QString>();
+		}) | std::ranges::to<std::vector>();
 	}();
-	Util::Progress progress(folders.size(), "collect ready books");
+	Util::Progress progress(static_cast<int64_t>(folders.size()), "collect ready books");
 	for (const auto& [folderId, folderName, sourceLib] : folders)
 	{
 		auto uniqueFiles = SelectUniqueFiles(db, folderId, folderName);

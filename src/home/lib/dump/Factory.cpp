@@ -223,12 +223,12 @@ ReplaceSrcValues GetReplaceSrcValues(DB::IDatabase& db, const IDump::DictionaryT
 	for (const auto* name : tableDescription.names)
 		names.append(", t.").append(name);
 
-	const auto query = db.CreateQuery(std::format("select t.{}{} from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", tableDescription.id, names, tableDescription.table, dumpName));
-	for (query->Execute(); !query->Eof(); query->Next())
+	for (const auto  query = db.CreateQuery(std::format("select t.{}{} from {} t join Library l on l.Id = t.LibraryId and l.Name = '{}'", tableDescription.id, names, tableDescription.table, dumpName));
+	     const auto& rec : *query)
 	{
-		auto& values = result.try_emplace(query->Get<long long>(0)).first->second;
-		std::ranges::transform(std::views::iota(1, static_cast<int>(query->ColumnCount())), std::back_inserter(values), [&](const auto n) {
-			return query->Get<const char*>(n);
+		auto& values = result.try_emplace(rec.Get<long long>(0)).first->second;
+		std::ranges::transform(std::views::iota(1, static_cast<int>(rec.ColumnCount())), std::back_inserter(values), [&](const auto n) {
+			return rec.Get<const char*>(n);
 		});
 	}
 
@@ -243,12 +243,11 @@ ReplaceDstValues GetReplacedValues(DB::IDatabase& db, const IDump::DictionaryTab
 	for (const auto* name : tableDescription.names)
 		names.append(", ").append(name);
 
-	const auto query = db.CreateQuery(std::format("select {}{} from {}", tableDescription.id, names, tableDescription.table));
-	for (query->Execute(); !query->Eof(); query->Next())
+	for (const auto query = db.CreateQuery(std::format("select {}{} from {}", tableDescription.id, names, tableDescription.table)); const auto& rec : *query)
 	{
-		auto& seriesItem = values.emplace_back(query->Get<long long>(0), std::vector<QString> {});
+		auto& seriesItem = values.emplace_back(rec.Get<long long>(0), std::vector<QString> {});
 		std::ranges::transform(std::views::zip(tableDescription.names, std::views::iota(1)), std::back_inserter(seriesItem.second), [&](const auto& item) {
-			return query->Get<const char*>(std::get<1>(item));
+			return rec.Get<const char*>(std::get<1>(item));
 		});
 	}
 
@@ -319,13 +318,12 @@ void UpdateImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tabl
 			names.append(", ").append(name);
 
 		PLOGV << "select " << table.table;
-		const auto query = db.CreateQuery(std::format("select {} from {}", names, table.table));
-		for (query->Execute(); !query->Eof(); query->Next())
+		for (const auto query = db.CreateQuery(std::format("select {} from {}", names, table.table)); const auto& rec : *query)
 		{
 			std::vector<QString> value;
 			for (size_t i = 1, sz = table.names.size(); i <= sz; ++i)
-				value.emplace_back(query->Get<const char*>(i));
-			values.emplace_back(query->Get<long long>(0), false, std::move(value));
+				value.emplace_back(rec.Get<const char*>(i));
+			values.emplace_back(rec.Get<long long>(0), false, std::move(value));
 
 			PLOGV_IF(values.size() % 50000 == 0) << values.size() << " records selected";
 		}
