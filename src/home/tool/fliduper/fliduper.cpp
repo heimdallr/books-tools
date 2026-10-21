@@ -84,7 +84,7 @@ private: // UniqueFileStorage::IUniqueFileConflictResolver
 							  book->date,
 							  book->libId
 						  )
-                        : std::make_tuple(false, false, isFb2, size_t{0}, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
+			            : std::make_tuple(false, false, isFb2, size_t { 0 }, 0ULL, 0, QString { "0000-00-00" }, item.uid.file);
 		};
 
 		return toComparable(file) > toComparable(duplicate);
@@ -120,18 +120,12 @@ auto GetTemporaryTable(DB::IDatabase& db)
 template <typename PairContainer, typename ItemToPair>
 void FillTemporaryTable(DB::ITransaction& tr, const std::string_view tmpTable, const PairContainer& container, const ItemToPair& itemToPair)
 {
-	const auto command = tr.CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable));
-	for (const auto& [duplicate, origin] : container | std::views::transform([&](const auto& item) {
+	for (const auto command = tr.CreateCommand(std::format("insert into {}(Folder, File, FolderOrigin, FileOrigin) values(?, ?, ?, ?)", tmpTable));
+	     const auto& [duplicate, origin] : container | std::views::transform([&](const auto& item) {
 											   const auto& [first, second] = item;
 											   return std::make_pair(itemToPair(first), itemToPair(second));
 										   }))
-	{
-		command->Bind(0, duplicate.first);
-		command->Bind(1, duplicate.second);
-		command->Bind(2, origin.first);
-		command->Bind(3, origin.second);
-		command->Execute();
-	}
+		command->Execute(duplicate.first, duplicate.second, origin.first, origin.second);
 }
 
 void UpdateOriginId(DB::ITransaction& tr, const std::string_view tmpTable, const std::string_view updatedField)
@@ -198,8 +192,7 @@ void GetReplacement(DB::IDatabase& db, const QString& path, UniqueFileStorage& u
 	const auto      folder = fileInfo.fileName();
 
 	const auto [folderId, sourceLib] = [&] {
-		const auto query = db.CreateQuery("select f.FolderId, s.Name from Folder f join SourceLibrary s on s.SourceLibraryId = f.SourceLibraryId where f.name = ?");
-		query->Bind(0, folder);
+		const auto query = db.CreateQuery("select f.FolderId, s.Name from Folder f join SourceLibrary s on s.SourceLibraryId = f.SourceLibraryId where f.name = ?", folder);
 		query->Execute();
 		if (query->Eof())
 			throw std::invalid_argument(std::format("{} not found in database", folder));
@@ -228,10 +221,7 @@ void GetReplacement(DB::IDatabase& db, const QStringList& archives, UniqueFileSt
 		{
 			const auto command = tr->CreateCommand(std::format("insert into {}(Folder) values(?)", tmpTable->GetName()));
 			for (const auto& archive : archives)
-			{
-				command->Bind(0, archive);
-				command->Execute();
-			}
+				command->Execute(archive);
 		}
 
 		const auto query = tr->CreateQuery(std::format("select count(42) from {} t join Folder d on d.Name = t.Folder join File f on f.FolderId = d.FolderId", tmpTable->GetName()));

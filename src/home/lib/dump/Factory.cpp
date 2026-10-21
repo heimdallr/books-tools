@@ -382,11 +382,9 @@ void UpdateImpl(DB::IDatabase& db, const IDump::DictionaryTableDescription& tabl
 	if (!toRemove.empty())
 	{
 		PLOGV << "delete from " << table.table << "  " << toRemove.size() << " records";
-		const auto command = tr->CreateCommand(std::format("delete from {} where {} = ?", table.table, table.id));
-		for (auto&& [id, n] : std::views::zip(toRemove, std::views::iota(1)))
+		for (const auto command = tr->CreateCommand(std::format("delete from {} where {} = ?", table.table, table.id)); auto&& [id, n] : std::views::zip(toRemove, std::views::iota(1)))
 		{
-			command->Bind(0, id);
-			command->Execute();
+			command->Execute(id);
 			PLOGV_IF(n % 50000 == 0) << n << " records deleted";
 		}
 	}
@@ -411,13 +409,11 @@ void Append(DB::IDatabase& db, const IDump::LinkTableDescription& tableDescripti
 		)
 	);
 
-	for (query->Execute(); !query->Eof(); query->Next())
+	for (const auto& rec : *query)
 	{
-		for (qsizetype i = 0, sz = fieldsSource.size(); i < sz; ++i)
-			if (query->IsNull(i))
-				command->Bind(i);
-			else
-				command->Bind(i, query->Get<const char*>(i));
+		auto binder = command->Binder();
+		for (const auto i : std::views::iota(0, fieldsSource.size()))
+			binder << (!rec.IsNull(i) ? std::optional<QString> { rec.Get<const char*>(i) } : std::nullopt);
 		command->Execute();
 	}
 

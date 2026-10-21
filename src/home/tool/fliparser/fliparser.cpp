@@ -223,9 +223,7 @@ Book* GetBookCustom(QString folder, const QString& fileName, InpDataProvider& in
 from FileCustom c
 join File f on f.FileId = c.FileId and f.Name = ?
 join Folder d on d.FolderId = f.FolderId and d.Name = ?)");
-	query->Bind(0, fileName);
-	query->Bind(1, folder);
-	query->Execute();
+	query->Execute(fileName, folder);
 	if (query->Eof())
 		return nullptr;
 
@@ -571,7 +569,7 @@ std::vector<std::tuple<QString, QByteArray>> CreateReviewData(const std::filesys
 
 	const auto inpxedBooks = inpDataProvider.Books() | std::ranges::to<std::unordered_set<const Book*>>();
 
-	Util::Progress progress(months.size(), "select reviews");
+	Util::Progress progress(static_cast<int64_t>(months.size()), "select reviews");
 	for (const auto& [year, month] : months)
 	{
 		PLOGI << std::format("select reviews for {:04}-{:02}", year, month);
@@ -690,7 +688,7 @@ void ProcessAnnotation(const Settings& settings, const Archives& archives, const
 	                 | std::ranges::to<std::unordered_map>();
 
 	const auto     query = settings.database->CreateQuery("select f.Name, f.Annotation from File f join Folder d on d.FolderId = f.FolderId and d.Name = ?");
-	Util::Progress progress(archives.size(), "select annotation data");
+	Util::Progress progress(static_cast<int64_t>(archives.size()), "select annotation data");
 
 	for (const auto& archive : archives | std::views::reverse)
 	{
@@ -699,15 +697,15 @@ void ProcessAnnotation(const Settings& settings, const Archives& archives, const
 		const auto      folder = fileInfo.fileName();
 
 		query->Bind(0, fileInfo.completeBaseName() + ".7z");
-		for (query->Execute(); !query->Eof(); query->Next())
+		for (const auto& rec : *query)
 		{
-			const auto file = query->Get<QString>(0);
+			const auto file = rec.Get<QString>(0);
 			const auto it   = added.find(QString("%1#%2").arg(folder, file));
 			if (it == added.end())
 				continue;
 
 			auto& book = *it->second;
-			if (const auto* annotation = query->Get<const char*>(1))
+			if (const auto* annotation = rec.Get<const char*>(1))
 				if (QString str(annotation); !str.isEmpty())
 					book.annotation = std::move(str);
 
@@ -750,7 +748,7 @@ join Section s on s.FileId = f.FileId and s.Hash is not f.Hash and s.WordCount >
 order by f.Name
 )");
 
-		Util::Progress progress(archives.size(), "select compilation data");
+		Util::Progress progress(static_cast<int64_t>(archives.size()), "select compilation data");
 
 		for (const auto& archive : archives | std::views::reverse)
 		{
@@ -819,9 +817,9 @@ order by f.Name
 			};
 
 			query->Bind(0, fileInfo.completeBaseName() + ".7z");
-			for (query->Execute(); !query->Eof(); query->Next())
+			for (const auto& rec : *query)
 			{
-				if (const auto* file = query->Get<const char*>(0); currentFile != file)
+				if (const auto* file = rec.Get<const char*>(0); currentFile != file)
 				{
 					updateCompilations();
 					currentFile = file;
@@ -831,10 +829,10 @@ order by f.Name
 				if (skip)
 					continue;
 
-				const auto id = query->Get<long long>(1);
+				const auto id = rec.Get<long long>(1);
 				sectionsUnique.emplace(id);
-				sectionChildren[query->Get<long long>(2)].emplace_back(id);
-				sections.emplace_back(id, query->Get<const char*>(3));
+				sectionChildren[rec.Get<long long>(2)].emplace_back(id);
+				sections.emplace_back(id, rec.Get<const char*>(3));
 			}
 			updateCompilations();
 			query->Reset();
@@ -892,15 +890,14 @@ left join Folder dd on dd.FolderId = ff.FolderId
 where d.Name = ?
 )");
 
-	Util::Progress progress(archives.size(), "select replacements");
+	Util::Progress progress(static_cast<int64_t>(archives.size()), "select replacements");
 
 	for (auto&& archive : archives)
 	{
 		const QFileInfo fileInfo(archive.filePath);
 		const auto      archiveFileName   = fileInfo.fileName();
 		const auto      dbArchiveFileName = fileInfo.completeBaseName() + ".7z";
-		query->Bind(0, dbArchiveFileName);
-		query->Execute();
+		query->Execute(dbArchiveFileName);
 		const ScopedCall queryResetGuard([&] {
 			query->Reset();
 		});

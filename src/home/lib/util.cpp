@@ -467,8 +467,8 @@ from File f
 join Folder d on d.FolderId = f.FolderId and d.Name = ?
 where f.Name = ?
 )");
-	const auto bind    = [&](const size_t index, const QString& value) {
-		value.isEmpty() ? command->Bind(index) : command->Bind(index, value);
+	const auto arg     = [&](QString value) -> std::optional<QString> {
+		return !value.isEmpty() ? std::optional { std::move(value) } : std::nullopt;
 	};
 	const auto series = (book.series | std::views::filter([](const Series& item) {
 							 return !item.title.isEmpty();
@@ -479,17 +479,7 @@ where f.Name = ?
 	                     | std::ranges::to<QStringList>())
 	                        .join('|');
 
-	bind(0, book.author);
-	bind(1, book.title);
-	bind(2, book.genre);
-	bind(3, book.date);
-	bind(4, book.lang);
-	bind(5, series);
-	bind(6, book.keywords);
-	bind(7, book.year);
-	command->Bind(8, book.folder);
-	command->Bind(9, book.GetFileName());
-	command->Execute();
+	command->Execute(arg(book.author), arg(book.title), arg(book.genre), arg(book.date), arg(book.lang), arg(series), arg(book.keywords), arg(book.year), book.folder, book.GetFileName());
 }
 
 } // namespace HomeCompa::FliLib

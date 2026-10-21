@@ -58,12 +58,11 @@ size_t WriteParsedBooks(DB::IDatabase& db, const QString& folder, InpDataProvide
 
 	const auto fileList      = zip.GetFileNameList();
 	const auto alreadyParsed = [&] {
-		std::unordered_set<QString> result;
-		const auto                  query = db.CreateQuery("SELECT f.Name FROM FileCustom c JOIN File f ON f.FileId = c.FileId JOIN Folder d ON d.FolderId = f.FolderId AND d.Name = ?");
-		query->Bind(0, folder);
-		for (query->Execute(); !query->Eof(); query->Next())
-			result.emplace(query->Get<const char*>(0));
-		return result;
+		const auto query = db.CreateQuery("SELECT f.Name FROM FileCustom c JOIN File f ON f.FileId = c.FileId JOIN Folder d ON d.FolderId = f.FolderId AND d.Name = ?", folder);
+		return *query | std::views::transform([](const auto& item) {
+			return QString { item.template Get<const char*>(0) };
+		}) | std::views::common
+		     | std::ranges::to<std::unordered_set>();
 	}();
 	const auto tr = db.CreateTransaction();
 	for (const auto& fileName : fileList | std::views::filter([&](const QString& item) {
@@ -160,15 +159,12 @@ ProcessResult ProcessArchive(const QDir& outputDir, DB::IDatabase& db, const QSt
 
 std::unordered_set<QString> GetReplacement(DB::IDatabase& db, const QString& archive)
 {
-	std::unordered_set<QString> replaced;
-
 	const QFileInfo fileInfo(archive);
-	const auto      query = db.CreateQuery("select f.Name from File f join Folder d on d.FolderId = f.FolderId and d.Name = ? where +f.OriginId is not null");
-	query->Bind(0, fileInfo.fileName());
-	for (query->Execute(); !query->Eof(); query->Next())
-		replaced.emplace(query->Get<const char*>(0));
-
-	return replaced;
+	const auto      query = db.CreateQuery("select f.Name from File f join Folder d on d.FolderId = f.FolderId and d.Name = ? where +f.OriginId is not null", fileInfo.fileName());
+	return *query | std::views::transform([](const auto& item) {
+		return QString { item.template Get<const char*>(0) };
+	}) | std::views::common
+	     | std::ranges::to<std::unordered_set>();
 }
 
 Settings ProcessCommandLine(const QCoreApplication& app)
@@ -211,14 +207,13 @@ void run(const Settings& settings)
 
 	ProcessResult count;
 
-	Util::Progress progress(archives.size(), "merging");
+	Util::Progress progress(static_cast<int64_t>(archives.size()), "merging");
 	for (const auto& archive : archives)
 	{
 		const auto folder    = QFileInfo(archive.filePath).fileName();
 		const auto sourceLib = [&] {
 			const auto query = settings.database->CreateQuery("select l.Name from SourceLibrary l join Folder d on d.SourceLibraryId = l.SourceLibraryId and d.Name = ?");
-			query->Bind(0, folder);
-			query->Execute();
+			query->Execute(folder);
 			assert(!query->Eof());
 			return query->Get<QString>(0);
 		}();

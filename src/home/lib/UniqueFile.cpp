@@ -414,10 +414,9 @@ bool HistCheck(const std::vector<QString>& lhs, const std::vector<QString>& rhs)
 {
 	const auto rhsOrder = std::views::zip(rhs, std::views::iota(0)) | std::views::transform([](const auto& item) {
 							  const auto& [word, index] = item;
-                              return std::pair<const QString, int>(word, index);
+							  return std::pair<const QString, int>(word, index);
 						  })
-                        | std::views::common
-                        | std::ranges::to<std::unordered_map>();
+	                    | std::views::common | std::ranges::to<std::unordered_map>();
 
 	const auto lhsFiltered = std::views::zip(lhs, std::views::iota(0)) | std::views::filter([&](const auto& item) {
 								 return rhsOrder.contains(std::get<0>(item));
@@ -665,21 +664,19 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 	std::unordered_map<long long, UniqueFile> uniqueFiles;
 
 	{
-		const auto query = db.CreateQuery("select FileId, Name, Md5, Isbn, Title, Hash, SymbolCount, SimHash from File where FolderId = ? and +OriginId is null");
-		query->Bind(0, folderId);
-		for (query->Execute(); !query->Eof(); query->Next())
+		for (const auto query = db.CreateQuery("select FileId, Name, Md5, Isbn, Title, Hash, SymbolCount, SimHash from File where FolderId = ? and +OriginId is null", folderId); const auto& rec : *query)
 		{
 			auto& uniqueFile = uniqueFiles
 			                       .try_emplace(
-									   query->Get<long long>(0),
+									   rec.Get<long long>(0),
 									   UniqueFile {
-										   .uid     = { folderName, query->Get<const char*>(1) },
-										   .md5     = query->Get<const char*>(2),
-										   .isbn    = query->Get<const char*>(3),
-										   .title   = Util::UniqTitle(QString(query->Get<const char*>(4))) | std::ranges::to<std::set>(),
-										   .hash    = query->Get<const char*>(5),
-										   .size    = query->Get<size_t>(6),
-										   .simHash = query->Get<QString>(7).toULongLong(nullptr, 16),
+										   .uid     = { folderName, rec.Get<const char*>(1) },
+										   .md5     = rec.Get<const char*>(2),
+										   .isbn    = rec.Get<const char*>(3),
+										   .title   = Util::UniqTitle(QString(rec.Get<const char*>(4))) | std::ranges::to<std::set>(),
+										   .hash    = rec.Get<const char*>(5),
+										   .size    = rec.Get<size_t>(6),
+										   .simHash = rec.Get<QString>(7).toULongLong(nullptr, 16),
 			}
 								   )
 			                       .first->second;
@@ -688,31 +685,28 @@ std::unordered_map<long long, UniqueFile> SelectUniqueFiles(DB::IDatabase& db, c
 		}
 	}
 	{
-		const auto query = db.CreateQuery("select f.FileId, count(42) from File f join Section s on s.FileId = f.FileId where f.FolderId = ? and +f.OriginId is null group by f.FileId");
-		query->Bind(0, folderId);
-		for (query->Execute(); !query->Eof(); query->Next())
+		for (const auto  query = db.CreateQuery("select f.FileId, count(42) from File f join Section s on s.FileId = f.FileId where f.FolderId = ? and +f.OriginId is null group by f.FileId", folderId);
+		     const auto& rec : *query)
 		{
-			const auto it = uniqueFiles.find(query->Get<long long>(0));
+			const auto it = uniqueFiles.find(rec.Get<long long>(0));
 			assert(it != uniqueFiles.end());
-			it->second.sectionCount = query->Get<size_t>(1);
+			it->second.sectionCount = rec.Get<size_t>(1);
 		}
 	}
 
 	const auto process = [&](const std::string_view queryText, const auto& f) {
-		const auto query = db.CreateQuery(queryText);
-		query->Bind(0, folderId);
 		long long currentFileId = -1;
 		auto      it            = uniqueFiles.end();
-		for (query->Execute(); !query->Eof(); query->Next())
+		for (const auto query = db.CreateQuery(queryText, folderId); const auto& rec : *query)
 		{
-			const auto id = query->Get<long long>(0);
-			if (currentFileId != id)
+			if (const auto id = rec.Get<long long>(0); currentFileId != id)
 			{
 				currentFileId = id;
 				it            = uniqueFiles.find(id);
 				assert(it != uniqueFiles.end());
 			}
-			f(*query, it->second);
+
+			f(rec, it->second);
 		}
 	};
 

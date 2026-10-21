@@ -75,16 +75,7 @@ void SerializeHashSections(const long long fileId, const QStringList& sections, 
 
 		depth = newDepth;
 
-		command->Bind(0, fileId);
-		if (stack.back() == -1)
-			command->Bind(1);
-		else
-			command->Bind(1, stack.back());
-		command->Bind(2, split[1]);
-		command->Bind(3, split[2]);
-		command->Bind(4, split[3]);
-		command->Bind(5, split[4]);
-		command->Execute();
+		command->Execute(fileId, stack.back() != -1 ? std::optional { stack.back() } : std::nullopt, split[1], split[2], split[3], split[4]);
 		const auto query = tr.CreateQuery("select last_insert_rowid()");
 		stack.push_back(query->Execute() ? query->Get<long long>(0) : (assert(false), -1LL));
 	}
