@@ -238,7 +238,7 @@ std::optional<Book> ParseZip(
 	const ScopedCall parserNameGuard([&] {
 		parserName = "fbd";
 	});
-	return ParseFb2(parserName, folder, *subZip, *it, zipDateTime, isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
+	return std::invoke(FILE_PARSERS[0].second.first, std::ref(parserName), std::cref(folder), *subZip, *it, std::cref(zipDateTime), isDeleted, fileInfo.completeBaseName(), fileInfo.suffix());
 }
 
 } // namespace

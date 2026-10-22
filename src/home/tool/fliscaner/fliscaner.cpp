@@ -25,6 +25,7 @@
 #include "network/network/downloader.h"
 #include "util/LogConsoleFormatter.h"
 #include "util/ProcessWrapper.h"
+#include "util/progress.h"
 
 #include "log.h"
 #include "zip.h"
@@ -80,6 +81,7 @@ private:
 void Script(const QString& file, const QString& command, QString args)
 {
 	args.replace("#FILE#", file);
+	args.replace("#DIR#", QFileInfo(file).dir().path());
 	Util::RunProcess(command, args, {}, true);
 }
 
@@ -199,7 +201,7 @@ struct Task
 
 				KillMe(this_);
 			},
-			[this, file, pct = int64_t { 0 }](const int64_t bytesReceived, const int64_t bytesTotal, bool& /*stopped*/) mutable {
+			[this, file, pct = 0LL](const int64_t bytesReceived, const int64_t bytesTotal, bool& /*stopped*/) mutable {
 				if (bytesTotal > 0)
 				{
 					if (const auto currentPct = 100LL * bytesReceived / bytesTotal; currentPct != pct)
@@ -232,7 +234,7 @@ void KillMe(T* obj)
 
 using TaskQueue = std::queue<std::function<void()>>;
 
-void GetFile(const QString& path, const QString& file, const QString& tmpFile, const QString& dstFile, EventLooper& eventLooper, TaskQueue& taskQueue, const int count = 1)
+void GetFile(const QString& path, QString file, QString tmpFile, QString dstFile, EventLooper& eventLooper, TaskQueue& taskQueue, const int count = 1)
 {
 	if (UNIQUE_FILES.contains(file))
 		return;
@@ -246,22 +248,29 @@ void GetFile(const QString& path, const QString& file, const QString& tmpFile, c
 
 	PLOGI << "download " << path + file << " try " << count;
 
-	new Task(path, file, eventLooper, std::move(stream), [path, file = file, tmpFile, dstFile = dstFile, &eventLooper, &taskQueue, count](const bool success) mutable {
-		if (success && Validate(tmpFile, QFileInfo(dstFile).suffix().toLower()))
-		{
-			QFile::rename(tmpFile, dstFile);
-			UNIQUE_FILES.emplace(std::move(file));
-			DOWNLOADED.emplace_back(std::move(dstFile));
-			return;
+	auto fileCopy = file;
+	new Task(
+		path,
+		fileCopy,
+		eventLooper,
+		std::move(stream),
+		[path, file = std::move(file), tmpFile = std::move(tmpFile), dstFile = std::move(dstFile), &eventLooper, &taskQueue, count](const bool success) mutable {
+			if (success && Validate(tmpFile, QFileInfo(dstFile).suffix().toLower()))
+			{
+				QFile::rename(tmpFile, dstFile);
+				UNIQUE_FILES.emplace(std::move(file));
+				DOWNLOADED.emplace_back(std::move(dstFile));
+				return;
+			}
+
+			if (count <= MAX_ATTEMPTS)
+				return taskQueue.push([path, file = std::move(file), tmpFile = std::move(tmpFile), dstFile = std::move(dstFile), &eventLooper, &taskQueue, count]() mutable {
+					GetFile(path, std::move(file), std::move(tmpFile), std::move(dstFile), eventLooper, taskQueue, count + 1);
+				});
+
+			PLOGE << "download " << path + file << " failed";
 		}
-
-		if (count <= MAX_ATTEMPTS)
-			return taskQueue.push([path, file, tmpFile, dstFile, &eventLooper, &taskQueue, count] {
-				GetFile(path, file, tmpFile, dstFile, eventLooper, taskQueue, count + 1);
-			});
-
-		PLOGE << "download " << path + file << " failed";
-	});
+	);
 }
 
 void GetFiles(const QJsonValue& value, EventLooper& eventLooper, TaskQueue& taskQueue)
@@ -271,16 +280,16 @@ void GetFiles(const QJsonValue& value, EventLooper& eventLooper, TaskQueue& task
 	const auto path = obj["path"].toString();
 	for (const auto fileObj : obj["file"].toArray())
 	{
-		const auto file    = fileObj.toString();
-		auto       tmpFile = GetDownloadFileName(file + ".tmp"), dstFile = GetDownloadFileName(file);
+		auto file    = fileObj.toString();
+		auto tmpFile = GetDownloadFileName(file + ".tmp"), dstFile = GetDownloadFileName(file);
 		if (QFile::exists(dstFile))
 		{
 			PLOGW << file << " already exists";
 			continue;
 		}
 
-		taskQueue.push([path, file, tmpFile, dstFile, &eventLooper, &taskQueue] {
-			GetFile(path, file, tmpFile, dstFile, eventLooper, taskQueue);
+		taskQueue.push([path, file = std::move(file), tmpFile = std::move(tmpFile), dstFile = std::move(dstFile), &eventLooper, &taskQueue]() mutable {
+			GetFile(path, std::move(file), std::move(tmpFile), std::move(dstFile), eventLooper, taskQueue);
 		});
 	}
 }
@@ -396,7 +405,7 @@ int main(int argc, char* argv[])
 	const auto       consoleAppender(parser.value(logOption) != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
 	Log::LogAppender logConsoleAppender(consoleAppender.get());
 
-	PLOGI << QString("%1 started").arg(APP_ID);
+	Util::Progress progress(APP_ID);
 
 	if (parser.positionalArguments().empty())
 		parser.showHelp(1);

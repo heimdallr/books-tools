@@ -127,8 +127,9 @@ private: // UniqueFileStorage::ImageComparer
 			sameFound = true;
 		}
 
-		const auto transform = [](const auto& item) {
-			return std::make_pair(std::make_pair(item.get().pHash, item.get().pHash2), item.get().fileName);
+		const auto transform = [](const auto& itemPtr) {
+			const auto& item = itemPtr.get();
+			return std::make_pair(std::make_pair(item.pHash, item.pHash2), item.fileName);
 		};
 		std::transform(lIt, lhsImages.cend(), std::inserter(lpHashes, lpHashes.end()), transform);
 		std::transform(rIt, rhsImages.cend(), std::inserter(rpHashes, rpHashes.end()), transform);

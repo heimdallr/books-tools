@@ -36,6 +36,10 @@ set(PRODUCT_VERSION_FULL ${PRODUCT_VERSION})
 
 project(FLibraryTools VERSION ${PRODUCT_VERSION})
 
+if(MSVC)
+    set(PVS_CONFIG_PATH "${BUILDSCRIPTS_ROOT}/config/.pvsconfig")
+endif()
+
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
 	set(CMAKE_BUILD_TYPE Debug)
 endif ()

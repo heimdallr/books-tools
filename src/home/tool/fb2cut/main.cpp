@@ -218,7 +218,10 @@ private:
 		auto [name, body] = ParseFile(*parser, dateTime);
 
 		if (body.isEmpty())
-			return WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix()), false;
+		{
+			WriteError(inputFilePath, inputFileBody, "no output found", true, fileInfo.suffix());
+			return false;
+		}
 
 		if (!m_settings.saveFb2)
 			return false;

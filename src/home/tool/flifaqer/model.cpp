@@ -528,7 +528,7 @@ private: // QAbstractItemModel
 		);
 
 		Items buffer;
-		buffer.reserve(count);
+		buffer.reserve(static_cast<size_t>(count));
 		std::ranges::move(std::next(parentSourceItem->children.begin(), sourceRow), std::next(parentSourceItem->children.begin(), sourceRow + count), std::back_inserter(buffer));
 		parentSourceItem->children.erase(std::next(parentSourceItem->children.begin(), sourceRow), std::next(parentSourceItem->children.begin(), sourceRow + count));
 		for (const auto& item : parentSourceItem->children | std::views::drop(sourceRow))

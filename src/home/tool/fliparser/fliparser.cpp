@@ -1025,7 +1025,7 @@ int main(int argc, char* argv[])
 	Util::GenreFixerInitializer genreFixerInitializer;
 	try
 	{
-		PLOGI << QString("%1 started").arg(APP_ID);
+		Util::Progress progress(APP_ID);
 
 		if (parser.positionalArguments().isEmpty() || !parser.isSet(OUTPUT))
 			parser.showHelp(1);

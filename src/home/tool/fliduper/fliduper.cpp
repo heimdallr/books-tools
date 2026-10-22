@@ -305,13 +305,23 @@ int main(int argc, char* argv[])
 	const Log::LoggingInitializer logging(settings.logFileName);
 	const auto       consoleAppender(settings.logFileName != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
 	Log::LogAppender logConsoleAppender(consoleAppender.get());
-	PLOGI << QString("%1 started").arg(APP_ID);
+	Util::Progress   progress(APP_ID);
 
 	try
 	{
 		if (settings.arguments.isEmpty())
+		{
 			for (const auto query = settings.database->CreateQuery("select Name from Folder"); const auto& rec : *query)
 				settings.arguments << rec.Get<QString>(0);
+		}
+		else
+		{
+			auto archives = GetArchives(settings.arguments);
+			settings.arguments = archives | std::views::transform([](const Archive& item) {
+									 return QFileInfo(item.filePath).fileName();
+								 })
+			                   | std::ranges::to<QStringList>();
+		}
 
 		run(settings);
 		return 0;

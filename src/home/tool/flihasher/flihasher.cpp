@@ -1,4 +1,5 @@
 ﻿#include <condition_variable>
+#include <stack>
 #include <thread>
 
 #include <QCommandLineParser>
@@ -59,7 +60,7 @@ void SerializeHashSections(const long long fileId, const QStringList& sections, 
 {
 	const auto command = tr.CreateCommand("insert into Section(FileId, ParentSectionId, Hash, WordCount, SymbolCount, SimHash) values(?, ?, ?, ?, ?, ?)");
 
-	std::vector<long long> stack { -1 };
+	std::stack<long long> stack { { -1 } };
 	qsizetype              depth = -1;
 	for (const auto& str : sections)
 	{
@@ -71,13 +72,13 @@ void SerializeHashSections(const long long fileId, const QStringList& sections, 
 		assert(ok);
 
 		for (int i = newDepth; i <= depth; ++i)
-			stack.pop_back();
+			stack.pop();
 
 		depth = newDepth;
 
-		command->Execute(fileId, stack.back() != -1 ? std::optional { stack.back() } : std::nullopt, split[1], split[2], split[3], split[4]);
+		command->Execute(fileId, stack.top() != -1 ? std::optional { stack.top() } : std::nullopt, split[1], split[2], split[3], split[4]);
 		const auto query = tr.CreateQuery("select last_insert_rowid()");
-		stack.push_back(query->Execute() ? query->Get<long long>(0) : (assert(false), -1LL));
+		stack.push(query->Execute() ? query->Get<long long>(0) : (assert(false), -1LL));
 	}
 }
 
@@ -233,7 +234,7 @@ int run(const Options& options)
 		});
 		PLOGI << "Total file count: " << totalFileCount;
 
-		Progress progress(totalFileCount, "parsing");
+		Progress progress(static_cast<int64_t>(totalFileCount), "parsing");
 
 		for (const auto& archive : archives)
 			ProcessArchive(options, archive, progress);
@@ -283,7 +284,7 @@ int main(int argc, char* argv[])
 	const Log::LoggingInitializer logging(parser.value(logOption));
 	const auto       consoleAppender(parser.value(logOption) != Log::LoggingInitializer::CONSOLE ? std::make_unique<plog::ConsoleAppender<Util::LogConsoleFormatter>>() : std::unique_ptr<plog::IAppender> {});
 	Log::LogAppender logConsoleAppender(consoleAppender.get());
-	PLOGI << QString("%1 started").arg(APP_ID);
+	Progress         progress(APP_ID);
 
 	if (!parser.isSet(DATABASE) || parser.positionalArguments().isEmpty())
 		parser.showHelp(1);
