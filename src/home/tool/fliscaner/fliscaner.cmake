@@ -1,4 +1,4 @@
-﻿AddTarget(fliscaner	app_console
+AddTarget(fliscaner	app_console
 	PROJECT_GROUP Tool
 	SOURCE_DIRECTORY
 		"${CMAKE_CURRENT_LIST_DIR}"

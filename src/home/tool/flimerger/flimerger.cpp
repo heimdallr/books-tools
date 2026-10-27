@@ -1,4 +1,4 @@
-﻿#include <ranges>
+#include <ranges>
 #include <unordered_set>
 
 #include <QCommandLineParser>

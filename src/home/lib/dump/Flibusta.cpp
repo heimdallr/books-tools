@@ -1,4 +1,4 @@
-﻿#include <ranges>
+#include <ranges>
 #include <set>
 
 #include <QBuffer>

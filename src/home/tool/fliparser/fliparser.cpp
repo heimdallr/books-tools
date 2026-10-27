@@ -1,4 +1,4 @@
-﻿#include <filesystem>
+#include <filesystem>
 #include <ranges>
 #include <regex>
 #include <set>

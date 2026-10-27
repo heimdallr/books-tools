@@ -1,4 +1,4 @@
-﻿#include "database/interface/IDatabase.h"
+#include "database/interface/IDatabase.h"
 #include "database/interface/IQuery.h"
 
 #include "IDump.h"

@@ -1,4 +1,4 @@
-﻿#include <mutex>
+#include <mutex>
 #include <queue>
 #include <ranges>
 #include <thread>
